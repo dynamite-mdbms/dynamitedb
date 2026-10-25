@@ -1,0 +1,8 @@
+dependencies {
+    implementation project(':contracts')
+    implementation project(':query-processor')
+    implementation project(':query-optimizer')
+    implementation project(':storage-manager')
+    implementation project(':concurrency-manager')
+    implementation project(':recovery-manager')
+}

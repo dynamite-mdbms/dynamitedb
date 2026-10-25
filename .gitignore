@@ -1,0 +1,15 @@
+.gradle/
+**/build/
+.idea/
+*.iml
+.vscode/
+out/
+*.class
+.DS_Store
+Thumbs.db
+/data/
+*.log
+hs_err_pid*
+.env
+.env.*
+!.env.example

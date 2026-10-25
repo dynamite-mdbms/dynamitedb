@@ -1,0 +1,21 @@
+plugins {
+    id 'base'
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
+    tasks.withType(Javadoc).configureEach {
+        options.encoding = 'UTF-8'
+    }
+}

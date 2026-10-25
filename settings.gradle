@@ -1,0 +1,10 @@
+rootProject.name = 'DynamiteDB'
+
+include 'contracts',
+        'query-processor',
+        'query-optimizer',
+        'storage-manager',
+        'concurrency-manager',
+        'recovery-manager',
+        'app',
+        'integration-tests'
