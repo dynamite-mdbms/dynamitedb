@@ -34,20 +34,20 @@ dependencies or testing frameworks have been selected.
 
 | Module | Responsibility | Reserved package prefix |
 | --- | --- | --- |
-| `contracts` | Agreed shared types and interfaces | `id.ac.itb.dynamitedb.contracts` |
-| `query-processor` | QP team | `id.ac.itb.dynamitedb.qp` |
-| `query-optimizer` | QO team | `id.ac.itb.dynamitedb.qo` |
-| `storage-manager` | SM team | `id.ac.itb.dynamitedb.sm` |
-| `concurrency-manager` | CCM team | `id.ac.itb.dynamitedb.ccm` |
-| `recovery-manager` | FRM team | `id.ac.itb.dynamitedb.frm` |
-| `app` | Application composition and future entry point | `id.ac.itb.dynamitedb.app` |
+| `contracts` | Agreed shared types and interfaces | `dynamitedb.contracts` |
+| `query-processor` | QP team | `dynamitedb.qp` |
+| `query-optimizer` | QO team | `dynamitedb.qo` |
+| `storage-manager` | SM team | `dynamitedb.sm` |
+| `concurrency-manager` | CCM team | `dynamitedb.ccm` |
+| `recovery-manager` | FRM team | `dynamitedb.frm` |
+| `app` | Application composition and future entry point | `dynamitedb.app` |
 | `integration-tests` | Future tests through contracts and application composition | To be agreed |
 
 Each component depends only on `contracts`. Components must not depend directly
 on one another's implementation modules. `contracts` has no project dependencies;
 `app` depends on it and all five components. Integration tests depend on `contracts`
 and `app`, with component implementations available at runtime through `app`.
-The namespace is an organizational default that the team may revisit.
+Use `dynamitedb` as the base package, with lowercase package names.
 
 Module ownership and dependency direction are stable. Diagrams are **DRAFT —
 subject to contract approval**: class names, constructors, interface methods,
