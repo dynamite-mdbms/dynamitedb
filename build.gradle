@@ -1,5 +1,30 @@
 plugins {
     id 'base'
+    id 'com.diffplug.spotless' version '8.10.4'
+}
+
+repositories {
+    mavenCentral()
+}
+
+spotless {
+    java {
+        target '*/src/*/java/**/*.java'
+        googleJavaFormat('1.30.0')
+        removeUnusedImports()
+        forbidWildcardImports()
+    }
+    format 'gradle', {
+        target '*.gradle', '*/build.gradle'
+        leadingTabsToSpaces(4)
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    format 'repository', {
+        target '.gitattributes', '.gitignore', '.editorconfig', '.githooks/*', 'scripts/*.sh'
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
 }
 
 subprojects {
@@ -13,9 +38,28 @@ subprojects {
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+        options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
     }
 
     tasks.withType(Javadoc).configureEach {
         options.encoding = 'UTF-8'
     }
+}
+
+tasks.register('format') {
+    group = 'formatting'
+    description = 'Formats Java, Gradle, and repository configuration files.'
+    dependsOn 'spotlessApply'
+}
+
+tasks.register('lint') {
+    group = 'verification'
+    description = 'Checks formatting and compiles all Java sources with warnings treated as errors.'
+    dependsOn 'spotlessCheck'
+    dependsOn subprojects.collect { it.tasks.named('compileJava') }
+    dependsOn subprojects.collect { it.tasks.named('compileTestJava') }
+}
+
+tasks.named('check') {
+    dependsOn 'spotlessCheck'
 }

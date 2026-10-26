@@ -1,4 +1,8 @@
 * text=auto
+*.gradle text eol=lf
+/.githooks/* text eol=lf
+/scripts/*.sh text eol=lf
+/.editorconfig text eol=lf
 /gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
