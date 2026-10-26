@@ -32,8 +32,8 @@ by the hooks; commits from an IDE must also inherit a valid `JAVA_HOME`.
    without staging anything: review the diff, stage the result, and retry. Tool
    failures also abort. The commit-msg hook rejects invalid commit subjects.
 6. Push the feature branch and open a draft PR targeting `main`. Use the same
-   subject convention for its title and fill every section of the PR template.
-   Replace placeholders; use `N/A` with an explanation where appropriate.
+   subject convention for its title and fill the template's Description and
+   Changes sections.
 7. Mark the PR ready when local checks pass and the description is complete.
    Request review from `@dynamite-mdbms/group-leaders`. Address feedback in small
    commits. Changes to the diff invalidate previous approvals.
@@ -59,7 +59,7 @@ framework dependencies have been added.
 The hook rejects untracked source/build inputs and unstaged tracked changes
 before running tools. It never stashes or stages files for you. Local checks can
 be bypassed by Git options, so contributors must keep the hooks enabled and
-reviewers must inspect the recorded validation results. No GitHub Actions
+reviewers should run the local checks when reviewing. No GitHub Actions
 workflow or required CI status check runs these tools.
 
 Maintainers can run `python scripts/test_hooks.py -v` to verify the hook behavior
@@ -102,8 +102,8 @@ docs (contracts): explain transaction ownership
 ```
 
 Use the commit body to explain why when the subject is insufficient. Describe
-breaking contract changes in a `BREAKING CHANGE:` paragraph and in the PR's
-contract/compatibility section, with affected modules and migration steps.
+breaking contract changes in a `BREAKING CHANGE:` paragraph and in the PR
+description, with affected modules and migration steps.
 Do not rewrite already published shared history to rename older commits.
 
 ## Required leadership review
@@ -123,10 +123,10 @@ authors the PR, the other five leaders review it. Comments or checked boxes in
 the PR description do not substitute for GitHub approving reviews.
 
 Each approving leader must read the entire diff, check ownership and contract
-impacts, assess the recorded local validation, and resolve their concerns before
+impacts, verify local checks, and resolve their concerns before
 approving. GitHub can enforce approval counts; reading and substantive review are
 human responsibilities. Reviewers must request changes on incomplete PR templates,
-unexplained skipped checks, invalid PR titles, or unresolved contract changes.
+failing local checks, invalid PR titles, or unresolved contract changes.
 
 The repository ruleset is versioned in `.github/rulesets/main.json`. It targets
 `main`, requires five approvals from `group-leaders`, dismisses stale approvals,
