@@ -1,7 +1,6 @@
 # DynamiteDB
 
-An educational relational mini-DBMS for IF3140. This repository currently contains
-build scaffolding only; it is not yet runnable as a DBMS.
+A Relational mini-DBMS for IF3140 Database Systems.
 
 ## Build
 
@@ -28,26 +27,45 @@ macOS/Linux:
 
 Empty source sets are intentional. A successful build validates project wiring;
 there are no DBMS implementations, mocks, or test scenarios yet. No third-party
-dependencies or testing frameworks have been selected.
+runtime dependencies or testing frameworks have been selected.
+
+## Local quality checks
+
+Enable the versioned Git hooks once per clone:
+
+```sh
+git config --local core.hooksPath .githooks
+```
+
+| Task | macOS/Linux or Git Bash | Windows PowerShell |
+| --- | --- | --- |
+| Format | `./gradlew format` | `.\gradlew.bat format` |
+| Lint | `./gradlew lint` | `.\gradlew.bat lint` |
+| Build | `./gradlew clean build` | `.\gradlew.bat clean build` |
+
+The local pre-commit hook formats first and blocks if files change, so you can
+review and re-stage them. It then runs lint and build; any failure blocks the
+commit. Java uses Google Java Format and compiler warnings as errors. No GitHub
+Actions workflow runs these checks.
 
 ## Ownership and boundaries
 
 | Module | Responsibility | Reserved package prefix |
 | --- | --- | --- |
-| `contracts` | Agreed shared types and interfaces | `dynamitedb.contracts` |
-| `query-processor` | QP team | `dynamitedb.qp` |
-| `query-optimizer` | QO team | `dynamitedb.qo` |
-| `storage-manager` | SM team | `dynamitedb.sm` |
-| `concurrency-manager` | CCM team | `dynamitedb.ccm` |
-| `recovery-manager` | FRM team | `dynamitedb.frm` |
-| `app` | Application composition and future entry point | `dynamitedb.app` |
+| `contracts` | Agreed shared types and interfaces | `id.ac.itb.dynamitedb.contracts` |
+| `query-processor` | QP team | `id.ac.itb.dynamitedb.qp` |
+| `query-optimizer` | QO team | `id.ac.itb.dynamitedb.qo` |
+| `storage-manager` | SM team | `id.ac.itb.dynamitedb.sm` |
+| `concurrency-manager` | CCM team | `id.ac.itb.dynamitedb.ccm` |
+| `recovery-manager` | FRM team | `id.ac.itb.dynamitedb.frm` |
+| `app` | Application composition and future entry point | `id.ac.itb.dynamitedb.app` |
 | `integration-tests` | Future tests through contracts and application composition | To be agreed |
 
 Each component depends only on `contracts`. Components must not depend directly
 on one another's implementation modules. `contracts` has no project dependencies;
 `app` depends on it and all five components. Integration tests depend on `contracts`
 and `app`, with component implementations available at runtime through `app`.
-Use `dynamitedb` as the base package, with lowercase package names.
+The namespace is an organizational default that the team may revisit.
 
 Module ownership and dependency direction are stable. Diagrams are **DRAFT —
 subject to contract approval**: class names, constructors, interface methods,
@@ -56,12 +74,12 @@ or launcher classes have been created from them.
 
 ## Collaboration
 
-Use small feature branches such as `feat/qp-session`, `feat/qo-parser`,
-`feat/sm-bufferpool`, `feat/ccm-locking`, and `feat/frm-wal`. Changes to shared
-contracts require review by affected component owners; agree before changing
-another team's implementation. Run `clean build` before review and describe
-breaking contract changes. Keep secrets, runtime data, build artifacts, and IDE
-state out of Git; local database files belong in the ignored `data/` directory.
+Follow the [contribution guide](CONTRIBUTING.md) for the full branch-to-merge flow.
+Use `<type> (<component>): <description>` for commit subjects and PR titles, for
+example `feat (qp): add session lifecycle`. Fill every section of the PR template.
+Every PR requires five distinct approving leaders from the six-person leadership
+team; an author cannot approve their own PR. Keep shared contract changes agreed
+with affected component owners and keep local runtime data in ignored `data/`.
 
 Next: propose contracts, obtain cross-group approval, then have students write
 interfaces and their own mock implementations for Milestone 1. Interface types,
@@ -70,6 +88,7 @@ still team decisions. Core DBMS implementation is student work under the course'
 generative-AI restriction.
 
 Local supporting references: [draft architecture and contract process](docs/architecture/README.md),
-[contract workflow](docs/contracts/README.md), and [contribution guide](CONTRIBUTING.md).
-These supporting documents and diagrams are intentionally uncommitted and will
-not appear in a fresh clone; the essential conventions are included above.
+[contract workflow](docs/contracts/README.md).
+These architecture/contract documents and diagrams are intentionally uncommitted
+and will not appear in a fresh clone. The contribution guide and PR template are
+versioned with the repository.
