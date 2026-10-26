@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+subject=$(head -n 1 "$1" | tr -d '\r')
+if ! printf '%s\n' "$subject" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|chore|revert) \((contracts|qp|qo|sm|ccm|frm|app|integration|repo)\): [^[:space:]].*$'; then
+    echo 'Commit blocked: use <type> (<component>): <description>' >&2
+    echo 'Example: feat (qp): add session lifecycle' >&2
+    echo 'Types: feat, fix, docs, style, refactor, perf, test, build, chore, revert' >&2
+    echo 'Components: contracts, qp, qo, sm, ccm, frm, app, integration, repo' >&2
+    exit 1
+fi
