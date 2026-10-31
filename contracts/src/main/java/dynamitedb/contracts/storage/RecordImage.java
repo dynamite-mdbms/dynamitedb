@@ -1,5 +1,13 @@
 package dynamitedb.contracts.storage;
 
-// draf dari QP biar bisa compile, nanti ganti punya SM
-// exists false untuk before INSERT dan after DELETE
-public record RecordImage(boolean exists, ImmutableBytes encoded) {}
+import java.util.Objects;
+
+public record RecordImage(boolean exists, ImmutableBytes encoded) {
+  public RecordImage {
+    Objects.requireNonNull(encoded, "encoded");
+  }
+
+  public static RecordImage absent() {
+    return new RecordImage(false, ImmutableBytes.copyOf(new byte[0]));
+  }
+}
