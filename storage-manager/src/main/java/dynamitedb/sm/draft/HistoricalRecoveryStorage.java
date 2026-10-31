@@ -4,11 +4,11 @@ import java.util.UUID;
 
 /** Temporary FR4-owned port; stages remain isolated until the manifest is published by FRM. */
 public interface HistoricalRecoveryStorage {
-  SnapshotMetadata captureSnapshot(UUID walLineage, LogSequenceNumber baseLsn);
+  SnapshotMetadata captureSnapshot(RecoveryBoundary boundary);
 
-  RecoveryStage createStage(SnapshotMetadata snapshot);
+  RecoveryStage createStage(SnapshotMetadata snapshot, UUID id);
 
-  void replayStage(RecoveryStage stage, RecoveryMutation mutation, LogSequenceNumber lsn);
+  void replayInStage(RecoveryStage stage, RecoveryMutation change, LogSequenceNumber lsn);
 
   void rebuildStageIndexes(RecoveryStage stage);
 

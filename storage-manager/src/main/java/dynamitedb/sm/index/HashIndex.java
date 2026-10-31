@@ -1,20 +1,11 @@
 package dynamitedb.sm.index;
 
-import dynamitedb.sm.draft.IndexMetadata;
 import dynamitedb.sm.draft.RecordId;
 import dynamitedb.sm.draft.Value;
 import java.util.List;
-import java.util.Objects;
 
 /** SM5 / Nathanael Shane Bennet: equality-only HASH strategy template (SM-10-SM-11). */
 public final class HashIndex implements EqualityIndex {
-  private final IndexMetadata metadata;
-
-  public HashIndex(IndexMetadata metadata) {
-    this.metadata = Objects.requireNonNull(metadata, "metadata");
-    // TODO(SM5): Require HASH metadata and agree on key semantics, buckets and persistence.
-  }
-
   @Override
   public List<RecordId> lookup(Value key) {
     // TODO(SM5): Return matching RIDs without promising range capabilities.

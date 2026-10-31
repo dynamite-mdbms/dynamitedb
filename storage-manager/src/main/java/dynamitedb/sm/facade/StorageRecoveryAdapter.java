@@ -20,8 +20,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * SM1 recovery adapter wiring; delegates to the same storage services used by the normal facade.
- * FRM supplies boundary values rather than its internal log records. All targets remain TODO stubs.
+ * SM1 recovery adapter wiring for the diagram's page, historical-storage and generation ports. FRM
+ * supplies boundary values rather than internal log records. Targets remain TODO stubs.
  */
 public final class StorageRecoveryAdapter
     implements RecoveryPageStore, HistoricalRecoveryStorage, StorageGenerationAdmin {
@@ -39,8 +39,8 @@ public final class StorageRecoveryAdapter
   }
 
   @Override
-  public RecordImage readImage(RecordId rid) {
-    return records.readImage(rid);
+  public RecordImage readRecord(RecordId rid) {
+    return records.read(rid);
   }
 
   @Override
@@ -54,23 +54,23 @@ public final class StorageRecoveryAdapter
   }
 
   @Override
-  public void flushThrough(LogSequenceNumber lsn) {
-    buffer.flushThrough(lsn);
+  public void flushDirtyThrough(LogSequenceNumber lsn) {
+    buffer.flushDirtyThrough(lsn);
   }
 
   @Override
-  public SnapshotMetadata captureSnapshot(UUID walLineage, LogSequenceNumber baseLsn) {
-    return generations.captureSnapshot(walLineage, baseLsn);
+  public SnapshotMetadata captureSnapshot(RecoveryBoundary boundary) {
+    return generations.captureSnapshot(boundary);
   }
 
   @Override
-  public RecoveryStage createStage(SnapshotMetadata snapshot) {
-    return generations.createStage(snapshot);
+  public RecoveryStage createStage(SnapshotMetadata snapshot, UUID id) {
+    return generations.createStage(snapshot, id);
   }
 
   @Override
-  public void replayStage(RecoveryStage stage, RecoveryMutation mutation, LogSequenceNumber lsn) {
-    generations.replayStage(stage, mutation, lsn);
+  public void replayInStage(RecoveryStage stage, RecoveryMutation change, LogSequenceNumber lsn) {
+    generations.replayInStage(stage, change, lsn);
   }
 
   @Override
@@ -89,7 +89,7 @@ public final class StorageRecoveryAdapter
   }
 
   @Override
-  public void refreshPublishedGeneration(GenerationManifest manifest) {
-    generations.refreshPublishedGeneration(manifest);
+  public void switchToPublishedGeneration(GenerationManifest manifest) {
+    generations.switchToPublishedGeneration(manifest);
   }
 }

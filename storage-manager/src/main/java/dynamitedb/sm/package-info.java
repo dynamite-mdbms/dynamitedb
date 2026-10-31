@@ -1,5 +1,5 @@
 /**
- * Storage manager boilerplate from Final Architecture.pdf; operations remain TODO stubs.
+ * Storage manager boilerplate aligned with 04_storage_manager.puml in the Class Diagrams archive.
  *
  * <ul>
  *   <li>SM1 / Jason Edward Salim: facade, heap, generation and verification packages (SM-04-SM-07,
@@ -13,8 +13,10 @@
  *
  * <p>draft contains temporary ports and immutable value shapes for compilation. Replace those with
  * agreed dynamitedb.contracts imports once available; other modules must not import local drafts.
- * Constructors store dependencies only. Operational stubs throw UnsupportedOperationException;
+ * Constructors only initialize fields. Operational stubs throw UnsupportedOperationException;
  * adapters may delegate to those stubs. No storage algorithms, persistence, mocks or test scenarios
- * are implemented. DbmsBootstrap in app will compose the concrete classes after contract agreement.
+ * are implemented. Diagram method names, parameters, fields and relationships are preserved;
+ * constructors provide local assembly scaffolding. DbmsBootstrap in app will compose the concrete
+ * classes after contract agreement.
  */
 package dynamitedb.sm;

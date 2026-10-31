@@ -1,21 +1,12 @@
 package dynamitedb.sm.index;
 
-import dynamitedb.sm.draft.IndexMetadata;
 import dynamitedb.sm.draft.IndexPredicate;
 import dynamitedb.sm.draft.RecordId;
 import dynamitedb.sm.draft.Value;
 import java.util.List;
-import java.util.Objects;
 
 /** SM5 / Nathanael Shane Bennet: ordered B+ tree strategy template (SM-10-SM-11). */
-public final class BPlusTreeIndex implements OrderedIndex {
-  private final IndexMetadata metadata;
-
-  public BPlusTreeIndex(IndexMetadata metadata) {
-    this.metadata = Objects.requireNonNull(metadata, "metadata");
-    // TODO(SM5): Require B_PLUS_TREE metadata and agree on ordering, node layout and persistence.
-  }
-
+public final class BPlusTreeIndex implements EqualityIndex, OrderedIndex {
   @Override
   public List<RecordId> lookup(Value key) {
     throw new UnsupportedOperationException("TODO(SM5): B+ tree equality lookup");

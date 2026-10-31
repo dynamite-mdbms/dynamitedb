@@ -4,5 +4,5 @@ package dynamitedb.sm.draft;
 public interface StorageGenerationAdmin {
   GenerationManifest readActiveManifest();
 
-  void refreshPublishedGeneration(GenerationManifest manifest);
+  void switchToPublishedGeneration(GenerationManifest manifest);
 }
