@@ -1,4 +1,4 @@
-package dynamitedb.sm.catalog.draft;
+package dynamitedb.sm.draft;
 
 /** Temporary index kinds: HASH supports equality; B_PLUS_TREE also supports ordered ranges. */
 public enum IndexKind {

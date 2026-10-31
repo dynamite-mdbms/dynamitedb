@@ -1,8 +1,8 @@
 package dynamitedb.sm.catalog;
 
-import dynamitedb.sm.catalog.draft.IndexMetadata;
-import dynamitedb.sm.catalog.draft.Schema;
-import dynamitedb.sm.catalog.draft.TableStatistics;
+import dynamitedb.sm.draft.IndexMetadata;
+import dynamitedb.sm.draft.Schema;
+import dynamitedb.sm.draft.TableStatistics;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;

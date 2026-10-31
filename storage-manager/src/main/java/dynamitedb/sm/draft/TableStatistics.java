@@ -1,4 +1,4 @@
-package dynamitedb.sm.catalog.draft;
+package dynamitedb.sm.draft;
 
 import java.util.Map;
 

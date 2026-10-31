@@ -1,4 +1,4 @@
-package dynamitedb.sm.catalog.draft;
+package dynamitedb.sm.draft;
 
 /** Temporary copy of the architecture's persisted SQL type names; length belongs to Column. */
 public enum DataType {

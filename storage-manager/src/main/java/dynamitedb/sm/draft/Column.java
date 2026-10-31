@@ -1,4 +1,4 @@
-package dynamitedb.sm.catalog.draft;
+package dynamitedb.sm.draft;
 
 /** Temporary schema column shape; replace with the agreed shared Column contract. */
 public record Column(
