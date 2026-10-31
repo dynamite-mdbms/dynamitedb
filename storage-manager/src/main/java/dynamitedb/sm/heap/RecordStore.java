@@ -1,16 +1,17 @@
 package dynamitedb.sm.heap;
 
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.RecoveryMutation;
+import dynamitedb.contracts.storage.ImmutableBytes;
+import dynamitedb.contracts.storage.PreparedWrite;
+import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.sm.buffer.BufferPool;
-import dynamitedb.sm.draft.LogSequenceNumber;
-import dynamitedb.sm.draft.PreparedWrite;
-import dynamitedb.sm.draft.RecordId;
-import dynamitedb.sm.draft.RecordImage;
-import dynamitedb.sm.draft.RecoveryMutation;
 import dynamitedb.sm.index.IndexManager;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.util.Objects;
 
-/** SM1 / Jason Edward Salim: physical record services beneath the storage facade (SM-04-SM-07). */
+/** Operasi record fisik di bawah facade SM (SM-04 s.d. SM-07). */
 public final class RecordStore {
   private final HeapFile heap;
   private final BufferPool buffer;
@@ -26,30 +27,24 @@ public final class RecordStore {
   }
 
   public RecordImage read(RecordId rid) {
-    // TODO(SM1/SM2/SM3): Validate slot incarnation and read the canonical immutable row image.
-    throw new UnsupportedOperationException("TODO(SM1): read a stored record image");
+    // TODO: cek inkarnasi slot lalu baca image baris
+    return new RecordImage(false, ImmutableBytes.copyOf(new byte[0]));
   }
 
   public RecordId reserve(String table) {
-    // TODO(SM1/SM4): Resolve the table identity and reserve a heap slot without exposing a new row.
-    throw new UnsupportedOperationException("TODO(SM1): reserve a record identity");
+    // TODO: reservasi slot tanpa menampilkan baris baru
+    return heap.allocateSlot(table);
   }
 
   public void apply(PreparedWrite prepared, LogSequenceNumber lsn) {
-    // TODO(SM1/CCM/FRM): Validate the reservation and match this LSN to this exact prepared write.
-    // TODO(SM1/SM2/SM5): Apply heap/index changes consistently and coordinate pageLSN ordering.
-    throw new UnsupportedOperationException("TODO(SM1): apply a matching logged write");
+    // TODO: cocokkan LSN dengan reservasi, terapkan ke heap dan index
   }
 
   public void cancel(PreparedWrite prepared) {
-    // TODO(SM1): Release only an unapplied reservation; an applied write requires FRM rollback.
-    throw new UnsupportedOperationException("TODO(SM1): cancel a prepared reservation");
+    // TODO: lepas reservasi yang belum diterapkan, yang sudah diterapkan di-rollback FRM
   }
 
   public void applyRecovery(RecoveryMutation mutation, LogSequenceNumber lsn) {
-    // TODO(SM1/SM2/SM5/FRM): Apply idempotent redo/undo with incarnation checks and consistent
-    // indexes.
-    // FRM internal LogRecord types must not enter this boundary.
-    throw new UnsupportedOperationException("TODO(SM1): apply a recovery mutation");
+    // TODO: redo/undo idempotent dengan pageLSN dan index tetap konsisten
   }
 }

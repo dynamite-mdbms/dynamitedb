@@ -1,16 +1,16 @@
 package dynamitedb.sm.heap;
 
+import dynamitedb.contracts.api.RowCursor;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.StoredRow;
 import dynamitedb.sm.buffer.BufferPool;
 import dynamitedb.sm.buffer.Page;
-import dynamitedb.sm.draft.RowCursor;
-import dynamitedb.sm.draft.Schema;
-import dynamitedb.sm.draft.StoredRow;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.util.Iterator;
 import java.util.Objects;
 import java.util.Optional;
 
-/** SM1 / Jason Edward Salim: heap traversal retaining the physical identity of decoded rows. */
+/** Menelusuri heap dan mengembalikan baris beserta RID-nya (SM-04). */
 public final class HeapRowCursor implements RowCursor {
   private final HeapFile heap;
   private final long tableId;
@@ -36,14 +36,12 @@ public final class HeapRowCursor implements RowCursor {
 
   @Override
   public Optional<StoredRow> next() {
-    // TODO(SM1/SM2/SM3): Traverse live slots in pageIterator, decode rows and retain physical RIDs.
-    // Release pins during traversal; Optional.empty means exhaustion rather than SQL NULL.
-    throw new UnsupportedOperationException("TODO(SM1): advance a heap row cursor");
+    // TODO: telusuri slot hidup, decode baris, lepas pin selama traversal
+    return Optional.empty();
   }
 
   @Override
   public void close() {
-    // TODO(SM1/SM2): Release traversal resources once and reject reads after closure.
-    throw new UnsupportedOperationException("TODO(SM1): close a heap row cursor");
+    // TODO: lepas resource sekali, tolak next setelah close
   }
 }

@@ -1,28 +1,25 @@
 package dynamitedb.sm.facade;
 
+import dynamitedb.contracts.api.HistoricalRecoveryStorage;
+import dynamitedb.contracts.api.RecoveryPageStore;
+import dynamitedb.contracts.api.StorageGenerationAdmin;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.RecoveryBoundary;
+import dynamitedb.contracts.recovery.RecoveryMutation;
+import dynamitedb.contracts.recovery.RecoveryStage;
+import dynamitedb.contracts.recovery.SealedGeneration;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
+import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.sm.buffer.BufferPool;
-import dynamitedb.sm.draft.GenerationManifest;
-import dynamitedb.sm.draft.HistoricalRecoveryStorage;
-import dynamitedb.sm.draft.LogSequenceNumber;
-import dynamitedb.sm.draft.RecordId;
-import dynamitedb.sm.draft.RecordImage;
-import dynamitedb.sm.draft.RecoveryBoundary;
-import dynamitedb.sm.draft.RecoveryMutation;
-import dynamitedb.sm.draft.RecoveryPageStore;
-import dynamitedb.sm.draft.RecoveryStage;
-import dynamitedb.sm.draft.SealedGeneration;
-import dynamitedb.sm.draft.SnapshotMetadata;
-import dynamitedb.sm.draft.StorageGenerationAdmin;
 import dynamitedb.sm.generation.GenerationStore;
 import dynamitedb.sm.heap.RecordStore;
 import dynamitedb.sm.index.IndexManager;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * SM1 recovery adapter wiring for the diagram's page, historical-storage and generation ports. FRM
- * supplies boundary values rather than internal log records. Targets remain TODO stubs.
- */
+/** Implementasi port recovery FRM di atas komponen internal SM. */
 public final class StorageRecoveryAdapter
     implements RecoveryPageStore, HistoricalRecoveryStorage, StorageGenerationAdmin {
   private final RecordStore records;

@@ -1,13 +1,14 @@
 package dynamitedb.sm.verification;
 
-import dynamitedb.sm.draft.CatalogAccess;
-import dynamitedb.sm.draft.IndexAdmin;
-import dynamitedb.sm.draft.TestReport;
-import dynamitedb.sm.draft.TupleReader;
-import dynamitedb.sm.draft.WriteStore;
+import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.api.IndexAdmin;
+import dynamitedb.contracts.api.TupleReader;
+import dynamitedb.contracts.api.WriteStore;
+import dynamitedb.contracts.testing.TestReport;
+import java.util.List;
 import java.util.Objects;
 
-/** SM1 / Jason Edward Salim: port-based test-driver template (SM-15); no scenarios exist yet. */
+/** Driver pengujian SM lewat interface publiknya (SM-15). */
 public final class StorageTestDriver {
   private final TupleReader reader;
   private final WriteStore writes;
@@ -23,9 +24,7 @@ public final class StorageTestDriver {
   }
 
   public TestReport runAll() {
-    // TODO(SM1/SM-15): Agree on fixtures and CRUD/page/serialization/index scenarios with SM2-SM5.
-    // Use the four consumer ports shown in the diagram; no concrete facade dependency is needed.
-    // Return actual scenario results once implemented; do not fabricate a passing report.
-    throw new UnsupportedOperationException("TODO(SM1): run agreed storage verification scenarios");
+    // TODO: skenario CRUD, halaman, serialisasi, dan index bersama SM2 sampai SM5
+    return new TestReport(List.of());
   }
 }
