@@ -1,18 +1,19 @@
-package dynamitedb.recovery;
+package dynamitedb.frm;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import dynamitedb.contracts.recovery.CheckpointResult;
-import dynamitedb.contracts.recovery.CheckpointService;
-import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.CheckpointResult;
+import dynamitedb.contracts.CheckpointService;
+import dynamitedb.contracts.LogSequenceNumber;
+import dynamitedb.frm.mock.MockRecoveryEnvironment;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 class CheckpointManagerTest {
   @Test
   void checkpointReturnsMockResultThroughServiceContract() {
-    CheckpointService service = new CheckpointManager();
+    CheckpointService service = MockRecoveryEnvironment.create().checkpoint();
 
     CheckpointResult result = service.checkpoint();
 
@@ -21,7 +22,7 @@ class CheckpointManagerTest {
 
   @Test
   void periodicMethodsAreCallable() {
-    CheckpointManager manager = new CheckpointManager();
+    CheckpointManager manager = MockRecoveryEnvironment.create().checkpoint();
 
     assertDoesNotThrow(
         () -> {
