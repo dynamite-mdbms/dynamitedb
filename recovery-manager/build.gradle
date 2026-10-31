@@ -1,3 +1,21 @@
+repositories {
+    mavenCentral()
+}
+
 dependencies {
     implementation project(':contracts')
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.register('runMockDriver', JavaExec) {
+    group = 'verification'
+    description = 'Runs FRM Milestone 1 contract smoke scenarios (no persistent recovery).'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dynamitedb.frm.RecoveryTestDriver'
+    args providers.gradleProperty('frmScenario').getOrElse('all')
 }

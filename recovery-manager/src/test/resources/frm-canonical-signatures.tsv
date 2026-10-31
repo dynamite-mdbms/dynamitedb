@@ -1,0 +1,210 @@
+# Canonical FRM public signature reference, independently extracted from Class Diagrams/docs/CANONICAL_SIGNATURES.json
+# Source SHA-256: 39dd054be0dc1054ade1f5f0be483ce83c84539dffd51f723a3b08b3b51c2b7f
+type	dynamitedb.contracts.LogInspection	interface
+method	dynamitedb.contracts.LogInspection	readLog	dynamitedb.contracts.LogView	dynamitedb.contracts.LogFilter
+type	dynamitedb.contracts.WalDurability	interface
+method	dynamitedb.contracts.WalDurability	ensureDurable	void	dynamitedb.contracts.LogSequenceNumber
+type	dynamitedb.contracts.ErrorCode	enum
+enum	dynamitedb.contracts.ErrorCode	SQL_SYNTAX|SQL_BIND|INVALID_PLAN|ACCESS_ABORTED|WAL_FAILURE|STORAGE_FAILURE|RECOVERY_FAILURE|INVALID_STATE|UNSUPPORTED_OPERATION|CORRUPT_LOG
+type	dynamitedb.contracts.LogSequenceNumber	record
+component	dynamitedb.contracts.LogSequenceNumber	value	long
+type	dynamitedb.contracts.HistoricalRecoveryService	interface
+method	dynamitedb.contracts.HistoricalRecoveryService	recoverTo	dynamitedb.contracts.RecoveryResult	dynamitedb.contracts.RecoveryTarget
+type	dynamitedb.contracts.RecoveryHighWater	record
+component	dynamitedb.contracts.RecoveryHighWater	lsn	dynamitedb.contracts.LogSequenceNumber
+component	dynamitedb.contracts.RecoveryHighWater	maxTx	dynamitedb.contracts.TransactionId
+component	dynamitedb.contracts.RecoveryHighWater	maxTimestamp	long
+component	dynamitedb.contracts.RecoveryHighWater	maxCommitTime	java.util.Optional<java.time.Instant>
+type	dynamitedb.contracts.LogView	record
+component	dynamitedb.contracts.LogView	lines	java.util.List<java.lang.String>
+type	dynamitedb.contracts.SnapshotMetadata	record
+component	dynamitedb.contracts.SnapshotMetadata	id	java.util.UUID
+component	dynamitedb.contracts.SnapshotMetadata	walLineage	java.util.UUID
+component	dynamitedb.contracts.SnapshotMetadata	baseLsn	dynamitedb.contracts.LogSequenceNumber
+component	dynamitedb.contracts.SnapshotMetadata	createdAt	java.time.Instant
+type	dynamitedb.contracts.CrashRecovery	interface
+method	dynamitedb.contracts.CrashRecovery	recover	dynamitedb.contracts.RecoveryResult	
+type	dynamitedb.contracts.RecordImage	record
+component	dynamitedb.contracts.RecordImage	exists	boolean
+component	dynamitedb.contracts.RecordImage	encoded	dynamitedb.contracts.ImmutableBytes
+type	dynamitedb.contracts.TransactionId	record
+component	dynamitedb.contracts.TransactionId	value	long
+type	dynamitedb.contracts.DbmsException	class
+method	dynamitedb.contracts.DbmsException	getCode	dynamitedb.contracts.ErrorCode	
+type	dynamitedb.contracts.GenerationManifest	record
+component	dynamitedb.contracts.GenerationManifest	activeId	java.util.UUID
+component	dynamitedb.contracts.GenerationManifest	walLineage	java.util.UUID
+component	dynamitedb.contracts.GenerationManifest	boundaryLsn	dynamitedb.contracts.LogSequenceNumber
+component	dynamitedb.contracts.GenerationManifest	highWater	dynamitedb.contracts.RecoveryHighWater
+type	dynamitedb.contracts.CheckpointService	interface
+method	dynamitedb.contracts.CheckpointService	checkpoint	dynamitedb.contracts.CheckpointResult	
+type	dynamitedb.contracts.GenerationManifestStore	interface
+method	dynamitedb.contracts.GenerationManifestStore	readActive	dynamitedb.contracts.GenerationManifest	
+method	dynamitedb.contracts.GenerationManifestStore	publishAtomically	void	dynamitedb.contracts.GenerationManifest
+type	dynamitedb.contracts.LogFilter	record
+component	dynamitedb.contracts.LogFilter	tx	java.util.Optional<dynamitedb.contracts.TransactionId>
+component	dynamitedb.contracts.LogFilter	fromLsn	java.util.Optional<dynamitedb.contracts.LogSequenceNumber>
+type	dynamitedb.contracts.RecoveryStatus	enum
+enum	dynamitedb.contracts.RecoveryStatus	SUCCESS|FAILED
+type	dynamitedb.contracts.TransactionWal	interface
+method	dynamitedb.contracts.TransactionWal	begin	void	dynamitedb.contracts.TransactionId|long
+method	dynamitedb.contracts.TransactionWal	appendChange	dynamitedb.contracts.LogSequenceNumber	dynamitedb.contracts.ChangeRecord
+method	dynamitedb.contracts.TransactionWal	commitDurably	void	dynamitedb.contracts.TransactionId
+type	dynamitedb.contracts.SealedGeneration	record
+component	dynamitedb.contracts.SealedGeneration	id	java.util.UUID
+component	dynamitedb.contracts.SealedGeneration	boundary	dynamitedb.contracts.RecoveryBoundary
+type	dynamitedb.contracts.RecoveryCoordinator	interface
+method	dynamitedb.contracts.RecoveryCoordinator	acquireMaintenance	dynamitedb.contracts.MaintenanceGuard	
+method	dynamitedb.contracts.RecoveryCoordinator	transactionTimestamp	long	dynamitedb.contracts.TransactionId
+method	dynamitedb.contracts.RecoveryCoordinator	initializeRecoveredState	void	dynamitedb.contracts.RecoveryHighWater
+type	dynamitedb.contracts.ImmutableBytes	class
+method	dynamitedb.contracts.ImmutableBytes	copyOf	dynamitedb.contracts.ImmutableBytes	byte[]
+method	dynamitedb.contracts.ImmutableBytes	copy	byte[]	
+type	dynamitedb.contracts.RollbackService	interface
+method	dynamitedb.contracts.RollbackService	rollbackCompletely	void	dynamitedb.contracts.TransactionId
+type	dynamitedb.contracts.RecoveryResult	record
+component	dynamitedb.contracts.RecoveryResult	status	dynamitedb.contracts.RecoveryStatus
+component	dynamitedb.contracts.RecoveryResult	highWater	dynamitedb.contracts.RecoveryHighWater
+component	dynamitedb.contracts.RecoveryResult	message	java.lang.String
+type	dynamitedb.contracts.HistoricalRecoveryStorage	interface
+method	dynamitedb.contracts.HistoricalRecoveryStorage	captureSnapshot	dynamitedb.contracts.SnapshotMetadata	dynamitedb.contracts.RecoveryBoundary
+method	dynamitedb.contracts.HistoricalRecoveryStorage	createStage	dynamitedb.contracts.RecoveryStage	dynamitedb.contracts.SnapshotMetadata|java.util.UUID
+method	dynamitedb.contracts.HistoricalRecoveryStorage	replayInStage	void	dynamitedb.contracts.RecoveryStage|dynamitedb.contracts.RecoveryMutation|dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.contracts.HistoricalRecoveryStorage	rebuildStageIndexes	void	dynamitedb.contracts.RecoveryStage
+method	dynamitedb.contracts.HistoricalRecoveryStorage	sealStage	dynamitedb.contracts.SealedGeneration	dynamitedb.contracts.RecoveryStage|dynamitedb.contracts.RecoveryBoundary
+type	dynamitedb.contracts.RecoveryTarget	record
+component	dynamitedb.contracts.RecoveryTarget	commitTime	java.util.Optional<java.time.Instant>
+component	dynamitedb.contracts.RecoveryTarget	committedTx	java.util.Optional<dynamitedb.contracts.TransactionId>
+type	dynamitedb.contracts.ChangeRecord	record
+component	dynamitedb.contracts.ChangeRecord	tx	dynamitedb.contracts.TransactionId
+component	dynamitedb.contracts.ChangeRecord	table	java.lang.String
+component	dynamitedb.contracts.ChangeRecord	rid	dynamitedb.contracts.RecordId
+component	dynamitedb.contracts.ChangeRecord	before	dynamitedb.contracts.RecordImage
+component	dynamitedb.contracts.ChangeRecord	after	dynamitedb.contracts.RecordImage
+type	dynamitedb.contracts.StorageGenerationAdmin	interface
+method	dynamitedb.contracts.StorageGenerationAdmin	readActiveManifest	dynamitedb.contracts.GenerationManifest	
+method	dynamitedb.contracts.StorageGenerationAdmin	switchToPublishedGeneration	void	dynamitedb.contracts.GenerationManifest
+type	dynamitedb.contracts.CheckpointResult	record
+component	dynamitedb.contracts.CheckpointResult	checkpointLsn	dynamitedb.contracts.LogSequenceNumber
+type	dynamitedb.contracts.MaintenanceGuard	interface
+method	dynamitedb.contracts.MaintenanceGuard	close	void	
+type	dynamitedb.contracts.RecoveryBoundary	record
+component	dynamitedb.contracts.RecoveryBoundary	inclusiveLsn	dynamitedb.contracts.LogSequenceNumber
+component	dynamitedb.contracts.RecoveryBoundary	commitTime	java.util.Optional<java.time.Instant>
+type	dynamitedb.contracts.TestReport	record
+component	dynamitedb.contracts.TestReport	results	java.util.List<dynamitedb.contracts.TestResult>
+type	dynamitedb.contracts.TestResult	record
+component	dynamitedb.contracts.TestResult	passed	boolean
+component	dynamitedb.contracts.TestResult	message	java.lang.String
+type	dynamitedb.contracts.RecoveryStage	record
+component	dynamitedb.contracts.RecoveryStage	id	java.util.UUID
+type	dynamitedb.contracts.RecoveryMutation	record
+component	dynamitedb.contracts.RecoveryMutation	rid	dynamitedb.contracts.RecordId
+component	dynamitedb.contracts.RecoveryMutation	targetImage	dynamitedb.contracts.RecordImage
+type	dynamitedb.contracts.RecordId	record
+component	dynamitedb.contracts.RecordId	tableId	long
+component	dynamitedb.contracts.RecordId	pageNumber	long
+component	dynamitedb.contracts.RecordId	slotNumber	int
+component	dynamitedb.contracts.RecordId	generation	long
+type	dynamitedb.contracts.RecoveryPageStore	interface
+method	dynamitedb.contracts.RecoveryPageStore	readRecord	dynamitedb.contracts.RecordImage	dynamitedb.contracts.RecordId
+method	dynamitedb.contracts.RecoveryPageStore	applyRecovery	void	dynamitedb.contracts.RecoveryMutation|dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.contracts.RecoveryPageStore	rebuildIndexes	void	
+method	dynamitedb.contracts.RecoveryPageStore	flushDirtyThrough	void	dynamitedb.contracts.LogSequenceNumber
+type	dynamitedb.frm.LogFile	class
+method	dynamitedb.frm.LogFile	appendFrame	void	dynamitedb.contracts.ImmutableBytes
+method	dynamitedb.frm.LogFile	sync	void	
+method	dynamitedb.frm.LogFile	readFrames	java.util.Iterator<dynamitedb.contracts.ImmutableBytes>	
+method	dynamitedb.frm.LogFile	repairIncompleteTail	void	
+type	dynamitedb.frm.RecoveryManagerImpl	class
+method	dynamitedb.frm.RecoveryManagerImpl	begin	void	dynamitedb.contracts.TransactionId|long
+method	dynamitedb.frm.RecoveryManagerImpl	appendChange	dynamitedb.contracts.LogSequenceNumber	dynamitedb.contracts.ChangeRecord
+method	dynamitedb.frm.RecoveryManagerImpl	commitDurably	void	dynamitedb.contracts.TransactionId
+method	dynamitedb.frm.RecoveryManagerImpl	rollbackCompletely	void	dynamitedb.contracts.TransactionId
+method	dynamitedb.frm.RecoveryManagerImpl	ensureDurable	void	dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.frm.RecoveryManagerImpl	recover	dynamitedb.contracts.RecoveryResult	
+method	dynamitedb.frm.RecoveryManagerImpl	checkpoint	dynamitedb.contracts.CheckpointResult	
+method	dynamitedb.frm.RecoveryManagerImpl	recoverTo	dynamitedb.contracts.RecoveryResult	dynamitedb.contracts.RecoveryTarget
+method	dynamitedb.frm.RecoveryManagerImpl	readLog	dynamitedb.contracts.LogView	dynamitedb.contracts.LogFilter
+type	dynamitedb.frm.RecoveryState	record
+component	dynamitedb.frm.RecoveryState	winners	java.util.Set<dynamitedb.contracts.TransactionId>
+component	dynamitedb.frm.RecoveryState	losers	java.util.Set<dynamitedb.contracts.TransactionId>
+component	dynamitedb.frm.RecoveryState	lastLsn	dynamitedb.contracts.LogSequenceNumber
+component	dynamitedb.frm.RecoveryState	highWater	dynamitedb.contracts.RecoveryHighWater
+type	dynamitedb.frm.RecoveryTestDriver	class
+method	dynamitedb.frm.RecoveryTestDriver	runAll	dynamitedb.contracts.TestReport	
+method	dynamitedb.frm.RecoveryTestDriver	runScenario	dynamitedb.contracts.TestResult	java.lang.String
+type	dynamitedb.frm.LogRecord	abstract
+field	dynamitedb.frm.LogRecord	lsn	dynamitedb.contracts.LogSequenceNumber
+field	dynamitedb.frm.LogRecord	tx	java.util.Optional<dynamitedb.contracts.TransactionId>
+field	dynamitedb.frm.LogRecord	prevLsn	java.util.Optional<dynamitedb.contracts.LogSequenceNumber>
+field	dynamitedb.frm.LogRecord	walLineage	java.util.UUID
+type	dynamitedb.frm.LogManager	class
+method	dynamitedb.frm.LogManager	append	dynamitedb.contracts.LogSequenceNumber	dynamitedb.frm.LogRecord
+method	dynamitedb.frm.LogManager	flush	void	dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.frm.LogManager	prepareLineage	void	java.util.UUID|dynamitedb.contracts.SealedGeneration|dynamitedb.contracts.RecoveryHighWater
+method	dynamitedb.frm.LogManager	activate	void	dynamitedb.contracts.GenerationManifest
+method	dynamitedb.frm.LogManager	readHighWater	dynamitedb.contracts.RecoveryHighWater	
+method	dynamitedb.frm.LogManager	scanHistory	java.util.Iterator<dynamitedb.frm.LogRecord>	java.util.UUID|dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.frm.LogManager	scanFrom	java.util.Iterator<dynamitedb.frm.LogRecord>	dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.frm.LogManager	reverseByTx	java.util.Iterator<dynamitedb.frm.LogRecord>	dynamitedb.contracts.TransactionId
+method	dynamitedb.frm.LogManager	read	dynamitedb.contracts.LogView	dynamitedb.contracts.LogFilter
+type	dynamitedb.frm.LogRecordCodec	class
+method	dynamitedb.frm.LogRecordCodec	encode	dynamitedb.contracts.ImmutableBytes	dynamitedb.frm.LogRecord
+method	dynamitedb.frm.LogRecordCodec	decode	dynamitedb.frm.LogRecord	dynamitedb.contracts.ImmutableBytes
+method	dynamitedb.frm.LogRecordCodec	verify	boolean	dynamitedb.contracts.ImmutableBytes
+type	dynamitedb.frm.CheckpointLogRecord	class
+field	dynamitedb.frm.CheckpointLogRecord	checkpointId	java.util.UUID
+field	dynamitedb.frm.CheckpointLogRecord	event	dynamitedb.frm.CheckpointEvent
+field	dynamitedb.frm.CheckpointLogRecord	throughLsn	dynamitedb.contracts.LogSequenceNumber
+type	dynamitedb.frm.TransactionEventLogRecord	class
+field	dynamitedb.frm.TransactionEventLogRecord	event	dynamitedb.frm.TxEvent
+field	dynamitedb.frm.TransactionEventLogRecord	beginTimestamp	java.util.Optional<java.lang.Long>
+field	dynamitedb.frm.TransactionEventLogRecord	commitTime	java.util.Optional<java.time.Instant>
+type	dynamitedb.frm.CheckpointEvent	enum
+enum	dynamitedb.frm.CheckpointEvent	BEGIN|END
+type	dynamitedb.frm.ChangeLogRecord	class
+field	dynamitedb.frm.ChangeLogRecord	change	dynamitedb.contracts.ChangeRecord
+type	dynamitedb.frm.HistoricalRecoveryManager	class
+method	dynamitedb.frm.HistoricalRecoveryManager	recoverTo	dynamitedb.contracts.RecoveryResult	dynamitedb.contracts.RecoveryTarget
+method	dynamitedb.frm.HistoricalRecoveryManager	resolveBoundary	dynamitedb.contracts.RecoveryBoundary	dynamitedb.contracts.RecoveryTarget
+type	dynamitedb.frm.TxEvent	enum
+enum	dynamitedb.frm.TxEvent	BEGIN|COMMIT|ABORT_COMPLETE
+type	dynamitedb.frm.AtomicGenerationManifestStore	class
+method	dynamitedb.frm.AtomicGenerationManifestStore	readActive	dynamitedb.contracts.GenerationManifest	
+method	dynamitedb.frm.AtomicGenerationManifestStore	publishAtomically	void	dynamitedb.contracts.GenerationManifest
+type	dynamitedb.frm.CommitClock	class
+method	dynamitedb.frm.CommitClock	assign	java.time.Instant	java.time.Instant
+method	dynamitedb.frm.CommitClock	seed	void	java.time.Instant
+type	dynamitedb.frm.CrashRecoveryManager	class
+method	dynamitedb.frm.CrashRecoveryManager	recover	dynamitedb.contracts.RecoveryResult	
+method	dynamitedb.frm.CrashRecoveryManager	analyze	dynamitedb.frm.RecoveryState	dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.frm.CrashRecoveryManager	redo	void	dynamitedb.frm.RecoveryState
+method	dynamitedb.frm.CrashRecoveryManager	undo	void	dynamitedb.frm.RecoveryState
+type	dynamitedb.frm.HistoryCatalog	class
+method	dynamitedb.frm.HistoryCatalog	validateCoverage	void	dynamitedb.contracts.RecoveryTarget
+method	dynamitedb.frm.HistoryCatalog	getBaseSnapshot	dynamitedb.contracts.SnapshotMetadata	dynamitedb.contracts.RecoveryTarget
+method	dynamitedb.frm.HistoryCatalog	buildManifest	dynamitedb.contracts.GenerationManifest	dynamitedb.contracts.SealedGeneration|java.util.UUID|dynamitedb.contracts.RecoveryHighWater
+type	dynamitedb.frm.CheckpointManager	class
+method	dynamitedb.frm.CheckpointManager	checkpoint	dynamitedb.contracts.CheckpointResult	
+method	dynamitedb.frm.CheckpointManager	startPeriodic	void	java.time.Duration
+method	dynamitedb.frm.CheckpointManager	stopPeriodic	void	
+type	dynamitedb.frm.WalService	class
+method	dynamitedb.frm.WalService	begin	void	dynamitedb.contracts.TransactionId|long
+method	dynamitedb.frm.WalService	appendChange	dynamitedb.contracts.LogSequenceNumber	dynamitedb.contracts.ChangeRecord
+method	dynamitedb.frm.WalService	commitDurably	void	dynamitedb.contracts.TransactionId
+method	dynamitedb.frm.WalService	ensureDurable	void	dynamitedb.contracts.LogSequenceNumber
+method	dynamitedb.frm.WalService	readLog	dynamitedb.contracts.LogView	dynamitedb.contracts.LogFilter
+method	dynamitedb.frm.WalService	prepareLineage	void	java.util.UUID|dynamitedb.contracts.SealedGeneration|dynamitedb.contracts.RecoveryHighWater
+method	dynamitedb.frm.WalService	activate	void	dynamitedb.contracts.GenerationManifest
+type	dynamitedb.frm.CompensationLogRecord	class
+field	dynamitedb.frm.CompensationLogRecord	compensates	dynamitedb.contracts.LogSequenceNumber
+field	dynamitedb.frm.CompensationLogRecord	undoNext	java.util.Optional<dynamitedb.contracts.LogSequenceNumber>
+field	dynamitedb.frm.CompensationLogRecord	mutation	dynamitedb.contracts.RecoveryMutation
+type	dynamitedb.frm.UndoManager	class
+method	dynamitedb.frm.UndoManager	rollbackCompletely	void	dynamitedb.contracts.TransactionId
+method	dynamitedb.frm.UndoManager	undoLosers	void	dynamitedb.frm.RecoveryState
+method	dynamitedb.frm.UndoManager	emitClr	dynamitedb.frm.CompensationLogRecord	dynamitedb.frm.ChangeLogRecord
+type	dynamitedb.frm.RecoveryInitializer	class
+method	dynamitedb.frm.RecoveryInitializer	createNew	dynamitedb.contracts.RecoveryResult	dynamitedb.contracts.SnapshotMetadata
+method	dynamitedb.frm.RecoveryInitializer	openExisting	dynamitedb.contracts.RecoveryResult	
