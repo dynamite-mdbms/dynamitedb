@@ -13,6 +13,10 @@ public class SessionContext {
   private final SessionId id;
   private final String clientId;
   private volatile Optional<TransactionId> activeTx = Optional.empty();
+<<<<<<< HEAD
+=======
+  private volatile boolean rollbackRequired;
+>>>>>>> dbc265e (feat(qp) : add failure query procesor skeleton, contracts and milestone 1 mocks (#17))
   private volatile boolean closed;
 
   public SessionContext(SessionId id, String clientId) {
@@ -40,6 +44,27 @@ public class SessionContext {
     this.activeTx = Objects.requireNonNull(activeTx, "activeTx");
   }
 
+<<<<<<< HEAD
+=======
+  public boolean rollbackRequired() {
+    return rollbackRequired;
+  }
+
+  public void markRollbackRequired() {
+    requireOpen();
+    rollbackRequired = true;
+  }
+
+  public void completeRollback() {
+    requireOpen();
+    if (activeTx.isPresent()) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "Rollback did not clear the active transaction");
+    }
+    rollbackRequired = false;
+  }
+
+>>>>>>> dbc265e (feat(qp) : add failure query procesor skeleton, contracts and milestone 1 mocks (#17))
   public void requireOpen() {
     if (closed) {
       throw new DbmsException(ErrorCode.INVALID_STATE, "Session is closed");
