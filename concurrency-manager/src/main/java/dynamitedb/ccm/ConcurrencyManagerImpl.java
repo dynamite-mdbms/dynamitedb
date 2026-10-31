@@ -2,6 +2,7 @@ package dynamitedb.ccm;
 
 import dynamitedb.ccm.lifecycle.Transaction;
 import dynamitedb.ccm.lifecycle.TransactionRegistry;
+import dynamitedb.ccm.protocol.ConcurrencyProtocol;
 import dynamitedb.ccm.recovery.MaintenanceController;
 import dynamitedb.ccm.recovery.TransactionRecoveryBridge;
 import dynamitedb.contracts.api.AccessController;
@@ -27,19 +28,31 @@ public class ConcurrencyManagerImpl
         ChangeLogger,
         RecoveryCoordinator {
 
-  private final TransactionRegistry registry = new TransactionRegistry();
-  private final TransactionRecoveryBridge bridge = new TransactionRecoveryBridge();
-  private final MaintenanceController maintenance = new MaintenanceController();
+  private final TransactionRegistry registry;
+  private final ConcurrencyProtocol protocol;
+  private final TransactionRecoveryBridge bridge;
+  private final MaintenanceController maintenance;
   private ProtocolType activeType = ProtocolType.STRICT_2PL;
+
+  public ConcurrencyManagerImpl(
+      TransactionRegistry registry,
+      ConcurrencyProtocol protocol,
+      TransactionRecoveryBridge bridge,
+      MaintenanceController maintenance) {
+    this.registry = registry;
+    this.protocol = protocol;
+    this.bridge = bridge;
+    this.maintenance = maintenance;
+  }
 
   @Override
   public AccessDecision requestAccess(AccessRequest request) {
-    return AccessDecision.granted();
+    return protocol.request(request);
   }
 
   @Override
   public AccessDecision awaitAccess(WaitToken ticket) {
-    return AccessDecision.granted();
+    return protocol.awaitAccess(ticket);
   }
 
   @Override
@@ -96,5 +109,7 @@ public class ConcurrencyManagerImpl
   }
 
   @Override
-  public void initializeRecoveredState(RecoveryHighWater highWater) {}
+  public void initializeRecoveredState(RecoveryHighWater highWater) {
+    registry.restoreHighWater(highWater);
+  }
 }

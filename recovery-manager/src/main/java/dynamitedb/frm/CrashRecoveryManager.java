@@ -1,11 +1,11 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.CrashRecovery;
-import dynamitedb.contracts.GenerationManifestStore;
-import dynamitedb.contracts.LogSequenceNumber;
-import dynamitedb.contracts.RecoveryPageStore;
-import dynamitedb.contracts.RecoveryResult;
-import dynamitedb.contracts.StorageGenerationAdmin;
+import dynamitedb.contracts.api.CrashRecovery;
+import dynamitedb.contracts.api.GenerationManifestStore;
+import dynamitedb.contracts.api.RecoveryPageStore;
+import dynamitedb.contracts.api.StorageGenerationAdmin;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.RecoveryResult;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Objects;
 

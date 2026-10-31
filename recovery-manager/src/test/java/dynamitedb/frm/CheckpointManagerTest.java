@@ -3,9 +3,9 @@ package dynamitedb.frm;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import dynamitedb.contracts.CheckpointResult;
-import dynamitedb.contracts.CheckpointService;
-import dynamitedb.contracts.LogSequenceNumber;
+import dynamitedb.contracts.api.CheckpointService;
+import dynamitedb.contracts.recovery.CheckpointResult;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
 import dynamitedb.frm.mock.MockRecoveryEnvironment;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;

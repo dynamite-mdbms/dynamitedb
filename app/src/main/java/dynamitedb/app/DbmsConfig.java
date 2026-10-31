@@ -1,17 +1,19 @@
 package dynamitedb.app;
 
-import java.net.InetSocketAddress;
+import dynamitedb.contracts.transaction.ProtocolType;
+import java.nio.file.Path;
 import java.util.Objects;
 
-public record DbmsConfig(String host, int port) {
+public record DbmsConfig(int port, Path dataDirectory, ProtocolType protocol) {
   public DbmsConfig {
-    Objects.requireNonNull(host, "host");
-    if (host.isBlank() || port < 0 || port > 65535) {
-      throw new IllegalArgumentException("Host and port must identify a valid TCP endpoint");
+    if (port < 0 || port > 65535) {
+      throw new IllegalArgumentException("Port must be between 0 and 65535");
     }
+    Objects.requireNonNull(dataDirectory, "dataDirectory");
+    Objects.requireNonNull(protocol, "protocol");
   }
 
-  public InetSocketAddress address() {
-    return new InetSocketAddress(host, port);
+  public static DbmsConfig defaults() {
+    return new DbmsConfig(7777, Path.of("data"), ProtocolType.STRICT_2PL);
   }
 }

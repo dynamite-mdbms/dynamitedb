@@ -6,13 +6,22 @@ import dynamitedb.contracts.transaction.TransactionId;
 import java.util.List;
 import java.util.Optional;
 
-public abstract class DeadlockMonitor {
-  private LockManager locks;
-  private TransactionManager victims;
+public class DeadlockMonitor {
+  private final LockManager locks;
+  private final TransactionManager victims;
 
-  public abstract Optional<TransactionCycle> findCycle();
+  public DeadlockMonitor(LockManager locks, TransactionManager victims) {
+    this.locks = locks;
+    this.victims = victims;
+  }
 
-  public abstract TransactionId selectVictim(List<TransactionId> cycle);
+  public Optional<TransactionCycle> findCycle() {
+    return Optional.empty();
+  }
 
-  public abstract void resolveDeadlock();
+  public TransactionId selectVictim(List<TransactionId> cycle) {
+    return null;
+  }
+
+  public void resolveDeadlock() {}
 }

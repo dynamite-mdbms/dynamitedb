@@ -16,8 +16,16 @@ import java.util.Optional;
 
 public class IndexScanOperator implements Operator {
 
+  private final TupleReader source;
+  private final String index;
+  private final IndexPredicate predicate;
+  private final String table;
   private final String alias;
   private final Schema schema;
+  private final TransactionId tx;
+  private final TransactionCoordinator coordinator;
+  private final Optional<Expression> residual;
+  private final ExpressionEvaluator evaluator;
   private List<OperatorRow> mockRows;
   private int currentIndex;
 
@@ -32,8 +40,16 @@ public class IndexScanOperator implements Operator {
       TransactionCoordinator coordinator,
       Optional<Expression> residual,
       ExpressionEvaluator evaluator) {
+    this.source = Objects.requireNonNull(source, "source");
+    this.index = Objects.requireNonNull(index, "index");
+    this.predicate = Objects.requireNonNull(predicate, "predicate");
+    this.table = Objects.requireNonNull(table, "table");
     this.alias = Objects.requireNonNull(alias, "alias");
-    this.schema = tableSchema;
+    this.schema = Objects.requireNonNull(tableSchema, "tableSchema");
+    this.tx = Objects.requireNonNull(tx, "tx");
+    this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
+    this.residual = Objects.requireNonNull(residual, "residual");
+    this.evaluator = Objects.requireNonNull(evaluator, "evaluator");
     this.mockRows = List.of();
     this.currentIndex = 0;
   }

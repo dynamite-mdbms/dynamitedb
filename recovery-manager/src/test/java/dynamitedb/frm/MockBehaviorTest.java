@@ -7,19 +7,28 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dynamitedb.contracts.CheckpointResult;
-import dynamitedb.contracts.DbmsException;
-import dynamitedb.contracts.ErrorCode;
-import dynamitedb.contracts.GenerationManifest;
-import dynamitedb.contracts.ImmutableBytes;
-import dynamitedb.contracts.LogFilter;
-import dynamitedb.contracts.LogSequenceNumber;
-import dynamitedb.contracts.LogView;
-import dynamitedb.contracts.RecordImage;
-import dynamitedb.contracts.RecoveryStatus;
-import dynamitedb.contracts.RecoveryTarget;
-import dynamitedb.contracts.TestReport;
-import dynamitedb.contracts.TestResult;
+import dynamitedb.contracts.api.CheckpointService;
+import dynamitedb.contracts.api.HistoricalRecoveryStorage;
+import dynamitedb.contracts.api.RecoveryPageStore;
+import dynamitedb.contracts.api.TransactionWal;
+import dynamitedb.contracts.api.WalDurability;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.ChangeRecord;
+import dynamitedb.contracts.recovery.CheckpointResult;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogFilter;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogView;
+import dynamitedb.contracts.recovery.RecoveryBoundary;
+import dynamitedb.contracts.recovery.RecoveryMutation;
+import dynamitedb.contracts.recovery.RecoveryStage;
+import dynamitedb.contracts.recovery.RecoveryStatus;
+import dynamitedb.contracts.recovery.RecoveryTarget;
+import dynamitedb.contracts.storage.ImmutableBytes;
+import dynamitedb.contracts.storage.RecordImage;
+import dynamitedb.contracts.testing.TestReport;
+import dynamitedb.contracts.testing.TestResult;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import dynamitedb.frm.mock.MockRecoveryEnvironment;
 import java.io.File;
@@ -238,9 +247,33 @@ class MockBehaviorTest {
         LogSequenceNumber.class, CheckpointResult.class.getRecordComponents()[0].getType());
     assertEquals(
         LogSequenceNumber.class, GenerationManifest.class.getRecordComponents()[2].getType());
+    assertEquals(
+        LogSequenceNumber.class, RecoveryBoundary.class.getRecordComponents()[0].getType());
+    assertEquals(
+        CheckpointResult.class, CheckpointService.class.getMethod("checkpoint").getReturnType());
+    assertEquals(
+        LogSequenceNumber.class,
+        TransactionWal.class.getMethod("appendChange", ChangeRecord.class).getReturnType());
+    assertEquals(
+        void.class,
+        WalDurability.class.getMethod("ensureDurable", LogSequenceNumber.class).getReturnType());
+    assertEquals(
+        void.class,
+        RecoveryPageStore.class
+            .getMethod("applyRecovery", RecoveryMutation.class, LogSequenceNumber.class)
+            .getReturnType());
+    assertEquals(
+        void.class,
+        HistoricalRecoveryStorage.class
+            .getMethod(
+                "replayInStage",
+                RecoveryStage.class,
+                RecoveryMutation.class,
+                LogSequenceNumber.class)
+            .getReturnType());
     assertThrows(
         ClassNotFoundException.class,
-        () -> Class.forName("dynamitedb.contracts.recovery.LogSequenceNumber"));
+        () -> Class.forName("dynamitedb.contracts.LogSequenceNumber"));
   }
 
   @Test
