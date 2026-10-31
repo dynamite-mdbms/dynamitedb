@@ -2,6 +2,5 @@ package dynamitedb.contracts.storage;
 
 import java.util.List;
 
-// draf dari QP biar bisa compile, nanti ganti punya SM
-// TODO: RecordId belum, nunggu keputusan dibawa lewat Row atau RowCursor
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public record Row(List<Value> values) {}

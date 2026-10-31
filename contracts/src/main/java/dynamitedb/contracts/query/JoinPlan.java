@@ -1,5 +1,7 @@
 package dynamitedb.contracts.query;
 
-// draf dari QP biar bisa compile, nanti ganti punya QO
-public record JoinPlan(PlanNode left, PlanNode right, JoinType type, Expression condition)
+import java.util.Optional;
+
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
+public record JoinPlan(PlanNode left, PlanNode right, JoinKind kind, Optional<Expression> condition)
     implements PlanNode {}

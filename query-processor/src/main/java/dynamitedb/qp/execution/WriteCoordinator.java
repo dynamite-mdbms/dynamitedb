@@ -1,9 +1,9 @@
-package dynamitedb.qp.write;
+package dynamitedb.qp.execution;
 
+import dynamitedb.contracts.api.ChangeLogger;
+import dynamitedb.contracts.api.WriteStore;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
 import dynamitedb.contracts.storage.PreparedWrite;
-import dynamitedb.contracts.storage.WriteStore;
-import dynamitedb.contracts.transaction.ChangeLogger;
 
 /** Mencatat perubahan ke WAL lewat CCM dulu, baru menerapkannya di SM. */
 public class WriteCoordinator {

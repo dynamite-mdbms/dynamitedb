@@ -1,8 +1,10 @@
-package dynamitedb.qp.transaction;
+package dynamitedb.qp.execution;
 
 import dynamitedb.contracts.query.QueryResult;
 import dynamitedb.contracts.query.TransactionCommand;
+import dynamitedb.contracts.storage.Schema;
 import dynamitedb.qp.session.SessionContext;
+import dynamitedb.qp.transaction.TransactionCoordinator;
 import java.util.List;
 
 /** Menjalankan perintah BEGIN, COMMIT, dan ABORT dari klien (QP-12). */
@@ -20,6 +22,6 @@ public class TransactionCommandExecutor {
       case COMMIT -> coordinator.commit(session);
       case ABORT -> coordinator.abort(session);
     }
-    return new QueryResult(List.of(), List.of(), 0, cmd.name());
+    return new QueryResult(new Schema(List.of()), List.of(), 0, cmd.name());
   }
 }

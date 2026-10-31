@@ -2,5 +2,5 @@ package dynamitedb.contracts.storage;
 
 import java.util.List;
 
-// draf dari QP biar bisa compile, nanti ganti punya SM
-public record Schema(String table, List<Column> columns) {}
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
+public record Schema(List<Column> columns) {}

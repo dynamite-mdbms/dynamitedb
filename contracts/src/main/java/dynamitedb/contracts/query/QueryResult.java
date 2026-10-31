@@ -1,8 +1,8 @@
 package dynamitedb.contracts.query;
 
-import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
 import java.util.List;
 
-// draf dari QP biar bisa compile, nanti ganti punya QP1
-public record QueryResult(List<Column> columns, List<Row> rows, int affectedRows, String message) {}
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
+public record QueryResult(Schema schema, List<Row> rows, long affectedRows, String message) {}

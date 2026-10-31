@@ -1,13 +1,13 @@
 package dynamitedb.qp.transaction;
 
+import dynamitedb.contracts.api.AccessController;
+import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.api.TransactionManager;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
-import dynamitedb.contracts.storage.CatalogAccess;
-import dynamitedb.contracts.transaction.AccessController;
 import dynamitedb.contracts.transaction.AccessMode;
 import dynamitedb.contracts.transaction.AccessRequest;
 import dynamitedb.contracts.transaction.TransactionId;
-import dynamitedb.contracts.transaction.TransactionManager;
 import dynamitedb.qp.session.SessionContext;
 import java.util.Optional;
 

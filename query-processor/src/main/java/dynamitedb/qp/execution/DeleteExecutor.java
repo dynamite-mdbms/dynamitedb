@@ -1,4 +1,4 @@
-package dynamitedb.qp.write;
+package dynamitedb.qp.execution;
 
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.transaction.TransactionId;

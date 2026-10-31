@@ -1,13 +1,12 @@
-package dynamitedb.qp.write;
+package dynamitedb.qp.execution;
 
+import dynamitedb.contracts.api.IndexAdmin;
+import dynamitedb.contracts.api.WriteStore;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.UpdatePlan;
-import dynamitedb.contracts.storage.IndexAdmin;
-import dynamitedb.contracts.storage.WriteStore;
 import dynamitedb.contracts.transaction.TransactionId;
-import dynamitedb.qp.execution.PlanTranslator;
 import dynamitedb.qp.expression.ExpressionEvaluator;
 import dynamitedb.qp.transaction.TransactionCoordinator;
 
@@ -53,7 +52,8 @@ public class WriteExecutor {
     return delete.execute(plan, tx);
   }
 
-  // tx selalu transaksi implisit; CREATE INDEX di dalam BEGIN sudah ditolak ExecutionEngine
+  // tx dari transaksi implisit QueryProcessorImpl; CREATE INDEX di dalam BEGIN ditolak
+  // ExecutionEngine
   // TODO: authorizeTable(WRITE) -> indexAdmin.createIndex
   public void createIndex(CreateIndexPlan plan, TransactionId tx) {}
 }

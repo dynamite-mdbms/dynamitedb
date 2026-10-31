@@ -1,11 +1,13 @@
 package dynamitedb.contracts.query;
 
-// draf dari QP biar bisa compile, nanti ganti punya QO
-// TODO: varian Project, Sort, IndexScan nunggu QO
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public sealed interface PlanNode
-    permits ScanPlan,
+    permits TableScanPlan,
+        IndexScanPlan,
         FilterPlan,
+        ProjectPlan,
         JoinPlan,
+        SortPlan,
         InsertPlan,
         UpdatePlan,
         DeletePlan,
