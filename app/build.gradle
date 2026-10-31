@@ -1,3 +1,9 @@
+apply plugin: 'application'
+
+application {
+    mainClass = 'dynamitedb.app.Main'
+}
+
 dependencies {
     implementation project(':contracts')
     implementation project(':query-processor')
@@ -5,4 +11,8 @@ dependencies {
     implementation project(':storage-manager')
     implementation project(':concurrency-manager')
     implementation project(':recovery-manager')
+}
+
+tasks.named('run') {
+    standardInput = System.in
 }
