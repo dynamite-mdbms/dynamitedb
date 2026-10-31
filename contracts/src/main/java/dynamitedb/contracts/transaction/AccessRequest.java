@@ -1,4 +1,11 @@
 package dynamitedb.contracts.transaction;
 
-// draf dari QP biar bisa compile, nanti ganti punya CCM
-public record AccessRequest(TransactionId tx, ResourceId resource, AccessMode mode) {}
+import java.util.Objects;
+
+public record AccessRequest(TransactionId tx, ResourceId resource, AccessMode mode) {
+  public AccessRequest {
+    Objects.requireNonNull(tx, "tx");
+    Objects.requireNonNull(resource, "resource");
+    Objects.requireNonNull(mode, "mode");
+  }
+}
