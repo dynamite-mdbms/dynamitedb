@@ -1,18 +1,13 @@
 package dynamitedb.sm.catalog;
 
-import dynamitedb.sm.draft.CatalogAccess;
-import dynamitedb.sm.draft.IndexMetadata;
-import dynamitedb.sm.draft.Schema;
-import dynamitedb.sm.draft.TableStatistics;
+import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.storage.IndexMetadata;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableStatistics;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * SM4 provider of the optimizer's read-only metadata port.
- *
- * <p>The port is temporarily local because the shared contracts module is empty. Replace draft
- * imports with the agreed shared contracts when available. All reads use one catalog instance.
- */
+/** Implementasi CatalogAccess milik QO di atas CatalogManager (SM-08, SM-09). */
 public final class StorageCatalogAdapter implements CatalogAccess {
   private final CatalogManager catalog;
 
