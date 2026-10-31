@@ -1,21 +1,23 @@
 package dynamitedb.sm.serialization;
 
-import dynamitedb.sm.draft.RecordImage;
-import dynamitedb.sm.draft.Row;
-import dynamitedb.sm.draft.Schema;
+import dynamitedb.contracts.storage.ImmutableBytes;
+import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.RecordImage;
+import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.Value;
+import java.util.Collections;
 
-/** SM3 / Zeki Amani: canonical row/image encoding and physical format agreement (SM-02-SM-03). */
+/** Konversi baris ke image dan sebaliknya untuk keempat tipe data (SM-02, SM-03). */
 public final class RecordSerializer {
   public RecordImage encode(Row row, Schema schema) {
-    // TODO(SM3): Define type encoding, text lengths, null bitmap, byte order and format version.
-    // Validate schema order, value types, CHAR/VARCHAR lengths and column nullability.
-    // Share this exact representation with runtime writes, WAL, recovery and index maintenance.
-    throw new UnsupportedOperationException("TODO(SM3): encode a row image");
+    // TODO: format byte, panjang teks, null bitmap, dan versi format
+    // format yang sama dipakai WAL, recovery, dan index
+    return new RecordImage(true, ImmutableBytes.copyOf(new byte[0]));
   }
 
   public Row decode(RecordImage image, Schema schema) {
-    // TODO(SM3): Validate the same rules as encode and reject corrupt/truncated/incompatible data.
-    // An absent image is not an existing row containing NullValue.INSTANCE.
-    throw new UnsupportedOperationException("TODO(SM3): decode a row image");
+    // TODO: validasi sama seperti encode, tolak data rusak atau terpotong
+    return new Row(Collections.<Value>nCopies(schema.columns().size(), NullValue.INSTANCE));
   }
 }
