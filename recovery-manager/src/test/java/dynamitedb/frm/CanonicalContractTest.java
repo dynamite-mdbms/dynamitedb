@@ -48,7 +48,7 @@ class CanonicalContractTest {
                         }
                         case "method" -> {
                           var params =
-                              parts[4].isEmpty()
+                              parts.length < 5 || parts[4].isEmpty()
                                   ? List.<String>of()
                                   : Arrays.asList(parts[4].split("\\|"));
                           Method method =

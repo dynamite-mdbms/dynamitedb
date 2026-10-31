@@ -1,5 +1,6 @@
-package dynamitedb.contracts;
+package dynamitedb.contracts.recovery;
 
+import dynamitedb.contracts.transaction.TransactionId;
 import java.util.Objects;
 import java.util.Optional;
 

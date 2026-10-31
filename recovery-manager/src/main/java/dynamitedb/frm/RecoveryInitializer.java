@@ -1,9 +1,9 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.CrashRecovery;
-import dynamitedb.contracts.GenerationManifestStore;
-import dynamitedb.contracts.RecoveryResult;
-import dynamitedb.contracts.SnapshotMetadata;
+import dynamitedb.contracts.api.CrashRecovery;
+import dynamitedb.contracts.api.GenerationManifestStore;
+import dynamitedb.contracts.recovery.RecoveryResult;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Objects;
 

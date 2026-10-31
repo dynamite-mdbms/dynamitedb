@@ -4,33 +4,33 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dynamitedb.contracts.ChangeRecord;
-import dynamitedb.contracts.CheckpointService;
-import dynamitedb.contracts.CrashRecovery;
-import dynamitedb.contracts.GenerationManifest;
-import dynamitedb.contracts.GenerationManifestStore;
-import dynamitedb.contracts.HistoricalRecoveryService;
-import dynamitedb.contracts.HistoricalRecoveryStorage;
-import dynamitedb.contracts.ImmutableBytes;
-import dynamitedb.contracts.LogFilter;
-import dynamitedb.contracts.LogInspection;
-import dynamitedb.contracts.LogSequenceNumber;
-import dynamitedb.contracts.MaintenanceGuard;
-import dynamitedb.contracts.RecordId;
-import dynamitedb.contracts.RecoveryBoundary;
-import dynamitedb.contracts.RecoveryCoordinator;
-import dynamitedb.contracts.RecoveryHighWater;
-import dynamitedb.contracts.RecoveryMutation;
-import dynamitedb.contracts.RecoveryPageStore;
-import dynamitedb.contracts.RecoveryStage;
-import dynamitedb.contracts.RecoveryTarget;
-import dynamitedb.contracts.RollbackService;
-import dynamitedb.contracts.SealedGeneration;
-import dynamitedb.contracts.SnapshotMetadata;
-import dynamitedb.contracts.StorageGenerationAdmin;
-import dynamitedb.contracts.TransactionId;
-import dynamitedb.contracts.TransactionWal;
-import dynamitedb.contracts.WalDurability;
+import dynamitedb.contracts.api.CheckpointService;
+import dynamitedb.contracts.api.CrashRecovery;
+import dynamitedb.contracts.api.GenerationManifestStore;
+import dynamitedb.contracts.api.HistoricalRecoveryService;
+import dynamitedb.contracts.api.HistoricalRecoveryStorage;
+import dynamitedb.contracts.api.LogInspection;
+import dynamitedb.contracts.api.MaintenanceGuard;
+import dynamitedb.contracts.api.RecoveryCoordinator;
+import dynamitedb.contracts.api.RecoveryPageStore;
+import dynamitedb.contracts.api.RollbackService;
+import dynamitedb.contracts.api.StorageGenerationAdmin;
+import dynamitedb.contracts.api.TransactionWal;
+import dynamitedb.contracts.api.WalDurability;
+import dynamitedb.contracts.recovery.ChangeRecord;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogFilter;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.RecoveryBoundary;
+import dynamitedb.contracts.recovery.RecoveryHighWater;
+import dynamitedb.contracts.recovery.RecoveryMutation;
+import dynamitedb.contracts.recovery.RecoveryStage;
+import dynamitedb.contracts.recovery.RecoveryTarget;
+import dynamitedb.contracts.recovery.SealedGeneration;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
+import dynamitedb.contracts.storage.ImmutableBytes;
+import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import dynamitedb.frm.mock.MockRecoveryEnvironment;
 import java.io.BufferedReader;
@@ -84,7 +84,7 @@ class MockMethodCoverageTest {
                       var provider = providers(env).get(type);
                       assertNotNull(provider, type.getName());
                       var params =
-                          parts[4].isEmpty()
+                          parts.length < 5 || parts[4].isEmpty()
                               ? List.<String>of()
                               : Arrays.asList(parts[4].split("\\|"));
                       var method =

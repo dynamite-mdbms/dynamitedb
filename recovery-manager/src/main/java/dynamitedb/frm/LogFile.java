@@ -1,6 +1,6 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.ImmutableBytes;
+import dynamitedb.contracts.storage.ImmutableBytes;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Iterator;
 import java.util.List;

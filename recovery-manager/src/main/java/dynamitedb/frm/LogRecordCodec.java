@@ -1,8 +1,8 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.DbmsException;
-import dynamitedb.contracts.ErrorCode;
-import dynamitedb.contracts.ImmutableBytes;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.storage.ImmutableBytes;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Objects;
 

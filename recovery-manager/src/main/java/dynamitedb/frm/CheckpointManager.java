@@ -1,9 +1,9 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.CheckpointResult;
-import dynamitedb.contracts.CheckpointService;
-import dynamitedb.contracts.RecoveryCoordinator;
-import dynamitedb.contracts.RecoveryPageStore;
+import dynamitedb.contracts.api.CheckpointService;
+import dynamitedb.contracts.api.RecoveryCoordinator;
+import dynamitedb.contracts.api.RecoveryPageStore;
+import dynamitedb.contracts.recovery.CheckpointResult;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.time.Duration;
 import java.util.Objects;

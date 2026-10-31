@@ -7,16 +7,27 @@ import dynamitedb.contracts.storage.PreparedWrite;
 import dynamitedb.contracts.transaction.TransactionId;
 
 public class TransactionRecoveryBridge {
-  private TransactionWal wal;
-  private RollbackService rollback;
+  private final TransactionWal wal;
+  private final RollbackService rollback;
 
-  public void begin(TransactionId tx, long timestamp) {}
+  public TransactionRecoveryBridge(TransactionWal wal, RollbackService rollback) {
+    this.wal = wal;
+    this.rollback = rollback;
+  }
+
+  public void begin(TransactionId tx, long timestamp) {
+    wal.begin(tx, timestamp);
+  }
 
   public LogSequenceNumber recordChange(TransactionId tx, PreparedWrite write) {
     return new LogSequenceNumber(0);
   }
 
-  public void commit(TransactionId tx) {}
+  public void commit(TransactionId tx) {
+    wal.commitDurably(tx);
+  }
 
-  public void rollback(TransactionId tx) {}
+  public void rollback(TransactionId tx) {
+    rollback.rollbackCompletely(tx);
+  }
 }
