@@ -1,5 +1,6 @@
 package dynamitedb.contracts;
 
+import java.util.Arrays;
 import java.util.Objects;
 
 public final class ImmutableBytes {
@@ -15,5 +16,15 @@ public final class ImmutableBytes {
 
   public byte[] copy() {
     return bytes.clone();
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof ImmutableBytes value && Arrays.equals(bytes, value.bytes);
+  }
+
+  @Override
+  public int hashCode() {
+    return Arrays.hashCode(bytes);
   }
 }
