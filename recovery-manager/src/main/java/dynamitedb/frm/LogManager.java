@@ -1,12 +1,12 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.GenerationManifest;
-import dynamitedb.contracts.LogFilter;
-import dynamitedb.contracts.LogSequenceNumber;
-import dynamitedb.contracts.LogView;
-import dynamitedb.contracts.RecoveryHighWater;
-import dynamitedb.contracts.SealedGeneration;
-import dynamitedb.contracts.TransactionId;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogFilter;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogView;
+import dynamitedb.contracts.recovery.RecoveryHighWater;
+import dynamitedb.contracts.recovery.SealedGeneration;
+import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.nio.file.Path;
 import java.util.Iterator;

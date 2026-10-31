@@ -1,11 +1,13 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.GenerationManifest;
-import dynamitedb.contracts.RecoveryHighWater;
-import dynamitedb.contracts.RecoveryTarget;
-import dynamitedb.contracts.SealedGeneration;
-import dynamitedb.contracts.SnapshotMetadata;
+import dynamitedb.contracts.api.GenerationManifestStore;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.RecoveryHighWater;
+import dynamitedb.contracts.recovery.RecoveryTarget;
+import dynamitedb.contracts.recovery.SealedGeneration;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.frm.mock.MockRecoveryContext;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -14,6 +16,9 @@ public final class HistoryCatalog {
   private final SnapshotMetadata baseSnapshot;
   private final GenerationManifest manifest;
   private final MockRecoveryContext context;
+  private final GenerationManifestStore manifestStore;
+  private final LogManager log;
+  private final List<SnapshotMetadata> snapshots;
 
   public HistoryCatalog(SnapshotMetadata baseSnapshot, GenerationManifest manifest) {
     this(baseSnapshot, manifest, new MockRecoveryContext());
@@ -25,9 +30,41 @@ public final class HistoryCatalog {
 
   public HistoryCatalog(
       SnapshotMetadata baseSnapshot, GenerationManifest manifest, MockRecoveryContext context) {
+    this(baseSnapshot, manifest, context, null, null, List.of(baseSnapshot));
+  }
+
+  public HistoryCatalog(
+      GenerationManifestStore manifestStore, LogManager log, List<SnapshotMetadata> snapshots) {
+    this(manifestStore, log, snapshots, new MockRecoveryContext());
+  }
+
+  public HistoryCatalog(
+      GenerationManifestStore manifestStore,
+      LogManager log,
+      List<SnapshotMetadata> snapshots,
+      MockRecoveryContext context) {
+    this(
+        context.snapshot(),
+        context.manifest(),
+        context,
+        Objects.requireNonNull(manifestStore, "manifestStore"),
+        Objects.requireNonNull(log, "log"),
+        snapshots);
+  }
+
+  private HistoryCatalog(
+      SnapshotMetadata baseSnapshot,
+      GenerationManifest manifest,
+      MockRecoveryContext context,
+      GenerationManifestStore manifestStore,
+      LogManager log,
+      List<SnapshotMetadata> snapshots) {
     this.baseSnapshot = Objects.requireNonNull(baseSnapshot, "baseSnapshot");
     this.manifest = Objects.requireNonNull(manifest, "manifest");
     this.context = Objects.requireNonNull(context, "context");
+    this.manifestStore = manifestStore;
+    this.log = log;
+    this.snapshots = List.copyOf(Objects.requireNonNull(snapshots, "snapshots"));
   }
 
   public void validateCoverage(RecoveryTarget target) {

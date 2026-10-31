@@ -1,7 +1,7 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.GenerationManifest;
-import dynamitedb.contracts.GenerationManifestStore;
+import dynamitedb.contracts.api.GenerationManifestStore;
+import dynamitedb.contracts.recovery.GenerationManifest;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.nio.file.Path;
 import java.util.Objects;

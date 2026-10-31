@@ -7,17 +7,30 @@ import dynamitedb.contracts.transaction.AccessRequest;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.WaitToken;
 
-public abstract class TimestampOrderingProtocol implements ConcurrencyProtocol {
-  private TimestampRegistry timestamps;
-  private StrictWriteIntentTable intents;
-  private TransactionRegistry registry;
+public class TimestampOrderingProtocol implements ConcurrencyProtocol {
+  private final TimestampRegistry timestamps;
+  private final StrictWriteIntentTable intents;
+  private final TransactionRegistry registry;
+
+  public TimestampOrderingProtocol(
+      TimestampRegistry timestamps, StrictWriteIntentTable intents, TransactionRegistry registry) {
+    this.timestamps = timestamps;
+    this.intents = intents;
+    this.registry = registry;
+  }
 
   @Override
-  public abstract AccessDecision request(AccessRequest request);
+  public AccessDecision request(AccessRequest request) {
+    return AccessDecision.granted();
+  }
 
   @Override
-  public abstract AccessDecision awaitAccess(WaitToken ticket);
+  public AccessDecision awaitAccess(WaitToken ticket) {
+    return AccessDecision.granted();
+  }
 
   @Override
-  public abstract void onFinish(TransactionId tx);
+  public void onFinish(TransactionId tx) {
+    intents.release(tx);
+  }
 }

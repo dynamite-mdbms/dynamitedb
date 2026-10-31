@@ -16,7 +16,10 @@ public class ScanOperator implements Operator {
 
   private final String table;
   private final String alias;
+  private final TupleReader source;
   private final Schema schema;
+  private final TransactionId tx;
+  private final TransactionCoordinator coordinator;
   private List<OperatorRow> mockRows;
   private int currentIndex;
 
@@ -27,9 +30,12 @@ public class ScanOperator implements Operator {
       Schema tableSchema,
       TransactionId tx,
       TransactionCoordinator coordinator) {
+    this.source = Objects.requireNonNull(source, "source");
     this.table = Objects.requireNonNull(table, "table");
     this.alias = Objects.requireNonNull(alias, "alias");
-    this.schema = tableSchema;
+    this.schema = Objects.requireNonNull(tableSchema, "tableSchema");
+    this.tx = Objects.requireNonNull(tx, "tx");
+    this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
 
     this.mockRows = List.of();
     this.currentIndex = 0;

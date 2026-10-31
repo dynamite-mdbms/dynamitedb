@@ -1,4 +1,4 @@
-package dynamitedb.contracts;
+package dynamitedb.contracts.recovery;
 
 import java.util.List;
 
