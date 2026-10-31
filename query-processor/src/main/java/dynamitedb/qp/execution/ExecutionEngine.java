@@ -2,23 +2,30 @@ package dynamitedb.qp.execution;
 
 import dynamitedb.contracts.query.PreparedQuery;
 import dynamitedb.contracts.query.QueryResult;
-import dynamitedb.contracts.transaction.TransactionId;
+import dynamitedb.qp.session.SessionContext;
 import java.util.List;
 
 /** Arahin query: baca ke ReadExecutor, DML/DDL ke WriteExecutor, BEGIN/COMMIT/ABORT ke QP5. */
+// udah sesuai CD final
 public class ExecutionEngine {
 
-  // di CD final engine juga pegang ReadExecutor (QP3), WriteExecutor sama
-  // TransactionCommandExecutor (QP5), ditambahin kalau kelasnya udah ada
   private final PlanTranslator translator;
+  private final ReadExecutor reader;
+  private final WriteExecutor writer;
+  private final TransactionCommandExecutor transactionExecutor;
 
-  public ExecutionEngine(PlanTranslator translator) {
+  public ExecutionEngine(
+      PlanTranslator translator,
+      ReadExecutor reader,
+      WriteExecutor writer,
+      TransactionCommandExecutor transactionExecutor) {
     this.translator = translator;
+    this.reader = reader;
+    this.writer = writer;
+    this.transactionExecutor = transactionExecutor;
   }
 
-  // CD final: execute(plan, session: SessionContext), sementara pake TransactionId
-  // soalnya SessionContext (QP1) belum ada
-  public QueryResult execute(PreparedQuery plan, TransactionId tx) {
+  public QueryResult execute(PreparedQuery plan, SessionContext session) {
     return new QueryResult(plan.outputSchema(), List.of(), 0, "");
   }
 }
