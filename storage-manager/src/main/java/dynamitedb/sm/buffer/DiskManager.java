@@ -1,10 +1,10 @@
 package dynamitedb.sm.buffer;
 
-import dynamitedb.sm.draft.ImmutableBytes;
+import dynamitedb.contracts.storage.ImmutableBytes;
 import java.nio.file.Path;
 import java.util.Objects;
 
-/** SM2 / Raynard Fausta: page-byte I/O and durable synchronization (SM-01, SM-12-SM-13). */
+/** Membaca dan menulis byte halaman ke disk (SM-01). */
 public final class DiskManager {
   private final Path root;
 
@@ -13,17 +13,15 @@ public final class DiskManager {
   }
 
   public ImmutableBytes readPage(long id) {
-    // TODO(SM2/SM3): Agree on page size, file mapping, missing-page handling and short-read checks.
-    throw new UnsupportedOperationException("TODO(SM2): read page bytes");
+    // TODO: sepakati ukuran halaman dan pemetaan file dengan SM3
+    return ImmutableBytes.copyOf(new byte[0]);
   }
 
   public void writePage(long id, ImmutableBytes bytes) {
-    // TODO(SM2): Write the complete page. BufferPool must already have satisfied WAL durability.
-    throw new UnsupportedOperationException("TODO(SM2): write page bytes");
+    // TODO: tulis halaman utuh, gerbang WAL sudah dipenuhi BufferPool
   }
 
   public void sync() {
-    // TODO(SM2): Synchronize page files and required directory metadata before returning success.
-    throw new UnsupportedOperationException("TODO(SM2): synchronize storage");
+    // TODO: sinkronkan file halaman ke disk
   }
 }

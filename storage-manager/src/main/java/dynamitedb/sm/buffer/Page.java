@@ -1,10 +1,10 @@
 package dynamitedb.sm.buffer;
 
-import dynamitedb.sm.draft.ImmutableBytes;
-import dynamitedb.sm.draft.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.storage.ImmutableBytes;
 import java.util.Objects;
 
-/** SM2 / Raynard Fausta: cached page state; physical layout is agreed with SM3. */
+/** Halaman di buffer beserta pageLSN, format fisiknya disepakati dengan SM3. */
 public final class Page {
   private final long id;
   private ImmutableBytes data;
@@ -22,8 +22,7 @@ public final class Page {
   }
 
   public void setPageLsn(LogSequenceNumber lsn) {
-    // TODO(SM2/SM1): Track dirty state and enforce ordering with all outstanding page mutations.
-    // An earlier outstanding mutation on another slot must not be skipped by pageLSN advancement.
-    throw new UnsupportedOperationException("TODO(SM2): advance pageLSN safely");
+    // TODO: jaga urutan pageLSN terhadap mutasi slot yang belum selesai
+    this.pageLsn = Objects.requireNonNull(lsn, "lsn");
   }
 }

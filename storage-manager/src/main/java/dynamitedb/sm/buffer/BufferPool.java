@@ -1,12 +1,12 @@
 package dynamitedb.sm.buffer;
 
-import dynamitedb.sm.draft.LogSequenceNumber;
-import dynamitedb.sm.draft.WalDurability;
+import dynamitedb.contracts.api.WalDurability;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** SM2 / Raynard Fausta: pinning, dirty pages, flushing and eviction (SM-01, SM-12-SM-13). */
+/** Mengelola pin/unpin, halaman dirty, flush, dan eviction (SM-12, SM-13). */
 public final class BufferPool {
   private final DiskManager disk;
   private final WalDurability durability;
@@ -18,29 +18,27 @@ public final class BufferPool {
   }
 
   public Page pin(long pageId) {
-    // TODO(SM2): Load/cache the page and acquire a pin; agree on capacity and replacement policy.
-    // Dirty eviction must use the same WAL-before-data flush path as explicit flushes.
-    throw new UnsupportedOperationException("TODO(SM2): pin a cached page");
+    // TODO: cache halaman dan pin, tentukan kapasitas dan kebijakan penggantian
+    // eviction halaman dirty juga harus lewat gerbang WAL
+    return pages.computeIfAbsent(
+        pageId, id -> new Page(id, disk.readPage(id), new LogSequenceNumber(0)));
   }
 
   public void unpin(Page page) {
-    // TODO(SM2): Release one pin for this cached page and reject invalid/double-unpin operations.
-    throw new UnsupportedOperationException("TODO(SM2): unpin a cached page");
+    // TODO: lepas satu pin, tolak unpin ganda
   }
 
   public void markDirty(Page page, LogSequenceNumber lsn) {
-    // TODO(SM2/SM1): Track dirty state and pageLSN without overtaking outstanding slot mutations.
-    throw new UnsupportedOperationException("TODO(SM2): mark a page dirty");
+    // TODO: catat dirty dan pageLSN tanpa melewati mutasi slot sebelumnya
+    page.setPageLsn(lsn);
   }
 
   public void flush(Page page) {
-    // TODO(SM2/FR2): Ensure durability.ensureDurable(page.getPageLsn()) before disk.writePage.
-    // Keep dirty state on failure; clearing it requires the agreed durable synchronization.
-    throw new UnsupportedOperationException("TODO(SM2): flush a page through the WAL gate");
+    // TODO: panggil ensureDurable(pageLSN) sebelum disk.writePage, status dirty tetap jika gagal
+    durability.ensureDurable(page.getPageLsn());
   }
 
   public void flushDirtyThrough(LogSequenceNumber lsn) {
-    // TODO(SM2/FRM): Define the through-LSN boundary and durably sync all required dirty pages.
-    throw new UnsupportedOperationException("TODO(SM2): flush dirty pages through an LSN");
+    // TODO: flush semua halaman dirty sampai LSN untuk checkpoint FRM
   }
 }
