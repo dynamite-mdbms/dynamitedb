@@ -1,10 +1,10 @@
 package dynamitedb.sm.index;
 
-import dynamitedb.sm.draft.RecordId;
-import dynamitedb.sm.draft.Value;
+import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.storage.Value;
 import java.util.List;
 
-/** SM5 equality lookup and entry-maintenance strategy shared by HASH and B_PLUS_TREE. */
+/** Strategi index untuk pencarian kesamaan, dipakai HASH dan B_PLUS_TREE. */
 public interface EqualityIndex {
   List<RecordId> lookup(Value key);
 

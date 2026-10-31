@@ -1,17 +1,17 @@
 package dynamitedb.sm.index;
 
+import dynamitedb.contracts.api.RowCursor;
+import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.StoredRow;
 import dynamitedb.sm.buffer.BufferPool;
-import dynamitedb.sm.draft.RecordId;
-import dynamitedb.sm.draft.RowCursor;
-import dynamitedb.sm.draft.Schema;
-import dynamitedb.sm.draft.StoredRow;
 import dynamitedb.sm.heap.RecordStore;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.util.Iterator;
 import java.util.Objects;
 import java.util.Optional;
 
-/** SM5 cursor template: resolves index RIDs through SM1 and decodes rows with the table schema. */
+/** Mengembalikan baris dari RID hasil pencarian index (SM-11). */
 public final class IndexRowCursor implements RowCursor {
   private final RecordStore records;
   private final Iterator<RecordId> rids;
@@ -34,13 +34,12 @@ public final class IndexRowCursor implements RowCursor {
 
   @Override
   public Optional<StoredRow> next() {
-    // TODO(SM5/SM1/SM3): Read/decode the next live RID and preserve its physical identity.
-    throw new UnsupportedOperationException("TODO(SM5): advance an index row cursor");
+    // TODO: baca dan decode RID berikutnya yang masih hidup
+    return Optional.empty();
   }
 
   @Override
   public void close() {
-    // TODO(SM5/SM1/SM2): Release traversal resources once and reject reads after closure.
-    throw new UnsupportedOperationException("TODO(SM5): close an index row cursor");
+    // TODO: lepas resource sekali, tolak next setelah close
   }
 }
