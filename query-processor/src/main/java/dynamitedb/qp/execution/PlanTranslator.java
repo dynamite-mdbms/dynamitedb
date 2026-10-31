@@ -2,11 +2,13 @@ package dynamitedb.qp.execution;
 
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.api.TupleReader;
+import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.expression.ExpressionEvaluator;
 import dynamitedb.qp.operator.Operator;
 import dynamitedb.qp.transaction.TransactionCoordinator;
+import java.util.Optional;
 
 /** Ubah plan dari QO jadi pohon operator (QP-03). */
 // udah sesuai CD final
@@ -30,6 +32,18 @@ public class PlanTranslator {
 
   public Operator translate(PlanNode plan, TransactionId tx) {
     // TODO: mapping tiap PlanNode relasional ke operator QP3/QP4, sisanya ditolak
-    return null;
+    // sementara balikin operator kosong dulu biar ga null
+    return new Operator() {
+      @Override
+      public void open() {}
+
+      @Override
+      public Optional<OperatorRow> next() {
+        return Optional.empty();
+      }
+
+      @Override
+      public void close() {}
+    };
   }
 }
