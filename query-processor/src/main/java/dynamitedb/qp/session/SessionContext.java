@@ -13,6 +13,7 @@ public class SessionContext {
   private final SessionId id;
   private final String clientId;
   private volatile Optional<TransactionId> activeTx = Optional.empty();
+  private volatile boolean rollbackRequired;
   private volatile boolean closed;
 
   public SessionContext(SessionId id, String clientId) {
@@ -38,6 +39,24 @@ public class SessionContext {
   public void setActiveTx(Optional<TransactionId> activeTx) {
     requireOpen();
     this.activeTx = Objects.requireNonNull(activeTx, "activeTx");
+  }
+
+  public boolean rollbackRequired() {
+    return rollbackRequired;
+  }
+
+  public void markRollbackRequired() {
+    requireOpen();
+    rollbackRequired = true;
+  }
+
+  public void completeRollback() {
+    requireOpen();
+    if (activeTx.isPresent()) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "Rollback did not clear the active transaction");
+    }
+    rollbackRequired = false;
   }
 
   public void requireOpen() {
