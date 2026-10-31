@@ -1,5 +1,4 @@
 package dynamitedb.contracts.storage;
 
-// draf dari QP biar bisa compile, nanti ganti punya SM
-// TODO: NULL belum ada
-public record Value(Object value) {}
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
+public sealed interface Value permits IntValue, FloatValue, TextValue, BooleanValue, NullValue {}
