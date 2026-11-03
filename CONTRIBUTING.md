@@ -60,8 +60,9 @@ framework dependencies have been added.
 The hook rejects untracked source/build inputs and unstaged tracked changes
 before running tools. It never stashes or stages files for you. Local checks can
 be bypassed by Git options, so contributors must keep the hooks enabled and
-reviewers should run the local checks when reviewing. No GitHub Actions
-workflow or required CI status check runs these tools.
+reviewers should run the local checks when reviewing. A GitHub Actions workflow
+runs `./gradlew lint build` on pull requests to `main`, but the `main` ruleset
+does not currently require its status check.
 
 Maintainers can run `python scripts/test_hooks.py -v` to verify the hook behavior
 using disposable repositories and a stub Gradle launcher. Python 3.10+ is only
