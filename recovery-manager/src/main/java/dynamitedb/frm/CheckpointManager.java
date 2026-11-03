@@ -24,7 +24,7 @@ public final class CheckpointManager implements CheckpointService {
   }
 
   @SuppressWarnings("try") // The guard is held for its lifetime, not called inside the block.
-  public CheckpointResult checkpoint() {
+  public synchronized CheckpointResult checkpoint() {
     try (MaintenanceGuard ignored = coordinator.acquireMaintenance()) {
       LogSequenceNumber throughLsn = log.readHighWater().lsn();
       UUID checkpointId = UUID.randomUUID();
