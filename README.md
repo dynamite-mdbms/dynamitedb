@@ -109,7 +109,7 @@ or constructing a provider graph does not implement those behavioral contracts.
 Follow the [contribution guide](CONTRIBUTING.md) for the full branch-to-merge flow.
 Use `<type> (<component>): <description>` for commit subjects and PR titles, for
 example `feat (qp): add session lifecycle`. Fill every section of the PR template.
-Every PR requires five distinct approving leaders from the six-person leadership
+Every PR requires three distinct approving leaders from the six-person leadership
 team; an author cannot approve their own PR. Keep shared contract changes agreed
 with affected component owners and keep local runtime data in ignored `data/`.
 
@@ -122,3 +122,6 @@ Local supporting references: [draft architecture and contract process](docs/arch
 These architecture/contract documents and diagrams are intentionally uncommitted
 and will not appear in a fresh clone. The contribution guide and PR template are
 versioned with the repository.
+
+Initial ownership for every shared contract is listed in
+[contracts/OWNERSHIP.md](contracts/OWNERSHIP.md).
