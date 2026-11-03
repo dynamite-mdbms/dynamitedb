@@ -1,9 +1,5 @@
 package dynamitedb.qp;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.function.BiFunction;
-
 import dynamitedb.contracts.api.QueryOptimizer;
 import dynamitedb.contracts.api.QueryProcessor;
 import dynamitedb.contracts.error.DbmsException;
@@ -20,6 +16,9 @@ import dynamitedb.qp.execution.ExecutionEngine;
 import dynamitedb.qp.session.SessionContext;
 import dynamitedb.qp.session.SessionManager;
 import dynamitedb.qp.transaction.TransactionCoordinator;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.BiFunction;
 
 /** QP1 request boundary: prepare, execute, implicit transactions, and session cleanup. */
 public final class QueryProcessorImpl implements QueryProcessor {
