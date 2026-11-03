@@ -36,7 +36,6 @@ class CheckpointManagerTest {
     assertEquals(result.checkpointLsn(), markers.get(1).lsn);
     assertEquals(
         List.of(
-            "CheckpointManager.checkpoint",
             "RecoveryCoordinator.acquireMaintenance",
             "LogManager.readHighWater",
             "LogManager.append",
@@ -59,7 +58,6 @@ class CheckpointManagerTest {
     assertEquals(CheckpointEvent.BEGIN, environment.context().checkpointRecords().get(0).event);
     assertEquals(
         List.of(
-            "CheckpointManager.checkpoint",
             "RecoveryCoordinator.acquireMaintenance",
             "LogManager.readHighWater",
             "LogManager.append",
@@ -79,13 +77,24 @@ class CheckpointManagerTest {
     assertEquals(1, environment.context().checkpointRecords().size());
     assertEquals(
         List.of(
-            "CheckpointManager.checkpoint",
             "RecoveryCoordinator.acquireMaintenance",
             "LogManager.readHighWater",
             "LogManager.append",
             "LogManager.flush",
             "MaintenanceGuard.close"),
         environment.context().calls());
+  }
+
+  @Test
+  void checkpointDoesNotDependOnMockCheckpointHook() {
+    var environment = MockRecoveryEnvironment.create();
+    environment
+        .context()
+        .failOn(
+            "CheckpointManager.checkpoint",
+            new DbmsException(ErrorCode.RECOVERY_FAILURE, "mock-only hook failed"));
+
+    assertEquals(new LogSequenceNumber(3), environment.recovery().checkpoint().checkpointLsn());
   }
 
   @Test
