@@ -1,6 +1,11 @@
 package dynamitedb.contracts.transaction;
 
+import java.util.Objects;
 import java.util.UUID;
 
-// draf dari QP biar bisa compile, nanti ganti punya CCM
-public record WaitToken(TransactionId tx, UUID requestId) {}
+public record WaitToken(TransactionId tx, UUID requestId) {
+  public WaitToken {
+    Objects.requireNonNull(tx, "tx");
+    Objects.requireNonNull(requestId, "requestId");
+  }
+}
