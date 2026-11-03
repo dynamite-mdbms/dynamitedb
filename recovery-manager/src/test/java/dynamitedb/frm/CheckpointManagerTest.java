@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CheckpointService;
 import dynamitedb.contracts.api.MaintenanceGuard;
@@ -321,5 +322,121 @@ class CheckpointManagerTest {
           manager.startPeriodic(Duration.ofSeconds(1));
           manager.stopPeriodic();
         });
+  }
+
+  @Test
+  void periodicTickUsesManualCheckpointAndStopPreventsAnotherTick() throws Exception {
+    var environment = MockRecoveryEnvironment.create();
+    var firstTick = new CountDownLatch(1);
+    var secondTick = new CountDownLatch(1);
+    var ticks = new AtomicInteger();
+    var manager =
+        withPageHook(
+            environment,
+            () -> {
+              if (ticks.incrementAndGet() == 1) firstTick.countDown();
+              else secondTick.countDown();
+            });
+    try {
+      manager.startPeriodic(Duration.ofMillis(100));
+      assertTrue(firstTick.await(2, TimeUnit.SECONDS));
+    } finally {
+      manager.stopPeriodic();
+    }
+    assertFalse(secondTick.await(200, TimeUnit.MILLISECONDS));
+    assertEquals(CheckpointEvent.BEGIN, environment.context().checkpointRecords().getFirst().event);
+    assertTrue(environment.context().calls().contains("RecoveryCoordinator.acquireMaintenance"));
+  }
+
+  @Test
+  void periodicStartRejectsInvalidOrRepeatedStartAndStopIsIdempotent() {
+    var manager = MockRecoveryEnvironment.create().checkpoint();
+    assertThrows(IllegalArgumentException.class, () -> manager.startPeriodic(Duration.ZERO));
+    assertThrows(
+        IllegalArgumentException.class, () -> manager.startPeriodic(Duration.ofMillis(-1)));
+    assertThrows(
+        IllegalArgumentException.class, () -> manager.startPeriodic(Duration.ofDays(200_000)));
+
+    try {
+      manager.startPeriodic(Duration.ofHours(1));
+      assertThrows(IllegalStateException.class, () -> manager.startPeriodic(Duration.ofHours(1)));
+    } finally {
+      manager.stopPeriodic();
+      manager.stopPeriodic();
+    }
+  }
+
+  @Test
+  void failedPeriodicTickDoesNotPreventTheNextTick() throws Exception {
+    var environment = MockRecoveryEnvironment.create();
+    var secondTick = new CountDownLatch(1);
+    var ticks = new AtomicInteger();
+    var manager =
+        withPageHook(
+            environment,
+            () -> {
+              if (ticks.incrementAndGet() == 1) {
+                throw new DbmsException(ErrorCode.STORAGE_FAILURE, "first periodic flush failed");
+              }
+              secondTick.countDown();
+            });
+    try {
+      manager.startPeriodic(Duration.ofMillis(30));
+      assertTrue(secondTick.await(2, TimeUnit.SECONDS));
+    } finally {
+      manager.stopPeriodic();
+    }
+    assertEquals(2, ticks.get());
+    assertEquals(CheckpointEvent.BEGIN, environment.context().checkpointRecords().get(0).event);
+    assertEquals(CheckpointEvent.BEGIN, environment.context().checkpointRecords().get(1).event);
+  }
+
+  @Test
+  void periodicTickWaitsForConcurrentManualCheckpoint() throws Exception {
+    var environment = MockRecoveryEnvironment.create();
+    var manualAtPages = new CountDownLatch(1);
+    var releaseManual = new CountDownLatch(1);
+    var periodicAtPages = new CountDownLatch(1);
+    var ticks = new AtomicInteger();
+    var manager =
+        withPageHook(
+            environment,
+            () -> {
+              if (ticks.incrementAndGet() == 1) {
+                manualAtPages.countDown();
+                try {
+                  if (!releaseManual.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("manual checkpoint did not resume");
+                  }
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                  throw new AssertionError(e);
+                }
+              } else {
+                periodicAtPages.countDown();
+              }
+            });
+    var executor = Executors.newSingleThreadExecutor();
+    try {
+      var manual = executor.submit(manager::checkpoint);
+      assertTrue(manualAtPages.await(5, TimeUnit.SECONDS));
+      manager.startPeriodic(Duration.ofMillis(20));
+      assertFalse(periodicAtPages.await(100, TimeUnit.MILLISECONDS));
+      assertEquals(1, environment.context().checkpointRecords().size());
+      releaseManual.countDown();
+      manual.get(5, TimeUnit.SECONDS);
+      assertTrue(periodicAtPages.await(2, TimeUnit.SECONDS));
+    } finally {
+      releaseManual.countDown();
+      manager.stopPeriodic();
+      executor.shutdownNow();
+      assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+    }
+    assertEquals(
+        List.of(CheckpointEvent.BEGIN, CheckpointEvent.END, CheckpointEvent.BEGIN),
+        environment.context().checkpointRecords().stream()
+            .limit(3)
+            .map(record -> record.event)
+            .toList());
   }
 }
