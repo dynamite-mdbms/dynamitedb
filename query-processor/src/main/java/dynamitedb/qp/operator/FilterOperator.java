@@ -25,7 +25,20 @@ public class FilterOperator implements Operator {
 
   @Override
   public Optional<OperatorRow> next() {
-    return child.next();
+    while (true) {
+      Optional<OperatorRow> nextRow = child.next();
+
+      if (nextRow.isEmpty()) {
+        return Optional.empty();
+      }
+
+      OperatorRow row = nextRow.get();
+      boolean passesFilter = evaluator.evaluatePredicate(predicate, row);
+
+      if (passesFilter) {
+        return Optional.of(row);
+      }
+    }
   }
 
   @Override
