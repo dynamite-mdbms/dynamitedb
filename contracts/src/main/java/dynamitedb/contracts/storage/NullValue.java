@@ -1,6 +1,6 @@
 package dynamitedb.contracts.storage;
 
-/** SQL NULL, Java null tidak dipakai sebagai nilai. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public enum NullValue implements Value {
   INSTANCE
 }

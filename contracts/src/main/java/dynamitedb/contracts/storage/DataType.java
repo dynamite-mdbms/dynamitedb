@@ -1,6 +1,6 @@
 package dynamitedb.contracts.storage;
 
-/** Tipe kolom yang disimpan (SM-02). */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public enum DataType {
   INTEGER,
   FLOAT,

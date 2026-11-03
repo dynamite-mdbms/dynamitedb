@@ -1,4 +1,4 @@
 package dynamitedb.contracts.storage;
 
-/** Nilai INTEGER. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public record IntValue(int value) implements Value {}

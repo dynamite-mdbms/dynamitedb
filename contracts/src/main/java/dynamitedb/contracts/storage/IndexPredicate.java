@@ -1,4 +1,4 @@
 package dynamitedb.contracts.storage;
 
-/** Predikat pencarian index, HASH hanya menerima EQ. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public record IndexPredicate(ComparisonOp operator, Value value) {}

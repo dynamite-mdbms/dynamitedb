@@ -1,6 +1,6 @@
 package dynamitedb.contracts.storage;
 
-/** Jenis index: HASH untuk kesamaan, B_PLUS_TREE untuk kesamaan dan rentang. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public enum IndexKind {
   HASH,
   B_PLUS_TREE

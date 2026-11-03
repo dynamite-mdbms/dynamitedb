@@ -6,8 +6,9 @@ import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.transaction.TransactionId;
 
-/** Penulisan dua tahap: prepare, catat ke WAL, lalu apply (SM-05 s.d. SM-07). */
+// draf dari QP biar bisa compile, nanti ganti punya SM1
 public interface WriteStore {
+
   PreparedWrite prepareInsert(TransactionId tx, String table, Row row);
 
   PreparedWrite prepareUpdate(TransactionId tx, RecordId rid, Row row);

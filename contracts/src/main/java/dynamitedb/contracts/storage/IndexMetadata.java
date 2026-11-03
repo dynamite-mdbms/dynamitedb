@@ -1,4 +1,4 @@
 package dynamitedb.contracts.storage;
 
-/** Definisi index yang sudah terbit di katalog. */
+// draf dari QP biar bisa compile, nanti ganti punya SM
 public record IndexMetadata(String name, String table, String column, IndexKind kind) {}

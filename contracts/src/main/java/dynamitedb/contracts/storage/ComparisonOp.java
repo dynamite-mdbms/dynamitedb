@@ -1,6 +1,6 @@
 package dynamitedb.contracts.storage;
 
-/** Operator perbandingan untuk predikat index. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public enum ComparisonOp {
   EQ,
   NEQ,

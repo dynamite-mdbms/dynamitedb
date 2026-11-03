@@ -1,4 +1,4 @@
 package dynamitedb.contracts.storage;
 
-/** Nilai CHAR atau VARCHAR. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public record TextValue(String value) implements Value {}

@@ -1,4 +1,4 @@
 package dynamitedb.contracts.storage;
 
-/** Hasil ekspresi boolean, bukan tipe kolom yang disimpan. */
+// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
 public record BooleanValue(boolean value) implements Value {}
