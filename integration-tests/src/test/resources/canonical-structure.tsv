@@ -836,6 +836,9 @@ helper	dynamitedb.app.mock.MockRuntime
 helper	dynamitedb.frm.mock.MockRecoveryContext
 helper	dynamitedb.frm.mock.MockRecoveryPorts
 helper	dynamitedb.frm.mock.MockRecoveryEnvironment
+helper	dynamitedb.frm.LogFile$Scan
+helper	dynamitedb.frm.LogManager$Prepared
+helper	dynamitedb.frm.LogManager$TxState
 helper	dynamitedb.qp.operator.OperatorRows
 helper	dynamitedb.app.client.RemoteQueryClient
 helper	dynamitedb.app.cli.ResultRenderer
