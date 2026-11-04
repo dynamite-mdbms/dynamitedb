@@ -14,13 +14,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Milestone 1 mock only: fixture responses/call recording, no durable DBMS behavior. */
+/** Milestone 1 mock only. Fixture responses and call recording without durable DBMS behavior. */
 public final class LogManager {
   private final Path root;
   private final UUID activeLineage;
   private final LogFile file;
   private final LogRecordCodec codec;
   private final MockRecoveryContext context;
+  private long nextMockLsn;
 
   public LogManager(
       Path root,
@@ -33,11 +34,25 @@ public final class LogManager {
     this.file = Objects.requireNonNull(file, "file");
     this.codec = Objects.requireNonNull(codec, "codec");
     this.context = Objects.requireNonNull(context, "context");
+    this.nextMockLsn = context.lsn().value() + 1;
+  }
+
+  UUID activeLineage() {
+    return activeLineage;
+  }
+
+  synchronized LogSequenceNumber nextCheckpointLsn() {
+    // Mock LSN allocation only. FR2 must replace it with shared WAL allocation.
+    return new LogSequenceNumber(nextMockLsn++);
   }
 
   public LogSequenceNumber append(LogRecord record) {
     Objects.requireNonNull(record, "record");
     context.invoked("LogManager.append");
+    if (record instanceof CheckpointLogRecord checkpoint) {
+      context.checkpointRecord(checkpoint);
+      return checkpoint.lsn;
+    }
     return context.lsn();
   }
 

@@ -48,7 +48,7 @@ public final class MockRecoveryEnvironment {
     undo = new UndoManager(log, ports.pages(), context);
     catalog = new HistoryCatalog(context);
     historical = new HistoricalRecoveryManager(context);
-    checkpoint = new CheckpointManager(ports.coordinator(), ports.pages(), log, context);
+    checkpoint = new CheckpointManager(ports.coordinator(), ports.pages(), log);
     crash =
         new CrashRecoveryManager(
             log, wal, manifests, ports.pages(), undo, ports.generations(), context);
