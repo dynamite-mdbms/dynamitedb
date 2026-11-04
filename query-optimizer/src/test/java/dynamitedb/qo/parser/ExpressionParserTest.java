@@ -2,7 +2,6 @@ package dynamitedb.qo.parser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
@@ -15,12 +14,12 @@ import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.TextValue;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 class ExpressionParserTest {
 
@@ -117,42 +116,47 @@ class ExpressionParserTest {
         parse("student.student_id = enrollment.student_id"));
   }
 
-  @ParameterizedTest
-  @ValueSource(
-      strings = {
-        "salary >",
-        "salary + * 2",
-        "(salary > 10",
-        "salary > 10)",
-        "a b",
-        "()",
-        "a AND",
-        "emp.",
-        "a = 1;",
-        "-5",
-        "ORDER",
-        "99999999999"
-      })
-  void rejectsInvalidExpressionsWithSyntaxError(String text) {
-    DbmsException failure = assertThrows(DbmsException.class, () -> parse(text));
-    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
-    assertTrue(
-        failure.getMessage().contains("offset") || failure.getMessage().contains("end of input"),
-        failure.getMessage());
+  @Test
+  void arithmeticBindsTighterThanComparison() {
+    assertEquals(
+        bin(bin(col("a"), BinaryOp.ADD, lit(1)), BinaryOp.GT, bin(col("b"), BinaryOp.SUB, lit(2))),
+        parse("a + 1 > b - 2"));
   }
 
-  @Test
-  void reportsOffsetOfOffendingToken() {
-    DbmsException failure = assertThrows(DbmsException.class, () -> parse("salary + * 2"));
-    assertEquals("Expected expression at offset 9 near '*'", failure.getMessage());
-
-    DbmsException incomplete = assertThrows(DbmsException.class, () -> parse("salary >"));
-    assertEquals("Expected expression at end of input", incomplete.getMessage());
+  // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana.
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      quoteCharacter = '"',
+      textBlock =
+          """
+          salary >      | Expected expression at end of input
+          salary + * 2  | Expected expression at offset 9 near '*'
+          (salary > 10  | Expected ')' to close '(' at offset 0 at end of input
+          salary > 10)  | Unexpected token in expression at offset 11 near ')'
+          a b           | Unexpected token in expression at offset 2 near 'b'
+          ()            | Expected expression at offset 1 near ')'
+          a AND         | Expected expression at end of input
+          emp.          | Expected a column name after '.' at end of input
+          emp.5         | Expected a column name after '.' at offset 4 near '5'
+          a = 1;        | Unexpected token in expression at offset 5 near ';'
+          -5            | Expected expression at offset 0 near '-'
+          ORDER         | Expected expression at offset 0 near 'ORDER'
+          99999999999   | Integer literal out of range at offset 0 near '99999999999'
+          """)
+  void rejectsInvalidExpressionAtOffendingToken(String text, String message) {
+    DbmsException failure = assertThrows(DbmsException.class, () -> parse(text));
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+    assertEquals(message, failure.getMessage());
   }
 
   @Test
   void rejectsEmptyInput() {
-    assertThrows(DbmsException.class, () -> parser.parseExpression(List.of()));
-    assertThrows(DbmsException.class, () -> parser.parseExpression(null));
+    for (List<Token> tokens : Arrays.asList(List.<Token>of(), null)) {
+      DbmsException failure =
+          assertThrows(DbmsException.class, () -> parser.parseExpression(tokens));
+      assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+      assertEquals("Expected expression at end of input", failure.getMessage());
+    }
   }
 }
