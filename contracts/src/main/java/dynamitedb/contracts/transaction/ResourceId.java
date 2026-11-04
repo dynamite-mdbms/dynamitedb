@@ -4,6 +4,7 @@ import dynamitedb.contracts.storage.RecordId;
 import java.util.Objects;
 import java.util.Optional;
 
+/** Identifies a table or a record resource; record table identity must match its record ID. */
 public record ResourceId(ResourceKind kind, long tableId, Optional<RecordId> recordId) {
   public ResourceId {
     Objects.requireNonNull(kind, "kind");
