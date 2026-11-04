@@ -854,3 +854,4 @@ helper	dynamitedb.frm.mock.MockRecoveryPorts$Generations
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Historical
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Pages
 helper	dynamitedb.qp.driver.QueryProcessorTestDriver$Scenario
+helper	dynamitedb.ccm.protocol.LockManager$TicketEntry
