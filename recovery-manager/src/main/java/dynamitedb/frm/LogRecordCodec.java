@@ -15,6 +15,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.UTFDataFormatException;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -82,8 +84,11 @@ public final class LogRecordCodec {
       framed.write(data);
       framed.writeInt(crc(data));
       return ImmutableBytes.copyOf(frame.toByteArray());
-    } catch (IOException impossible) {
-      throw new IllegalStateException(impossible);
+    } catch (UTFDataFormatException invalidTableName) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "WAL table name exceeds format limit");
+    } catch (IOException unexpected) {
+      throw new DbmsException(
+          ErrorCode.WAL_FAILURE, "Cannot encode WAL record: " + unexpected.getMessage());
     }
   }
 
@@ -170,7 +175,7 @@ public final class LogRecordCodec {
       return result;
     } catch (DbmsException e) {
       throw e;
-    } catch (IOException | IllegalArgumentException e) {
+    } catch (IOException | IllegalArgumentException | DateTimeException e) {
       throw corrupt("Invalid WAL frame: " + e.getMessage());
     }
   }
@@ -269,7 +274,10 @@ public final class LogRecordCodec {
   }
 
   private static Instant readInstant(DataInputStream in) throws IOException {
-    return Instant.ofEpochSecond(in.readLong(), in.readInt());
+    long seconds = in.readLong();
+    int nanos = in.readInt();
+    if (nanos < 0 || nanos >= 1_000_000_000) throw corrupt("Invalid commit nanoseconds");
+    return Instant.ofEpochSecond(seconds, nanos);
   }
 
   private static DbmsException corrupt(String message) {

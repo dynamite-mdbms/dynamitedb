@@ -46,6 +46,7 @@ public final class LogManager implements AutoCloseable {
   private final Map<TransactionId, TxState> states = new HashMap<>();
   private final Map<Long, LogRecord> byLsn = new HashMap<>();
   private final Set<Long> compensated = new HashSet<>();
+  private final Set<TransactionId> rollingBack = new HashSet<>();
   private final Map<UUID, CheckpointLogRecord> checkpoints = new HashMap<>();
   private long lastLsn;
   private long durableLsn;
@@ -278,16 +279,19 @@ public final class LogManager implements AutoCloseable {
         if (!(original instanceof ChangeLogRecord change)
             || !original.tx.equals(record.tx)
             || !change.change.rid().equals(clr.mutation.rid())
+            || !change.change.before().equals(clr.mutation.targetImage())
             || !change.prevLsn.equals(clr.undoNext)
             || compensated.contains(clr.compensates.value())) {
           throw invalidOrCorrupt(replay, "Invalid or repeated compensation record");
         }
       }
+      if (record instanceof ChangeLogRecord && rollingBack.contains(tx)) {
+        throw invalidOrCorrupt(replay, "Change after rollback began");
+      }
       if (record instanceof TransactionEventLogRecord event
           && event.event == TxEvent.COMMIT
           && ((maxCommitTime != null && !event.commitTime.orElseThrow().isAfter(maxCommitTime))
-              || byTx.getOrDefault(tx, List.of()).stream()
-                  .anyMatch(r -> r instanceof CompensationLogRecord))) {
+              || rollingBack.contains(tx))) {
         throw invalidOrCorrupt(replay, "Invalid commit time or rollback state");
       }
       if (record instanceof TransactionEventLogRecord event
@@ -301,7 +305,10 @@ public final class LogManager implements AutoCloseable {
     if (!replay) file.appendFrame(codec.encode(record));
     records.add(record);
     byLsn.put(record.lsn.value(), record);
-    if (record instanceof CompensationLogRecord clr) compensated.add(clr.compensates.value());
+    if (record instanceof CompensationLogRecord clr) {
+      compensated.add(clr.compensates.value());
+      rollingBack.add(clr.tx.orElseThrow());
+    }
     if (record instanceof CheckpointLogRecord checkpoint) {
       if (checkpoint.event == CheckpointEvent.BEGIN)
         checkpoints.put(checkpoint.checkpointId, checkpoint);
@@ -418,9 +425,24 @@ public final class LogManager implements AutoCloseable {
       mock.invoked("LogManager.prepareLineage");
       return;
     }
-    if (id.equals(lineage) || prepared.containsKey(id) || highWater.lsn().value() < lastLsn) {
+    if (states.values().stream().anyMatch(s -> s == TxState.ACTIVE))
+      throw invalid("Active transactions block WAL preparation");
+    if (id.equals(lineage)
+        || prepared.containsKey(id)
+        || highWater.lsn().value() < lastLsn
+        || highWater.lsn().value() < base.boundary().inclusiveLsn().value()
+        || highWater.maxTx().value() < maxTx
+        || highWater.maxTimestamp() < maxTimestamp
+        || (maxCommitTime != null
+            && highWater.maxCommitTime().filter(t -> !t.isBefore(maxCommitTime)).isEmpty())
+        || (base.boundary().commitTime().isPresent()
+            && highWater
+                .maxCommitTime()
+                .filter(t -> !t.isBefore(base.boundary().commitTime().orElseThrow()))
+                .isEmpty())) {
       throw invalid("Invalid lineage preparation");
     }
+    flush(new LogSequenceNumber(lastLsn));
     var created = LogFile.createNew(root, id, highWater.lsn().value());
     created.close();
     prepared.put(id, new Prepared(base, highWater));
@@ -437,11 +459,16 @@ public final class LogManager implements AutoCloseable {
     Prepared choice = prepared.get(manifest.walLineage());
     if (choice == null
         || !choice.base.id().equals(manifest.activeId())
+        || !choice.base.boundary().inclusiveLsn().equals(manifest.boundaryLsn())
         || !choice.highWater.equals(manifest.highWater())
         || lastLsn > manifest.highWater().lsn().value()) {
       throw invalid("Manifest does not match prepared lineage");
     }
     LogManager replacement = openExisting(root, manifest.walLineage(), manifest.highWater());
+    if (replacement.lastLsn != manifest.highWater().lsn().value()) {
+      replacement.close();
+      throw invalid("Prepared WAL must be empty before activation");
+    }
     try {
       flush(new LogSequenceNumber(lastLsn));
     } catch (RuntimeException failure) {
@@ -468,6 +495,8 @@ public final class LogManager implements AutoCloseable {
     byLsn.putAll(replacement.byLsn);
     compensated.clear();
     compensated.addAll(replacement.compensated);
+    rollingBack.clear();
+    rollingBack.addAll(replacement.rollingBack);
     checkpoints.clear();
     checkpoints.putAll(replacement.checkpoints);
     lastLsn = replacement.lastLsn;
@@ -531,6 +560,10 @@ public final class LogManager implements AutoCloseable {
       return prefix
           + "CLR compensates="
           + clr.compensates.value()
+          + " undoNext="
+          + clr.undoNext.map(v -> Long.toString(v.value())).orElse("-")
+          + " rid="
+          + clr.mutation.rid()
           + " target="
           + image(clr.mutation.targetImage());
     }

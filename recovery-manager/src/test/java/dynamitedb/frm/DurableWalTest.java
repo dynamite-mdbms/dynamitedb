@@ -235,13 +235,29 @@ class DurableWalTest {
       UUID checkpointId = UUID.randomUUID();
       log.appendCheckpoint(checkpointId, CheckpointEvent.BEGIN, new LogSequenceNumber(4));
       log.appendCheckpoint(checkpointId, CheckpointEvent.END, new LogSequenceNumber(4));
-      log.flush(new LogSequenceNumber(6));
-      assertEquals(6, log.durableLsn());
+      assertEquals(4, log.durableLsn());
       var high = log.readHighWater();
       var base =
           new SealedGeneration(
               UUID.randomUUID(), new RecoveryBoundary(new LogSequenceNumber(6), Optional.empty()));
+      var stale =
+          new RecoveryHighWater(
+              high.lsn(), new TransactionId(0), high.maxTimestamp(), high.maxCommitTime());
+      assertEquals(
+          ErrorCode.INVALID_STATE,
+          assertThrows(DbmsException.class, () -> log.prepareLineage(nextLineage, base, stale))
+              .getCode());
       log.prepareLineage(nextLineage, base, high);
+      assertEquals(6, log.durableLsn());
+      assertEquals(
+          ErrorCode.INVALID_STATE,
+          assertThrows(
+                  DbmsException.class,
+                  () ->
+                      log.activate(
+                          new GenerationManifest(
+                              base.id(), nextLineage, new LogSequenceNumber(5), high)))
+              .getCode());
       log.activate(new GenerationManifest(base.id(), nextLineage, new LogSequenceNumber(6), high));
       assertEquals(6, log.appendedLsn());
       log.begin(new TransactionId(2), 2);
@@ -340,6 +356,112 @@ class DurableWalTest {
     }
     try (var reopened = LogManager.openExisting(directory, lineage, EMPTY)) {
       assertEquals(0, reopened.appendedLsn());
+    }
+  }
+
+  @Test
+  void rollbackRejectsWrongImageAndFurtherChanges() {
+    UUID lineage = UUID.randomUUID();
+    var tx = new TransactionId(1);
+    var rid = new RecordId(1, 5, 1, 1);
+    try (var log = LogManager.createNew(directory, lineage, EMPTY)) {
+      log.begin(tx, 1);
+      var original = log.appendChange(change(tx, 1, RecordImage.absent(), present(7)));
+      assertEquals(
+          ErrorCode.INVALID_STATE,
+          assertThrows(
+                  DbmsException.class,
+                  () ->
+                      log.appendCompensation(
+                          tx,
+                          original,
+                          Optional.of(new LogSequenceNumber(1)),
+                          new RecoveryMutation(rid, present(9))))
+              .getCode());
+      assertEquals(2, log.appendedLsn());
+      log.appendCompensation(
+          tx,
+          original,
+          Optional.of(new LogSequenceNumber(1)),
+          new RecoveryMutation(rid, RecordImage.absent()));
+      assertEquals(
+          ErrorCode.INVALID_STATE,
+          assertThrows(
+                  DbmsException.class,
+                  () -> log.appendChange(change(tx, 2, RecordImage.absent(), present(8))))
+              .getCode());
+      assertTrue(
+          new WalService(new CommitClock(), log)
+              .readLog(new LogFilter(Optional.of(tx), Optional.empty()))
+              .lines()
+              .getLast()
+              .contains("undoNext=1 rid="));
+      log.finishAbort(tx);
+    }
+  }
+
+  @Test
+  void codecReportsInvalidCommitTimeAsCorruptLog() {
+    var codec = new LogRecordCodec();
+    var record =
+        new TransactionEventLogRecord(
+            new LogSequenceNumber(1),
+            new TransactionId(1),
+            Optional.empty(),
+            UUID.randomUUID(),
+            TxEvent.COMMIT,
+            Optional.empty(),
+            Optional.of(java.time.Instant.EPOCH));
+    byte[] frame = codec.encode(record).copy();
+    int payloadSize = java.nio.ByteBuffer.wrap(frame, 4, 4).getInt();
+    java.nio.ByteBuffer.wrap(frame, frame.length - 8, 4).putInt(1_000_000_000);
+    var crc = new java.util.zip.CRC32();
+    crc.update(frame, 12, payloadSize);
+    java.nio.ByteBuffer.wrap(frame, frame.length - 4, 4).putInt((int) crc.getValue());
+    assertEquals(
+        ErrorCode.CORRUPT_LOG,
+        assertThrows(DbmsException.class, () -> codec.decode(ImmutableBytes.copyOf(frame)))
+            .getCode());
+  }
+
+  @Test
+  void oversizedTableNameDoesNotConsumeAnLsn() {
+    try (var log = LogManager.createNew(directory, UUID.randomUUID(), EMPTY)) {
+      var tx = new TransactionId(1);
+      log.begin(tx, 1);
+      var oversized =
+          new ChangeRecord(
+              tx, "x".repeat(70_000), new RecordId(1, 5, 1, 1), RecordImage.absent(), present(1));
+      assertEquals(
+          ErrorCode.INVALID_STATE,
+          assertThrows(DbmsException.class, () -> log.appendChange(oversized)).getCode());
+      assertEquals(1, log.appendedLsn());
+    }
+  }
+
+  @Test
+  void commitClockContinuesPastPersistedTimeWhenWallClockMovesBackward() {
+    var clock = new CommitClock();
+    var saved = java.time.Instant.parse("2026-11-04T12:00:00.123456789Z");
+    clock.seed(saved);
+    assertEquals(saved.plusNanos(1), clock.assign(java.time.Instant.EPOCH));
+    assertEquals(saved.plusNanos(2), clock.assign(java.time.Instant.EPOCH));
+  }
+
+  @Test
+  void activeTransactionCannotPrepareNewLineage() {
+    try (var log = LogManager.createNew(directory, UUID.randomUUID(), EMPTY)) {
+      log.begin(new TransactionId(1), 1);
+      var base =
+          new SealedGeneration(
+              UUID.randomUUID(), new RecoveryBoundary(new LogSequenceNumber(1), Optional.empty()));
+      UUID next = UUID.randomUUID();
+      assertEquals(
+          ErrorCode.INVALID_STATE,
+          assertThrows(
+                  DbmsException.class, () -> log.prepareLineage(next, base, log.readHighWater()))
+              .getCode());
+      assertFalse(Files.exists(LogFile.path(directory, next)));
     }
   }
 
