@@ -21,6 +21,8 @@ public final class LogManager {
   private final LogFile file;
   private final LogRecordCodec codec;
   private final MockRecoveryContext context;
+  private final List<LogRecord> history;
+  private final RecoveryHighWater highWater;
   private long nextMockLsn;
 
   public LogManager(
@@ -29,11 +31,24 @@ public final class LogManager {
       LogFile file,
       LogRecordCodec codec,
       MockRecoveryContext context) {
+    this(root, activeLineage, file, codec, context, List.of(context.record()), context.highWater());
+  }
+
+  LogManager(
+      Path root,
+      UUID activeLineage,
+      LogFile file,
+      LogRecordCodec codec,
+      MockRecoveryContext context,
+      List<LogRecord> history,
+      RecoveryHighWater highWater) {
     this.root = Objects.requireNonNull(root, "root");
     this.activeLineage = Objects.requireNonNull(activeLineage, "activeLineage");
     this.file = Objects.requireNonNull(file, "file");
     this.codec = Objects.requireNonNull(codec, "codec");
     this.context = Objects.requireNonNull(context, "context");
+    this.history = List.copyOf(Objects.requireNonNull(history, "history"));
+    this.highWater = Objects.requireNonNull(highWater, "highWater");
     this.nextMockLsn = context.lsn().value() + 1;
   }
 
@@ -75,14 +90,17 @@ public final class LogManager {
 
   public RecoveryHighWater readHighWater() {
     context.invoked("LogManager.readHighWater");
-    return context.highWater();
+    return highWater;
   }
 
   public Iterator<LogRecord> scanHistory(UUID lineage, LogSequenceNumber fromLsn) {
     Objects.requireNonNull(lineage, "lineage");
     Objects.requireNonNull(fromLsn, "fromLsn");
     context.invoked("LogManager.scanHistory");
-    return List.<LogRecord>of(context.record()).iterator();
+    return history.stream()
+        .filter(record -> record.walLineage.equals(lineage))
+        .filter(record -> record.lsn.value() >= fromLsn.value())
+        .iterator();
   }
 
   public Iterator<LogRecord> scanFrom(LogSequenceNumber lsn) {
