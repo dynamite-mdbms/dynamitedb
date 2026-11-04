@@ -35,23 +35,11 @@ public final class CheckpointManager implements CheckpointService {
       LogSequenceNumber throughLsn = log.readHighWater().lsn();
       UUID checkpointId = UUID.randomUUID();
       LogSequenceNumber beginLsn =
-          log.append(
-              new CheckpointLogRecord(
-                  log.nextCheckpointLsn(),
-                  log.activeLineage(),
-                  checkpointId,
-                  CheckpointEvent.BEGIN,
-                  throughLsn));
+          log.appendCheckpoint(checkpointId, CheckpointEvent.BEGIN, throughLsn);
       log.flush(beginLsn);
       pages.flushDirtyThrough(throughLsn);
       LogSequenceNumber endLsn =
-          log.append(
-              new CheckpointLogRecord(
-                  log.nextCheckpointLsn(),
-                  log.activeLineage(),
-                  checkpointId,
-                  CheckpointEvent.END,
-                  throughLsn));
+          log.appendCheckpoint(checkpointId, CheckpointEvent.END, throughLsn);
       log.flush(endLsn);
       return new CheckpointResult(endLsn);
     }
