@@ -6,7 +6,11 @@ import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.WaitToken;
 
 public class Strict2PLProtocol implements ConcurrencyProtocol {
-  private final LockManager locks = new LockManager();
+  private final LockManager locks;
+
+  public Strict2PLProtocol(LockManager locks) {
+    this.locks = locks;
+  }
 
   @Override
   public AccessDecision request(AccessRequest request) {
