@@ -14,6 +14,9 @@ public record ResourceId(ResourceKind kind, long tableId, Optional<RecordId> rec
     if (kind == ResourceKind.RECORD && recordId.isEmpty()) {
       throw new IllegalArgumentException("Resource RECORD wajib memiliki RecordId");
     }
+    if (kind == ResourceKind.RECORD && tableId != recordId.orElseThrow().tableId()) {
+      throw new IllegalArgumentException("Resource RECORD tableId must match RecordId tableId");
+    }
   }
 
   public static ResourceId table(long tableId) {

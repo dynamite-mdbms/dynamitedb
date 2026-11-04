@@ -7,6 +7,7 @@ public record AccessDecision(AccessState state, Optional<WaitToken> ticket, Stri
   public AccessDecision {
     Objects.requireNonNull(state, "state");
     Objects.requireNonNull(ticket, "ticket");
+    Objects.requireNonNull(reason, "reason");
     if ((state == AccessState.WAITING) != ticket.isPresent()) {
       throw new IllegalArgumentException("Ticket wajib ada tepat ketika state WAITING");
     }
