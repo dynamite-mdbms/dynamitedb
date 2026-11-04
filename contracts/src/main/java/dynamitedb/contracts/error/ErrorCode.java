@@ -1,0 +1,14 @@
+package dynamitedb.contracts.error;
+
+public enum ErrorCode {
+  SQL_SYNTAX,
+  SQL_BIND,
+  INVALID_PLAN,
+  ACCESS_ABORTED,
+  WAL_FAILURE,
+  STORAGE_FAILURE,
+  RECOVERY_FAILURE,
+  INVALID_STATE,
+  UNSUPPORTED_OPERATION,
+  CORRUPT_LOG
+}

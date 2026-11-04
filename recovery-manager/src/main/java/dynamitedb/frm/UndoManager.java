@@ -1,9 +1,9 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.RecoveryMutation;
-import dynamitedb.contracts.RecoveryPageStore;
-import dynamitedb.contracts.RollbackService;
-import dynamitedb.contracts.TransactionId;
+import dynamitedb.contracts.api.RecoveryPageStore;
+import dynamitedb.contracts.api.RollbackService;
+import dynamitedb.contracts.recovery.RecoveryMutation;
+import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Objects;
 import java.util.Optional;

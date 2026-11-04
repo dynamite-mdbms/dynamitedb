@@ -1,22 +1,23 @@
 package dynamitedb.frm.mock;
 
-import dynamitedb.contracts.ChangeRecord;
-import dynamitedb.contracts.DbmsException;
-import dynamitedb.contracts.GenerationManifest;
-import dynamitedb.contracts.ImmutableBytes;
-import dynamitedb.contracts.LogSequenceNumber;
-import dynamitedb.contracts.LogView;
-import dynamitedb.contracts.RecordId;
-import dynamitedb.contracts.RecordImage;
-import dynamitedb.contracts.RecoveryBoundary;
-import dynamitedb.contracts.RecoveryHighWater;
-import dynamitedb.contracts.RecoveryResult;
-import dynamitedb.contracts.RecoveryStage;
-import dynamitedb.contracts.RecoveryStatus;
-import dynamitedb.contracts.SealedGeneration;
-import dynamitedb.contracts.SnapshotMetadata;
-import dynamitedb.contracts.TransactionId;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.recovery.ChangeRecord;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogView;
+import dynamitedb.contracts.recovery.RecoveryBoundary;
+import dynamitedb.contracts.recovery.RecoveryHighWater;
+import dynamitedb.contracts.recovery.RecoveryResult;
+import dynamitedb.contracts.recovery.RecoveryStage;
+import dynamitedb.contracts.recovery.RecoveryStatus;
+import dynamitedb.contracts.recovery.SealedGeneration;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
+import dynamitedb.contracts.storage.ImmutableBytes;
+import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.storage.RecordImage;
+import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.ChangeLogRecord;
+import dynamitedb.frm.CheckpointLogRecord;
 import dynamitedb.frm.RecoveryState;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import java.util.UUID;
 /** Explicitly non-durable fixture responses and call recording for Milestone 1 only. */
 public final class MockRecoveryContext {
   private final List<String> calls = new ArrayList<>();
+  private final List<CheckpointLogRecord> checkpointRecords = new ArrayList<>();
   private final Map<String, DbmsException> failures = new HashMap<>();
   private final LogSequenceNumber lsn;
   private final Instant commitTime;
@@ -61,6 +63,14 @@ public final class MockRecoveryContext {
 
   public synchronized List<String> calls() {
     return List.copyOf(calls);
+  }
+
+  public synchronized void checkpointRecord(CheckpointLogRecord record) {
+    checkpointRecords.add(Objects.requireNonNull(record, "record"));
+  }
+
+  public synchronized List<CheckpointLogRecord> checkpointRecords() {
+    return List.copyOf(checkpointRecords);
   }
 
   public LogSequenceNumber lsn() {

@@ -1,6 +1,7 @@
 package dynamitedb.frm.mock;
 
-import dynamitedb.frm.AtomicGenerationManifestStore;
+import dynamitedb.contracts.api.GenerationManifestStore;
+import dynamitedb.contracts.recovery.GenerationManifest;
 import dynamitedb.frm.CheckpointManager;
 import dynamitedb.frm.CommitClock;
 import dynamitedb.frm.CrashRecoveryManager;
@@ -20,7 +21,7 @@ import java.util.Objects;
 /** Wires only FRM mocks and fixture ports. Construction does not create files or start threads. */
 public final class MockRecoveryEnvironment {
   private final MockRecoveryContext context;
-  private final AtomicGenerationManifestStore manifests;
+  private final GenerationManifestStore manifests;
   private final MockRecoveryPorts ports;
   private final LogFile file;
   private final LogRecordCodec codec;
@@ -38,7 +39,25 @@ public final class MockRecoveryEnvironment {
   public MockRecoveryEnvironment(Path root, MockRecoveryContext context) {
     Objects.requireNonNull(root, "root");
     this.context = Objects.requireNonNull(context, "context");
-    manifests = new AtomicGenerationManifestStore(root, context.manifest(), context);
+    manifests =
+        new GenerationManifestStore() {
+          private GenerationManifest active = context.manifest();
+
+          @Override
+          public synchronized GenerationManifest readActive() {
+            MockRecoveryEnvironment.this.context.invoked(
+                "AtomicGenerationManifestStore.readActive");
+            return active;
+          }
+
+          @Override
+          public synchronized void publishAtomically(GenerationManifest manifest) {
+            Objects.requireNonNull(manifest, "manifest");
+            MockRecoveryEnvironment.this.context.invoked(
+                "AtomicGenerationManifestStore.publishAtomically");
+            active = manifest;
+          }
+        };
     ports = new MockRecoveryPorts(context, manifests);
     file = new LogFile(context);
     codec = new LogRecordCodec(context);
@@ -48,7 +67,7 @@ public final class MockRecoveryEnvironment {
     undo = new UndoManager(log, ports.pages(), context);
     catalog = new HistoryCatalog(context);
     historical = new HistoricalRecoveryManager(context);
-    checkpoint = new CheckpointManager(ports.coordinator(), ports.pages(), log, context);
+    checkpoint = new CheckpointManager(ports.coordinator(), ports.pages(), log);
     crash =
         new CrashRecoveryManager(
             log, wal, manifests, ports.pages(), undo, ports.generations(), context);
@@ -64,7 +83,7 @@ public final class MockRecoveryEnvironment {
     return context;
   }
 
-  public AtomicGenerationManifestStore manifests() {
+  public GenerationManifestStore manifests() {
     return manifests;
   }
 

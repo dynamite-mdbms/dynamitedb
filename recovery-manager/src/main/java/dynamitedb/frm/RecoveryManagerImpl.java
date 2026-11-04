@@ -1,20 +1,20 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.ChangeRecord;
-import dynamitedb.contracts.CheckpointResult;
-import dynamitedb.contracts.CheckpointService;
-import dynamitedb.contracts.CrashRecovery;
-import dynamitedb.contracts.HistoricalRecoveryService;
-import dynamitedb.contracts.LogFilter;
-import dynamitedb.contracts.LogInspection;
-import dynamitedb.contracts.LogSequenceNumber;
-import dynamitedb.contracts.LogView;
-import dynamitedb.contracts.RecoveryResult;
-import dynamitedb.contracts.RecoveryTarget;
-import dynamitedb.contracts.RollbackService;
-import dynamitedb.contracts.TransactionId;
-import dynamitedb.contracts.TransactionWal;
-import dynamitedb.contracts.WalDurability;
+import dynamitedb.contracts.api.CheckpointService;
+import dynamitedb.contracts.api.CrashRecovery;
+import dynamitedb.contracts.api.HistoricalRecoveryService;
+import dynamitedb.contracts.api.LogInspection;
+import dynamitedb.contracts.api.RollbackService;
+import dynamitedb.contracts.api.TransactionWal;
+import dynamitedb.contracts.api.WalDurability;
+import dynamitedb.contracts.recovery.ChangeRecord;
+import dynamitedb.contracts.recovery.CheckpointResult;
+import dynamitedb.contracts.recovery.LogFilter;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogView;
+import dynamitedb.contracts.recovery.RecoveryResult;
+import dynamitedb.contracts.recovery.RecoveryTarget;
+import dynamitedb.contracts.transaction.TransactionId;
 import java.util.Objects;
 
 /** Composite Milestone 1 facade; all operations share the injected mock services. */
