@@ -1,0 +1,301 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% Contracts exposed / consumed
+class TupleReader {
+  <<interface>>
+  +openTableScan(table: String, tx: TransactionId) RowCursor
+  +openIndexScan(index: String, predicate: IndexPredicate, tx: TransactionId) RowCursor
+  +fetch(rid: RecordId, tx: TransactionId) Optional~StoredRow~
+}
+class RowCursor {
+  <<interface>>
+  +next() Optional~StoredRow~
+  +close() void
+}
+class WriteStore {
+  <<interface>>
+  +prepareInsert(tx: TransactionId, table: String, row: Row) PreparedWrite
+  +prepareUpdate(tx: TransactionId, rid: RecordId, row: Row) PreparedWrite
+  +prepareDelete(tx: TransactionId, rid: RecordId) PreparedWrite
+  +applyWrite(prepared: PreparedWrite, lsn: LogSequenceNumber) void
+  +cancelPrepared(prepared: PreparedWrite) void
+}
+class IndexAdmin {
+  <<interface>>
+  +createIndex(name: String, table: String, column: String, kind: IndexKind) void
+}
+class CatalogAccess {
+  <<interface>>
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+class RecoveryPageStore {
+  <<interface>>
+  +readRecord(rid: RecordId) RecordImage
+  +applyRecovery(mutation: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildIndexes() void
+  +flushDirtyThrough(lsn: LogSequenceNumber) void
+}
+class HistoricalRecoveryStorage {
+  <<interface>>
+  +captureSnapshot(boundary: RecoveryBoundary) SnapshotMetadata
+  +createStage(snapshot: SnapshotMetadata, id: UUID) RecoveryStage
+  +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildStageIndexes(stage: RecoveryStage) void
+  +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+}
+class StorageGenerationAdmin {
+  <<interface>>
+  +readActiveManifest() GenerationManifest
+  +switchToPublishedGeneration(manifest: GenerationManifest) void
+}
+class GenerationManifestStore {
+  <<interface>>
+  +readActive() GenerationManifest
+  +publishAtomically(manifest: GenerationManifest) void
+}
+class WalDurability {
+  <<interface>>
+  +ensureDurable(lsn: LogSequenceNumber) void
+}
+
+%% Facade and adapters - SM1 / SM4
+class StorageManagerImpl {
+  -records: RecordStore
+  -catalog: CatalogManager
+  -indexes: IndexManager
+  +openTableScan(table: String, tx: TransactionId) RowCursor
+  +openIndexScan(index: String, predicate: IndexPredicate, tx: TransactionId) RowCursor
+  +fetch(rid: RecordId, tx: TransactionId) Optional~StoredRow~
+  +prepareInsert(tx: TransactionId, table: String, row: Row) PreparedWrite
+  +prepareUpdate(tx: TransactionId, rid: RecordId, row: Row) PreparedWrite
+  +prepareDelete(tx: TransactionId, rid: RecordId) PreparedWrite
+  +applyWrite(prepared: PreparedWrite, lsn: LogSequenceNumber) void
+  +cancelPrepared(prepared: PreparedWrite) void
+  +createIndex(name: String, table: String, column: String, kind: IndexKind) void
+}
+class StorageCatalogAdapter {
+  -catalog: CatalogManager
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+class StorageRecoveryAdapter {
+  -records: RecordStore
+  -generations: GenerationStore
+  -indexes: IndexManager
+  -buffer: BufferPool
+  +readRecord(rid: RecordId) RecordImage
+  +applyRecovery(mutation: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildIndexes() void
+  +flushDirtyThrough(lsn: LogSequenceNumber) void
+  +captureSnapshot(boundary: RecoveryBoundary) SnapshotMetadata
+  +createStage(snapshot: SnapshotMetadata, id: UUID) RecoveryStage
+  +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildStageIndexes(stage: RecoveryStage) void
+  +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+  +readActiveManifest() GenerationManifest
+  +switchToPublishedGeneration(manifest: GenerationManifest) void
+}
+class RecordStore {
+  -heap: HeapFile
+  -buffer: BufferPool
+  -serializer: RecordSerializer
+  -indexes: IndexManager
+  +read(rid: RecordId) RecordImage
+  +reserve(table: String) RecordId
+  +apply(prepared: PreparedWrite, lsn: LogSequenceNumber) void
+  +cancel(prepared: PreparedWrite) void
+  +applyRecovery(mutation: RecoveryMutation, lsn: LogSequenceNumber) void
+}
+class HeapFile {
+  +readPage(pageId: long) Page
+  +allocateSlot(table: String) RecordId
+  +writePage(page: Page) void
+}
+class HeapRowCursor {
+  -heap: HeapFile
+  -tableId: long
+  -schema: Schema
+  -pageIterator: Iterator~Page~
+  -buffer: BufferPool
+  -serializer: RecordSerializer
+  +next() Optional~StoredRow~
+  +close() void
+}
+class IndexRowCursor {
+  -records: RecordStore
+  -rids: Iterator~RecordId~
+  -schema: Schema
+  -buffer: BufferPool
+  -serializer: RecordSerializer
+  +next() Optional~StoredRow~
+  +close() void
+}
+
+%% Pages and serialization - SM2 / SM3
+class BufferPool {
+  -disk: DiskManager
+  -durability: WalDurability
+  -pages: Map~Long_Page~
+  +pin(pageId: long) Page
+  +unpin(page: Page) void
+  +markDirty(page: Page, lsn: LogSequenceNumber) void
+  +flush(page: Page) void
+  +flushDirtyThrough(lsn: LogSequenceNumber) void
+}
+class DiskManager {
+  -root: Path
+  +readPage(id: long) ImmutableBytes
+  +writePage(id: long, bytes: ImmutableBytes) void
+  +sync() void
+}
+class Page {
+  -id: long
+  -data: ImmutableBytes
+  -dirty: boolean
+  -pageLsn: LogSequenceNumber
+  +getPageLsn() LogSequenceNumber
+  +setPageLsn(lsn: LogSequenceNumber) void
+}
+class RecordSerializer {
+  +encode(row: Row, schema: Schema) RecordImage
+  +decode(image: RecordImage, schema: Schema) Row
+}
+class ImmutableBytes {
+  -bytes: byte[]
+  +copyOf(bytes: byte[]) ImmutableBytes
+  +copy() byte[]
+}
+
+%% Catalog and sample database - SM4
+class CatalogManager {
+  -schemas: Map~String_Schema~
+  -tableIds: Map~String_Long~
+  -stats: Map~String_TableStatistics~
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+class SampleDatabaseLoader {
+  +loadIfAbsent(catalog: CatalogManager) void
+}
+
+%% Index strategies - SM5
+class IndexManager {
+  -indexes: Map~String_EqualityIndex~
+  +createIndex(meta: IndexMetadata) void
+  +lookup(index: String, predicate: IndexPredicate) List~RecordId~
+  +rebuildAll() void
+  +onWrite(write: PreparedWrite) void
+}
+class EqualityIndex {
+  <<interface>>
+  +lookup(key: Value) List~RecordId~
+  +insert(key: Value, rid: RecordId) void
+  +remove(key: Value, rid: RecordId) void
+}
+class OrderedIndex {
+  <<interface>>
+  +range(predicate: IndexPredicate) List~RecordId~
+}
+class HashIndex {
+  +lookup(key: Value) List~RecordId~
+  +insert(key: Value, rid: RecordId) void
+  +remove(key: Value, rid: RecordId) void
+}
+class BPlusTreeIndex {
+  +lookup(key: Value) List~RecordId~
+  +range(predicate: IndexPredicate) List~RecordId~
+  +insert(key: Value, rid: RecordId) void
+  +remove(key: Value, rid: RecordId) void
+}
+
+%% Historical staging - SM1
+class GenerationStore {
+  -root: Path
+  -manifests: GenerationManifestStore
+  -buffer: BufferPool
+  -catalog: CatalogManager
+  -indexes: IndexManager
+  -records: RecordStore
+  +captureSnapshot(boundary: RecoveryBoundary) SnapshotMetadata
+  +createStage(snapshot: SnapshotMetadata, id: UUID) RecoveryStage
+  +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildStageIndexes(stage: RecoveryStage) void
+  +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+  +readActiveManifest() GenerationManifest
+  +switchToPublishedGeneration(manifest: GenerationManifest) void
+}
+
+%% Storage tests - SM15
+class StorageTestDriver {
+  +runAll() TestReport
+}
+
+TupleReader <|.. StorageManagerImpl
+WriteStore <|.. StorageManagerImpl
+IndexAdmin <|.. StorageManagerImpl
+CatalogAccess <|.. StorageCatalogAdapter
+RecoveryPageStore <|.. StorageRecoveryAdapter
+HistoricalRecoveryStorage <|.. StorageRecoveryAdapter
+StorageGenerationAdmin <|.. StorageRecoveryAdapter
+RowCursor <|.. HeapRowCursor
+RowCursor <|.. IndexRowCursor
+EqualityIndex <|.. HashIndex
+EqualityIndex <|.. BPlusTreeIndex
+OrderedIndex <|.. BPlusTreeIndex
+StorageManagerImpl ..> RecordStore
+StorageManagerImpl ..> CatalogManager
+StorageManagerImpl ..> IndexManager
+StorageCatalogAdapter ..> CatalogManager
+StorageRecoveryAdapter ..> RecordStore
+StorageRecoveryAdapter ..> GenerationStore
+StorageRecoveryAdapter ..> IndexManager
+StorageRecoveryAdapter ..> BufferPool
+RecordStore ..> HeapFile
+RecordStore ..> BufferPool
+RecordStore ..> RecordSerializer
+RecordStore ..> IndexManager
+HeapRowCursor ..> HeapFile
+HeapRowCursor ..> BufferPool
+HeapRowCursor ..> RecordSerializer
+IndexRowCursor ..> RecordStore
+IndexRowCursor ..> BufferPool
+IndexRowCursor ..> RecordSerializer
+GenerationStore ..> GenerationManifestStore
+GenerationStore ..> BufferPool
+GenerationStore ..> CatalogManager
+GenerationStore ..> IndexManager
+GenerationStore ..> RecordStore
+StorageTestDriver ..> TupleReader
+StorageTestDriver ..> WriteStore
+StorageTestDriver ..> IndexAdmin
+StorageTestDriver ..> CatalogAccess
+BufferPool ..> WalDurability
+BufferPool ..> DiskManager
+BufferPool ..> Page
+RecordSerializer ..> ImmutableBytes
+SampleDatabaseLoader ..> CatalogManager
+IndexManager ..> EqualityIndex
+IndexManager ..> OrderedIndex
+IndexManager ..> BPlusTreeIndex
+EqualityIndex <|-- OrderedIndex
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass TupleReader,RowCursor,WriteStore,IndexAdmin,CatalogAccess,RecoveryPageStore,HistoricalRecoveryStorage,StorageGenerationAdmin,GenerationManifestStore,WalDurability,EqualityIndex,OrderedIndex interfaceStyle
+cssClass StorageManagerImpl,StorageCatalogAdapter,StorageRecoveryAdapter,RecordStore,HeapFile,HeapRowCursor,IndexRowCursor,BufferPool,DiskManager,Page,RecordSerializer,ImmutableBytes,CatalogManager,SampleDatabaseLoader,IndexManager,HashIndex,BPlusTreeIndex,GenerationStore,StorageTestDriver classStyle

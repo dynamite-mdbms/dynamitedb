@@ -1,7 +1,7 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.ChangeRecord;
-import dynamitedb.contracts.LogSequenceNumber;
+import dynamitedb.contracts.recovery.ChangeRecord;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;

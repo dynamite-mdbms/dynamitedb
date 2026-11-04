@@ -1,13 +1,13 @@
 package dynamitedb.frm;
 
-import dynamitedb.contracts.DbmsException;
-import dynamitedb.contracts.ErrorCode;
-import dynamitedb.contracts.LogFilter;
-import dynamitedb.contracts.RecoveryResult;
-import dynamitedb.contracts.RecoveryStatus;
-import dynamitedb.contracts.RecoveryTarget;
-import dynamitedb.contracts.TestReport;
-import dynamitedb.contracts.TestResult;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.LogFilter;
+import dynamitedb.contracts.recovery.RecoveryResult;
+import dynamitedb.contracts.recovery.RecoveryStatus;
+import dynamitedb.contracts.recovery.RecoveryTarget;
+import dynamitedb.contracts.testing.TestReport;
+import dynamitedb.contracts.testing.TestResult;
 import dynamitedb.frm.mock.MockRecoveryEnvironment;
 import java.util.List;
 import java.util.Objects;
