@@ -58,8 +58,6 @@ public class ExpressionParser {
   private static BinaryOp operatorAt(List<Token> tokens, int index, Map<String, BinaryOp> ops) {
     if (index >= tokens.size()) return null;
     Token token = tokens.get(index);
-    // Literal teks seperti 'AND' tidak boleh dianggap operator.
-    if (token.kind() != TokenKind.SYMBOL && token.kind() != TokenKind.KEYWORD) return null;
     return ops.get(token.lexeme().toUpperCase(Locale.ROOT));
   }
 

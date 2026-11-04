@@ -182,6 +182,6 @@ public class StatementParser {
   }
 
   private static boolean is(Token token, String lexeme) {
-    return token.kind() != TokenKind.LITERAL && token.lexeme().equalsIgnoreCase(lexeme);
+    return token.lexeme().equalsIgnoreCase(lexeme);
   }
 }
