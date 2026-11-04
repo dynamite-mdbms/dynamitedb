@@ -32,6 +32,7 @@ import dynamitedb.contracts.storage.Value;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -63,7 +64,7 @@ public class Binder {
   public Column resolve(ColumnRef column, Schema scope) {
     List<Column> matches =
         scope.columns().stream()
-            .filter(c -> c.name().equals(column.column()) && inRelation(column, c))
+            .filter(c -> c.name().equalsIgnoreCase(column.column()) && inRelation(column, c))
             .toList();
     if (matches.isEmpty()) throw error("Unknown column: " + label(column));
     if (matches.size() > 1) throw error("Ambiguous column: " + label(column));
@@ -85,11 +86,12 @@ public class Binder {
   }
 
   private InsertStatement bindInsert(InsertStatement insert) {
-    List<Column> columns = tableScope(insert.table(), insert.table()).columns();
+    String table = tableName(insert.table());
+    List<Column> columns = tableScope(table, table).columns();
     if (insert.values().size() != columns.size()) {
       throw error(
           "INSERT into "
-              + insert.table()
+              + table
               + " expects "
               + columns.size()
               + " values, got "
@@ -101,11 +103,12 @@ public class Binder {
         checkValue(columns.get(i), literal.value());
       }
     }
-    return insert;
+    return new InsertStatement(table, insert.values());
   }
 
   private UpdateStatement bindUpdate(UpdateStatement update) {
-    Schema scope = tableScope(update.table(), update.table());
+    String table = tableName(update.table());
+    Schema scope = tableScope(table, table);
     Column target = resolve(update.target(), scope);
     Expression value = qualify(update.expression(), scope);
     if (value instanceof LiteralExpression literal) {
@@ -114,33 +117,38 @@ public class Binder {
       throw error("SET value does not match the type of " + target.name());
     }
     return new UpdateStatement(
-        update.table(), qualified(target), value, update.predicate().map(p -> predicate(p, scope)));
+        table, qualified(target), value, update.predicate().map(p -> predicate(p, scope)));
   }
 
   private DeleteStatement bindDelete(DeleteStatement delete) {
-    Schema scope = tableScope(delete.table(), delete.table());
-    return new DeleteStatement(delete.table(), delete.predicate().map(p -> predicate(p, scope)));
+    String table = tableName(delete.table());
+    Schema scope = tableScope(table, table);
+    return new DeleteStatement(table, delete.predicate().map(p -> predicate(p, scope)));
   }
 
   private CreateIndexStatement bindCreateIndex(CreateIndexStatement create) {
-    resolve(
-        new ColumnRef(Optional.empty(), create.column()),
-        tableScope(create.table(), create.table()));
+    String table = tableName(create.table());
+    Column column =
+        resolve(new ColumnRef(Optional.empty(), create.column()), tableScope(table, table));
     boolean taken =
         catalog.listTables().stream()
-            .flatMap(table -> catalog.listIndexes(table).stream())
-            .anyMatch(index -> index.name().equals(create.index()));
+            .flatMap(t -> catalog.listIndexes(t).stream())
+            .anyMatch(index -> index.name().equalsIgnoreCase(create.index()));
     if (taken) throw error("Index already exists: " + create.index());
-    return create;
+    return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
   }
 
   /** Rebinds a FROM tree and appends its visible columns to {@code scope}. */
   private FromSource bindFrom(FromSource source, Set<String> aliases, List<Column> scope) {
     if (source instanceof TableSource table) {
-      List<Column> columns = tableScope(table.table(), table.alias()).columns();
-      if (!aliases.add(table.alias())) throw error("Duplicate table alias: " + table.alias());
-      scope.addAll(columns);
-      return table;
+      String name = tableName(table.table());
+      // Without AS the parser copies the typed table name, so use the catalog spelling instead.
+      String alias = table.alias().equals(table.table()) ? name : table.alias();
+      if (!aliases.add(alias.toLowerCase(Locale.ROOT))) {
+        throw error("Duplicate table alias: " + alias);
+      }
+      scope.addAll(tableScope(name, alias).columns());
+      return new TableSource(name, alias);
     }
     JoinSource join = (JoinSource) source;
     FromSource left = bindFrom(join.left(), aliases, scope);
@@ -153,7 +161,7 @@ public class Binder {
       Column common =
           join.kind() == JoinKind.NATURAL
               ? leftColumns.stream()
-                  .filter(c -> c.name().equals(column.name()))
+                  .filter(c -> c.name().equalsIgnoreCase(column.name()))
                   .findFirst()
                   .orElse(null)
               : null;
@@ -168,8 +176,14 @@ public class Binder {
         left, right, join.kind(), join.condition().map(c -> predicate(c, joined)));
   }
 
+  private String tableName(String table) {
+    return catalog.listTables().stream()
+        .filter(t -> t.equalsIgnoreCase(table))
+        .findFirst()
+        .orElseThrow(() -> error("Unknown table: " + table));
+  }
+
   private Schema tableScope(String table, String alias) {
-    if (!catalog.listTables().contains(table)) throw error("Unknown table: " + table);
     return new Schema(
         catalog.getSchema(table).columns().stream()
             .map(c -> new Column(alias, c.name(), c.dataType(), c.maxLength(), c.nullable()))
@@ -264,7 +278,7 @@ public class Binder {
   }
 
   private static boolean inRelation(ColumnRef ref, Column column) {
-    return ref.relation().map(column.relation()::equals).orElse(true);
+    return ref.relation().map(column.relation()::equalsIgnoreCase).orElse(true);
   }
 
   private static ColumnRef qualified(Column column) {

@@ -11,11 +11,13 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
+import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.query.Statement;
+import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -101,6 +103,26 @@ class BinderTest {
   }
 
   @Test
+  void matchesIdentifiersIgnoringCaseAndKeepsCatalogSpelling() {
+    var select = (SelectStatement) bind("SELECT NAME FROM Student WHERE STUDENT.Gpa > 3");
+    assertEquals(new TableSource("student", "student"), select.from());
+    assertEquals(List.of(ref("student", "name")), select.projection());
+    assertEquals(
+        new BinaryExpression(column("student", "gpa"), BinaryOp.GT, number(3)),
+        select.predicate().orElseThrow());
+
+    var aliased = (SelectStatement) bind("SELECT S.Sid FROM STUDENT AS s");
+    assertEquals(new TableSource("student", "s"), aliased.from());
+    assertEquals(List.of(ref("s", "sid")), aliased.projection());
+
+    assertEquals(
+        "student", ((InsertStatement) bind("INSERT INTO Student VALUES (1, 'A', 1)")).table());
+    var index = (CreateIndexStatement) bind("CREATE INDEX idx_name ON STUDENT(Name)");
+    assertEquals("student", index.table());
+    assertEquals("name", index.column());
+  }
+
+  @Test
   void rejectsInvalidReferencesAndTypes() {
     for (String sql :
         List.of(
@@ -108,6 +130,8 @@ class BinderTest {
             "SELECT age FROM student",
             "SELECT sid FROM student, enroll",
             "SELECT * FROM student, student",
+            "SELECT * FROM student AS s, enroll AS S",
+            "CREATE INDEX IDX_SID ON enroll(cid)",
             "SELECT x.* FROM student",
             "SELECT * FROM student NATURAL JOIN tagged",
             "SELECT name FROM student WHERE name > 3",
