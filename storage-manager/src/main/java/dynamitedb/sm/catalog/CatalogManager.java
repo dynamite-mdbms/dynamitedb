@@ -31,16 +31,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 import java.util.function.ToLongFunction;
 import java.util.zip.CRC32;
 
 /** Persistent schema, table identity, statistics and completed index definitions (SM-08, SM-09). */
 public final class CatalogManager {
   private static final int MAGIC = 0x44594354;
-  private static final int VERSION = 1;
+  private static final int VERSION = 2;
   private static final int MAX_FILE_BYTES = 32 * 1024 * 1024;
   private static final int INITIALIZING_SAMPLE = 1;
   private static final int READY_SAMPLE = 2;
+  private static final int PENDING_SAMPLE = 3;
 
   private final Map<String, Schema> schemas = new HashMap<>();
   private final Map<String, Long> tableIds = new HashMap<>();
@@ -52,6 +54,7 @@ public final class CatalogManager {
   private final Path root;
   private final Path file;
   private final ToLongFunction<String> blockCounter;
+  private final Predicate<Path> freshRecoveryMetadata;
   private long nextTableId = 1;
   private int sampleState;
   private boolean present;
@@ -72,9 +75,22 @@ public final class CatalogManager {
    * counter, SM1 supplies counts through updateBlockCount.
    */
   public CatalogManager(Path root, ToLongFunction<String> blockCounter) {
+    this(root, blockCounter, entry -> false);
+  }
+
+  /**
+   * Recovery may approve existing entries when it has validated their contents as metadata for a
+   * fresh, empty database. Approval must cover the entire entry (including a directory's contents),
+   * not just its filename. Unknown files and existing heap storage must never be approved. The
+   * default constructors approve no entries; SM does not interpret FRM's private file formats.
+   */
+  public CatalogManager(
+      Path root, ToLongFunction<String> blockCounter, Predicate<Path> freshRecoveryMetadata) {
     this.root = Objects.requireNonNull(root, "root").toAbsolutePath().normalize();
     file = this.root.resolve("catalog.db");
     this.blockCounter = blockCounter;
+    this.freshRecoveryMetadata =
+        Objects.requireNonNull(freshRecoveryMetadata, "freshRecoveryMetadata");
     if (!Files.notExists(file)) {
       load();
       present = true;
@@ -288,24 +304,43 @@ public final class CatalogManager {
 
   synchronized boolean hasDatabase() {
     ensureHealthy();
-    if (sampleState == INITIALIZING_SAMPLE) {
-      throw failure(
-          "Sample initialization is incomplete; recover or inspect storage before retrying");
+    return present && (sampleState == 0 || sampleState == READY_SAMPLE);
+  }
+
+  synchronized boolean requiresSampleRecovery() {
+    ensureHealthy();
+    return sampleState == INITIALIZING_SAMPLE;
+  }
+
+  synchronized void validateSampleDefinitions(Map<String, Schema> definitions) {
+    ensureHealthy();
+    if (!schemas.equals(definitions)
+        || indexes.values().stream().anyMatch(list -> !list.isEmpty())) {
+      throw failure("Unfinished sample catalog has unexpected definitions; refusing to reseed");
     }
-    return present;
   }
 
   synchronized void beginSampleInitialization(Map<String, Schema> definitions) {
     ensureHealthy();
     if (present) {
-      throw new DbmsException(ErrorCode.INVALID_STATE, "Database already exists");
+      if (sampleState != PENDING_SAMPLE) {
+        throw new DbmsException(
+            ErrorCode.INVALID_STATE, "Database already exists or requires recovery");
+      }
+      validateSampleDefinitions(definitions);
+      return;
     }
     try {
       if (Files.exists(root)) {
         try (var entries = Files.list(root)) {
-          if (entries.findAny().isPresent()) {
+          if (entries.anyMatch(
+              entry ->
+                  Files.isSymbolicLink(entry)
+                      || entry.getFileName().toString().equals("pages.db")
+                      || entry.getFileName().toString().equals("pages.pending")
+                      || !freshRecoveryMetadata.test(entry))) {
             throw failure(
-                "Storage directory is not empty; refusing to seed over existing or damaged data");
+                "Storage contains data or entries not validated as fresh recovery metadata; refusing to seed");
           }
         }
       }
@@ -315,10 +350,42 @@ public final class CatalogManager {
     definitions.forEach(CatalogManager::validateSchema);
     mutate(
         () -> {
-          sampleState = INITIALIZING_SAMPLE;
+          sampleState = PENDING_SAMPLE;
           definitions.keySet().stream()
               .sorted()
               .forEach(table -> addTable(table, definitions.get(table)));
+        });
+  }
+
+  /** Persist before the first possible insert, so a crash never leaves writes marked retryable. */
+  synchronized void startSampleWrites() {
+    ensureHealthy();
+    if (sampleState != PENDING_SAMPLE
+        || stats.values().stream().anyMatch(stat -> stat.rowCount() != 0)) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "Sample is not ready for a fresh write attempt");
+    }
+    mutate(() -> sampleState = INITIALIZING_SAMPLE);
+  }
+
+  /**
+   * Use only after successful transaction abort or a post-recovery scan proving every table empty.
+   */
+  synchronized void resetSampleInitialization() {
+    ensureHealthy();
+    if (sampleState != INITIALIZING_SAMPLE) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "No sample write attempt to reset");
+    }
+    mutate(
+        () -> {
+          for (String table : schemas.keySet()) {
+            var counts = emptyFrequencies(schemas.get(table));
+            long blocks = blockCount(table);
+            frequencies.put(table, counts.stream().map(Map::copyOf).toList());
+            rowBytes.put(table, 0L);
+            stats.put(table, statistics(schemas.get(table), counts, 0, 0, blocks));
+          }
+          sampleState = PENDING_SAMPLE;
         });
   }
 
@@ -510,12 +577,18 @@ public final class CatalogManager {
         throw failure("Catalog checksum mismatch");
       }
       try (var in = new DataInputStream(new ByteArrayInputStream(bytes, 0, payloadSize))) {
-        if (in.readInt() != MAGIC || in.readInt() != VERSION) {
+        if (in.readInt() != MAGIC) {
+          throw failure("Unsupported catalog format");
+        }
+        int version = in.readInt();
+        if (version != 1 && version != VERSION) {
           throw failure("Unsupported catalog format");
         }
         nextTableId = in.readLong();
         sampleState = in.readInt();
-        if (nextTableId < 1 || sampleState < 0 || sampleState > READY_SAMPLE) {
+        if (nextTableId < 1
+            || sampleState < 0
+            || sampleState > (version == 1 ? READY_SAMPLE : PENDING_SAMPLE)) {
           throw failure("Invalid catalog state");
         }
         int tableCount = readCount(in);
