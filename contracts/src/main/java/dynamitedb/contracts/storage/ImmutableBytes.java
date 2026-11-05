@@ -1,8 +1,8 @@
 package dynamitedb.contracts.storage;
 
-// draf dari QP biar bisa compile, nanti ganti punya SM
-public class ImmutableBytes {
+import java.util.Arrays;
 
+public final class ImmutableBytes {
   private final byte[] bytes;
 
   private ImmutableBytes(byte[] bytes) {
@@ -15,5 +15,20 @@ public class ImmutableBytes {
 
   public byte[] copy() {
     return bytes.clone();
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof ImmutableBytes that && Arrays.equals(bytes, that.bytes);
+  }
+
+  @Override
+  public int hashCode() {
+    return Arrays.hashCode(bytes);
+  }
+
+  @Override
+  public String toString() {
+    return "ImmutableBytes[" + bytes.length + " bytes]";
   }
 }

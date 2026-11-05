@@ -1,5 +1,11 @@
 package dynamitedb.contracts.storage;
 
-// draf dari QP sesuai shared types di CD final, nanti ganti kalau contracts resmi udah ada
+import java.util.Objects;
+
 public record Column(
-    String relation, String name, DataType dataType, int maxLength, boolean nullable) {}
+    String relation, String name, DataType dataType, int maxLength, boolean nullable) {
+
+  public Column {
+    Objects.requireNonNull(name, "name");
+  }
+}

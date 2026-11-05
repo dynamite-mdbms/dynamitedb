@@ -65,12 +65,26 @@ public final class QueryProcessorImpl implements QueryProcessor {
       if (prepared == null || prepared.root() == null || prepared.outputSchema() == null) {
         throw new DbmsException(ErrorCode.INVALID_PLAN, "Optimizer returned an incomplete plan");
       }
+      boolean abortCommand =
+          prepared.root() instanceof TransactionCommandPlan transactionPlan
+              && transactionPlan.command() == TransactionCommand.ABORT;
+      if (session.rollbackRequired() && !abortCommand) {
+        throw new DbmsException(
+            ErrorCode.INVALID_STATE,
+            "Previous rollback failed. Retry ABORT or close this session before running another command.");
+      }
       if (prepared.root() instanceof TransactionCommandPlan command) {
         try {
-          return executePrepared(prepared, session);
+          QueryResult result = executePrepared(prepared, session);
+          if (abortCommand) {
+            session.completeRollback();
+          }
+          return result;
         } catch (RuntimeException failure) {
           if (command.command() == TransactionCommand.COMMIT) {
             abortAfterFailure(session, failure);
+          } else if (abortCommand && session.activeTx().isPresent()) {
+            session.markRollbackRequired();
           }
           throw failure;
         }
@@ -126,12 +140,22 @@ public final class QueryProcessorImpl implements QueryProcessor {
         result.message() == null ? "" : result.message());
   }
 
+  private void abortTransaction(SessionContext session) {
+    try {
+      txCoordinator.abort(session);
+      session.completeRollback();
+    } catch (RuntimeException failure) {
+      session.markRollbackRequired();
+      throw failure;
+    }
+  }
+
   private void abortAfterFailure(SessionContext session, RuntimeException failure) {
     if (session.activeTx().isPresent()) {
       try {
-        txCoordinator.abort(session);
+        abortTransaction(session);
       } catch (RuntimeException rollbackFailure) {
-        // Keep the active context available: failed rollback must not silently lose protection.
+        // Retain the original failure while keeping this session blocked until cleanup succeeds.
         if (rollbackFailure != failure) {
           failure.addSuppressed(rollbackFailure);
         }
@@ -147,7 +171,7 @@ public final class QueryProcessorImpl implements QueryProcessor {
             session -> {
               synchronized (session) {
                 if (session.activeTx().isPresent()) {
-                  txCoordinator.abort(session);
+                  abortTransaction(session);
                 }
                 sessions.close(sessionId);
               }

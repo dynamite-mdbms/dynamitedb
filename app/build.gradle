@@ -1,5 +1,9 @@
 apply plugin: 'application'
 
+repositories {
+    mavenCentral()
+}
+
 application {
     mainClass = 'dynamitedb.app.Main'
 }
@@ -11,6 +15,12 @@ dependencies {
     implementation project(':storage-manager')
     implementation project(':concurrency-manager')
     implementation project(':recovery-manager')
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }
 
 tasks.named('run') {

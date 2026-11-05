@@ -1,6 +1,5 @@
 package dynamitedb.contracts.error;
 
-// draf dari QP biar bisa compile, sesuai shared types final
 public enum ErrorCode {
   SQL_SYNTAX,
   SQL_BIND,
