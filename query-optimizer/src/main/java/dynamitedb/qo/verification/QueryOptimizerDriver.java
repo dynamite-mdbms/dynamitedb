@@ -222,7 +222,7 @@ public class QueryOptimizerDriver {
         new OptimizerPipeline(
             List.<PlanRewrite>of(
                 new SelectionPushdown(),
-                new ProjectionPushdown(),
+                new ProjectionPushdown(catalog),
                 new JoinRewriter(),
                 new AccessPathOptimizer(catalog)),
             new JoinOrderOptimizer(),

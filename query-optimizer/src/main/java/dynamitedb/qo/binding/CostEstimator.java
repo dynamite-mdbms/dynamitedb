@@ -148,7 +148,7 @@ public class CostEstimator {
   }
 
   /** Maps every relation alias scanned under {@code plan} to its table. */
-  private static Map<String, String> scans(PlanNode plan) {
+  public static Map<String, String> scans(PlanNode plan) {
     return switch (plan) {
       case TableScanPlan scan -> Map.of(scan.alias(), scan.table());
       case IndexScanPlan scan -> Map.of(scan.alias(), scan.table());
