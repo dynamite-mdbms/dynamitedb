@@ -21,15 +21,91 @@ import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryEnvironment;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class CheckpointManagerTest {
+  @TempDir Path directory;
+
+  @Test
+  void completedCheckpointIsDurableInRealWal() {
+    var environment = MockRecoveryEnvironment.create();
+    UUID lineage = UUID.randomUUID();
+    var seed =
+        new RecoveryHighWater(
+            new LogSequenceNumber(0), new TransactionId(0), 0, java.util.Optional.empty());
+    try (var log = LogManager.createNew(directory, lineage, seed)) {
+      var wal = new WalService(new CommitClock(), log);
+      wal.begin(new TransactionId(1), 1);
+      wal.commitDurably(new TransactionId(1));
+      var pages = pagesWithHook(environment, () -> assertEquals(3, log.durableLsn()));
+
+      assertEquals(
+          new LogSequenceNumber(4),
+          new CheckpointManager(environment.ports().coordinator(), pages, log)
+              .checkpoint()
+              .checkpointLsn());
+      assertEquals(4, log.durableLsn());
+    }
+    try (var reopened = LogManager.openExisting(directory, lineage, seed)) {
+      var markers = reopened.scanFrom(new LogSequenceNumber(3));
+      var begin = (CheckpointLogRecord) markers.next();
+      var end = (CheckpointLogRecord) markers.next();
+      assertFalse(markers.hasNext());
+      assertEquals(CheckpointEvent.BEGIN, begin.event);
+      assertEquals(CheckpointEvent.END, end.event);
+      assertEquals(begin.checkpointId, end.checkpointId);
+      assertEquals(new LogSequenceNumber(2), begin.throughLsn);
+      assertEquals(begin.throughLsn, end.throughLsn);
+      assertEquals(4, reopened.durableLsn());
+    }
+  }
+
+  @Test
+  void failedPageFlushLeavesOnlyBeginAndNextCheckpointCanCompleteAfterReopen() {
+    var environment = MockRecoveryEnvironment.create();
+    UUID lineage = UUID.randomUUID();
+    var seed =
+        new RecoveryHighWater(
+            new LogSequenceNumber(0), new TransactionId(0), 0, java.util.Optional.empty());
+    try (var log = LogManager.createNew(directory, lineage, seed)) {
+      var pages =
+          pagesWithHook(
+              environment,
+              () -> {
+                throw new DbmsException(ErrorCode.STORAGE_FAILURE, "flush failed");
+              });
+      assertThrows(
+          DbmsException.class,
+          new CheckpointManager(environment.ports().coordinator(), pages, log)::checkpoint);
+      assertEquals(1, log.durableLsn());
+    }
+    try (var reopened = LogManager.openExisting(directory, lineage, seed)) {
+      var checkpoint =
+          new CheckpointManager(
+              environment.ports().coordinator(), environment.ports().pages(), reopened);
+      assertEquals(new LogSequenceNumber(3), checkpoint.checkpoint().checkpointLsn());
+      var records = reopened.scanFrom(new LogSequenceNumber(1));
+      var incomplete = (CheckpointLogRecord) records.next();
+      var begin = (CheckpointLogRecord) records.next();
+      var end = (CheckpointLogRecord) records.next();
+      assertFalse(records.hasNext());
+      assertEquals(CheckpointEvent.BEGIN, incomplete.event);
+      assertEquals(CheckpointEvent.BEGIN, begin.event);
+      assertEquals(CheckpointEvent.END, end.event);
+      assertEquals(begin.checkpointId, end.checkpointId);
+      assertFalse(incomplete.checkpointId.equals(end.checkpointId));
+    }
+  }
+
   @Test
   void checkpointForcesWalBeforePagesAndEndBeforeReleasingMaintenance() {
     var environment = MockRecoveryEnvironment.create();
