@@ -4,18 +4,6 @@ import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.api.QueryOptimizer;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
-import dynamitedb.contracts.query.DeletePlan;
-import dynamitedb.contracts.query.FilterPlan;
-import dynamitedb.contracts.query.FromSource;
-import dynamitedb.contracts.query.JoinPlan;
-import dynamitedb.contracts.query.JoinSource;
-import dynamitedb.contracts.query.PlanNode;
-import dynamitedb.contracts.query.ProjectPlan;
-import dynamitedb.contracts.query.SelectStatement;
-import dynamitedb.contracts.query.SortPlan;
-import dynamitedb.contracts.query.Statement;
-import dynamitedb.contracts.query.TableSource;
-import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.IndexMetadata;
@@ -141,6 +129,9 @@ public class QueryOptimizerDriver {
     return List.of(
         "-- expect: OK\nSELECT student.name FROM student ORDER BY student.name DESC;",
         "-- expect: OK\nSELECT * FROM student NATURAL JOIN enrollment;",
+        "-- expect: OK\n"
+            + "SELECT student.name FROM student JOIN enrollment "
+            + "ON student.student_id = enrollment.student_id WHERE gpa > 3.0;",
         "-- expect: SQL_SYNTAX\nSELEC * FROM student;",
         "-- expect: SQL_BIND\nSELECT * FROM missing_table;");
   }
@@ -199,21 +190,8 @@ public class QueryOptimizerDriver {
 
   private static QueryOptimizer standaloneOptimizer() {
     CatalogAccess catalog = fakeCatalog();
-    CostEstimator cost =
-        new CostEstimator(catalog) {
-          @Override
-          public double estimate(PlanNode plan) {
-            return countNodes(plan);
-          }
-        };
-    Binder binder =
-        new Binder(catalog) {
-          @Override
-          public Statement bind(Statement statement) {
-            if (statement instanceof SelectStatement select) validateTables(select.from(), catalog);
-            return statement;
-          }
-        };
+    CostEstimator cost = new CostEstimator(catalog);
+    Binder binder = new Binder(catalog);
     return new QueryOptimizerImpl(
         new Lexer(),
         new SqlParser(new StatementParser(), new ExpressionParser()),
@@ -281,31 +259,9 @@ public class QueryOptimizerDriver {
     };
   }
 
-  private static void validateTables(FromSource source, CatalogAccess catalog) {
-    if (source instanceof TableSource table) {
-      if (!catalog.listTables().contains(table.table())) {
-        throw new DbmsException(ErrorCode.SQL_BIND, "Unknown table: " + table.table());
-      }
-    } else if (source instanceof JoinSource join) {
-      validateTables(join.left(), catalog);
-      validateTables(join.right(), catalog);
-    }
-  }
-
   private static void requireTable(String table, Map<String, Schema> schemas) {
     if (!schemas.containsKey(table)) {
       throw new DbmsException(ErrorCode.SQL_BIND, "Unknown table: " + table);
     }
-  }
-
-  private static double countNodes(PlanNode plan) {
-    if (plan instanceof FilterPlan filter) return 1 + countNodes(filter.child());
-    if (plan instanceof ProjectPlan project) return 1 + countNodes(project.child());
-    if (plan instanceof SortPlan sort) return 1 + countNodes(sort.child());
-    if (plan instanceof JoinPlan join)
-      return 1 + countNodes(join.left()) + countNodes(join.right());
-    if (plan instanceof UpdatePlan update) return 1 + countNodes(update.source());
-    if (plan instanceof DeletePlan delete) return 1 + countNodes(delete.source());
-    return 1;
   }
 }
