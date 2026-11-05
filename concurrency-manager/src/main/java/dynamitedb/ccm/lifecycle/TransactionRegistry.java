@@ -107,6 +107,13 @@ public class TransactionRegistry {
 
   public synchronized void restoreHighWater(RecoveryHighWater highWater) {
     Objects.requireNonNull(highWater, "highWater");
+    if (highWater.maxTx().value() < 0
+        || highWater.maxTx().value() == Long.MAX_VALUE
+        || highWater.maxTimestamp() < 0
+        || highWater.maxTimestamp() == Long.MAX_VALUE) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "High-water transaksi tidak memiliki ID/timestamp penerus");
+    }
     transactions.clear();
     active.clear();
     notifyAll();

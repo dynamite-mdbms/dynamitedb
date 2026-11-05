@@ -12,6 +12,9 @@ final class FakeRecovery implements TransactionWal, RollbackService {
   volatile boolean failBegin;
   volatile boolean failCommit;
   volatile boolean failRollback;
+  volatile boolean failChange;
+  ChangeRecord lastChange;
+  Runnable duringRollback = () -> {};
 
   FakeRecovery(List<String> events) {
     this.events = events;
@@ -27,6 +30,10 @@ final class FakeRecovery implements TransactionWal, RollbackService {
 
   @Override
   public LogSequenceNumber appendChange(ChangeRecord change) {
+    if (failChange) {
+      throw new IllegalStateException("log penuh");
+    }
+    lastChange = change;
     events.add("wal change " + change.tx());
     return new LogSequenceNumber(1);
   }
@@ -44,6 +51,7 @@ final class FakeRecovery implements TransactionWal, RollbackService {
     if (failRollback) {
       throw new IllegalStateException("undo gagal");
     }
+    duringRollback.run();
     events.add("rollback " + tx);
   }
 }

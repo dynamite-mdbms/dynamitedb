@@ -12,6 +12,8 @@ import dynamitedb.ccm.recovery.MaintenanceController;
 import dynamitedb.ccm.recovery.TransactionRecoveryBridge;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.transaction.AccessDecision;
 import dynamitedb.contracts.transaction.AccessMode;
 import dynamitedb.contracts.transaction.AccessRequest;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +58,8 @@ class ConcurrencyManagerImplTest {
             new TransactionRecoveryBridge(recovery, recovery),
             new MaintenanceController(registry),
             announcements::add);
+    ccm.initializeRecoveredState(
+        new RecoveryHighWater(new LogSequenceNumber(0), new TransactionId(0), 0, Optional.empty()));
   }
 
   private static AccessRequest write(TransactionId tx) {

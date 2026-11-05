@@ -197,7 +197,26 @@ public class ConcurrencyManagerImpl
 
   @Override
   public LogSequenceNumber recordChange(TransactionId tx, PreparedWrite write) {
-    return bridge.recordChange(tx, write);
+    Transaction transaction = registry.get(tx);
+    synchronized (transaction) {
+      if (!transaction.isActive()) {
+        throw new DbmsException(ErrorCode.INVALID_STATE, inactiveReason(transaction));
+      }
+      try {
+        return bridge.recordChange(tx, write);
+      } catch (DbmsException failure) {
+        if (failure.getCode() != ErrorCode.WAL_FAILURE) {
+          throw failure;
+        }
+        try {
+          abortFlow(transaction);
+        } catch (DbmsException rollbackFailure) {
+          rollbackFailure.addSuppressed(failure);
+          throw rollbackFailure;
+        }
+        throw failure;
+      }
+    }
   }
 
   @Override
@@ -207,12 +226,21 @@ public class ConcurrencyManagerImpl
 
   @Override
   public long transactionTimestamp(TransactionId tx) {
-    return registry.find(tx).map(Transaction::timestamp).orElse(0L);
+    return registry.get(tx).timestamp();
   }
 
   @Override
   public void initializeRecoveredState(RecoveryHighWater highWater) {
-    registry.restoreHighWater(highWater);
+    Objects.requireNonNull(highWater, "highWater");
+    maintenance.initializeRecoveredState(
+        () -> {
+          for (TransactionId tx : registry.activeTransactions()) {
+            for (ConcurrencyProtocol available : protocols.values()) {
+              available.onFinish(tx);
+            }
+          }
+          registry.restoreHighWater(highWater);
+        });
   }
 
   private AccessDecision decide(TransactionId tx, Supplier<AccessDecision> protocolCall) {
