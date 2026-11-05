@@ -1,0 +1,308 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% FRM-provided interfaces
+class TransactionWal {
+  <<interface>>
+  +begin(tx: TransactionId, timestamp: long) void
+  +appendChange(change: ChangeRecord) LogSequenceNumber
+  +commitDurably(tx: TransactionId) void
+}
+class RollbackService {
+  <<interface>>
+  +rollbackCompletely(tx: TransactionId) void
+}
+class WalDurability {
+  <<interface>>
+  +ensureDurable(lsn: LogSequenceNumber) void
+}
+class CrashRecovery {
+  <<interface>>
+  +recover() RecoveryResult
+}
+class CheckpointService {
+  <<interface>>
+  +checkpoint() CheckpointResult
+}
+class HistoricalRecoveryService {
+  <<interface>>
+  +recoverTo(target: RecoveryTarget) RecoveryResult
+}
+class LogInspection {
+  <<interface>>
+  +readLog(filter: LogFilter) LogView
+}
+
+%% Consumed interface ports
+class RecoveryCoordinator {
+  <<interface>>
+  +acquireMaintenance() MaintenanceGuard
+  +transactionTimestamp(tx: TransactionId) long
+  +initializeRecoveredState(highWater: RecoveryHighWater) void
+}
+class RecoveryPageStore {
+  <<interface>>
+  +readRecord(rid: RecordId) RecordImage
+  +applyRecovery(mutation: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildIndexes() void
+  +flushDirtyThrough(lsn: LogSequenceNumber) void
+}
+class HistoricalRecoveryStorage {
+  <<interface>>
+  +captureSnapshot(boundary: RecoveryBoundary) SnapshotMetadata
+  +createStage(snapshot: SnapshotMetadata, id: UUID) RecoveryStage
+  +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildStageIndexes(stage: RecoveryStage) void
+  +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+}
+class StorageGenerationAdmin {
+  <<interface>>
+  +readActiveManifest() GenerationManifest
+  +switchToPublishedGeneration(manifest: GenerationManifest) void
+}
+class GenerationManifestStore {
+  <<interface>>
+  +readActive() GenerationManifest
+  +publishAtomically(manifest: GenerationManifest) void
+}
+
+%% Facade and startup - FR1
+class RecoveryManagerImpl {
+  -wal: WalService
+  -rollback: UndoManager
+  -crash: CrashRecoveryManager
+  -historical: HistoricalRecoveryManager
+  -checkpoint: CheckpointManager
+  +begin(tx: TransactionId, timestamp: long) void
+  +appendChange(change: ChangeRecord) LogSequenceNumber
+  +commitDurably(tx: TransactionId) void
+  +rollbackCompletely(tx: TransactionId) void
+  +ensureDurable(lsn: LogSequenceNumber) void
+  +recover() RecoveryResult
+  +checkpoint() CheckpointResult
+  +recoverTo(target: RecoveryTarget) RecoveryResult
+  +readLog(filter: LogFilter) LogView
+}
+class RecoveryInitializer {
+  -manifest: GenerationManifestStore
+  -crash: CrashRecovery
+  +createNew(seed: SnapshotMetadata) RecoveryResult
+  +openExisting() RecoveryResult
+}
+class RecoveryTestDriver {
+  +runAll() TestReport
+  +runScenario(name: String) TestResult
+}
+
+%% Log persistence - FR2
+class WalService {
+  -clock: CommitClock
+  -log: LogManager
+  +begin(tx: TransactionId, timestamp: long) void
+  +appendChange(change: ChangeRecord) LogSequenceNumber
+  +commitDurably(tx: TransactionId) void
+  +ensureDurable(lsn: LogSequenceNumber) void
+  +readLog(filter: LogFilter) LogView
+  +prepareLineage(id: UUID, base: SealedGeneration, highWater: RecoveryHighWater) void
+  +activate(manifest: GenerationManifest) void
+}
+class LogManager {
+  -root: Path
+  -activeLineage: UUID
+  -file: LogFile
+  -codec: LogRecordCodec
+  -durable: LogSequenceNumber
+  -next: LogSequenceNumber
+  +append(record: LogRecord) LogSequenceNumber
+  +flush(lsn: LogSequenceNumber) void
+  +prepareLineage(id: UUID, base: SealedGeneration, highWater: RecoveryHighWater) void
+  +activate(manifest: GenerationManifest) void
+  +readHighWater() RecoveryHighWater
+  +scanHistory(lineage: UUID, fromLsn: LogSequenceNumber) Iterator~LogRecord~
+  +scanFrom(lsn: LogSequenceNumber) Iterator~LogRecord~
+  +reverseByTx(tx: TransactionId) Iterator~LogRecord~
+  +read(filter: LogFilter) LogView
+}
+class LogFile {
+  +appendFrame(frame: ImmutableBytes) void
+  +sync() void
+  +readFrames() Iterator~ImmutableBytes~
+  +repairIncompleteTail() void
+}
+class LogRecordCodec {
+  +encode(record: LogRecord) ImmutableBytes
+  +decode(frame: ImmutableBytes) LogRecord
+  +verify(frame: ImmutableBytes) boolean
+}
+class CommitClock {
+  -last: Instant
+  +assign(wallUtc: Instant) Instant
+  +seed(lastCommitTime: Instant) void
+}
+class LogRecord {
+  <<abstract>>
+  +lsn: LogSequenceNumber
+  +tx: Optional~TransactionId~
+  +prevLsn: Optional~LogSequenceNumber~
+  +walLineage: UUID
+}
+class ChangeLogRecord {
+  +change: ChangeRecord
+}
+class TransactionEventLogRecord {
+  +event: TxEvent
+  +beginTimestamp: Optional~Long~
+  +commitTime: Optional~Instant~
+}
+class CompensationLogRecord {
+  +compensates: LogSequenceNumber
+  +undoNext: Optional~LogSequenceNumber~
+  +mutation: RecoveryMutation
+}
+class CheckpointLogRecord {
+  +checkpointId: UUID
+  +event: CheckpointEvent
+  +throughLsn: LogSequenceNumber
+}
+class TxEvent {
+  <<enumeration>>
+  BEGIN
+  COMMIT
+  ABORT_COMPLETE
+}
+class CheckpointEvent {
+  <<enumeration>>
+  BEGIN
+  END
+}
+
+%% Rollback - FR3
+class UndoManager {
+  -log: LogManager
+  -storage: RecoveryPageStore
+  +rollbackCompletely(tx: TransactionId) void
+  +undoLosers(state: RecoveryState) void
+  +emitClr(record: ChangeLogRecord) CompensationLogRecord
+}
+
+%% Historical/checkpoint - FR4
+class HistoricalRecoveryManager {
+  -storage: HistoricalRecoveryStorage
+  -catalog: HistoryCatalog
+  -generations: StorageGenerationAdmin
+  -log: LogManager
+  -wal: WalService
+  -manifests: GenerationManifestStore
+  -maintenance: RecoveryCoordinator
+  +recoverTo(target: RecoveryTarget) RecoveryResult
+  +resolveBoundary(target: RecoveryTarget) RecoveryBoundary
+}
+class HistoryCatalog {
+  -manifestStore: GenerationManifestStore
+  -log: LogManager
+  -snapshots: List~SnapshotMetadata~
+  +validateCoverage(target: RecoveryTarget) void
+  +getBaseSnapshot(target: RecoveryTarget) SnapshotMetadata
+  +buildManifest(generation: SealedGeneration, walLineage: UUID, highWater: RecoveryHighWater) GenerationManifest
+}
+class AtomicGenerationManifestStore {
+  -root: Path
+  +readActive() GenerationManifest
+  +publishAtomically(manifest: GenerationManifest) void
+}
+class CheckpointManager {
+  -coordinator: RecoveryCoordinator
+  -pages: RecoveryPageStore
+  -log: LogManager
+  +checkpoint() CheckpointResult
+  +startPeriodic(interval: Duration) void
+  +stopPeriodic() void
+}
+
+%% Crash recovery - FR5
+class CrashRecoveryManager {
+  -log: LogManager
+  -wal: WalService
+  -manifests: GenerationManifestStore
+  -storage: RecoveryPageStore
+  -undo: UndoManager
+  -generations: StorageGenerationAdmin
+  +recover() RecoveryResult
+  +analyze(startLsn: LogSequenceNumber) RecoveryState
+  +redo(state: RecoveryState) void
+  +undo(state: RecoveryState) void
+}
+class RecoveryState {
+  <<record>>
+  +winners: Set~TransactionId~
+  +losers: Set~TransactionId~
+  +lastLsn: LogSequenceNumber
+  +highWater: RecoveryHighWater
+}
+
+TransactionWal <|.. RecoveryManagerImpl
+RollbackService <|.. RecoveryManagerImpl
+WalDurability <|.. RecoveryManagerImpl
+CrashRecovery <|.. RecoveryManagerImpl
+CheckpointService <|.. RecoveryManagerImpl
+HistoricalRecoveryService <|.. RecoveryManagerImpl
+LogInspection <|.. RecoveryManagerImpl
+RollbackService <|.. UndoManager
+TransactionWal <|.. WalService
+WalDurability <|.. WalService
+LogInspection <|.. WalService
+GenerationManifestStore <|.. AtomicGenerationManifestStore
+LogRecord <|-- ChangeLogRecord
+LogRecord <|-- TransactionEventLogRecord
+LogRecord <|-- CompensationLogRecord
+LogRecord <|-- CheckpointLogRecord
+RecoveryManagerImpl ..> RecoveryInitializer
+RecoveryManagerImpl ..> WalService
+RecoveryManagerImpl ..> UndoManager
+RecoveryManagerImpl ..> CheckpointManager
+RecoveryManagerImpl ..> CrashRecoveryManager
+RecoveryManagerImpl ..> HistoricalRecoveryManager
+RecoveryInitializer ..> GenerationManifestStore
+RecoveryInitializer ..> CrashRecovery
+WalService ..> LogManager
+WalService ..> CommitClock
+LogManager ..> LogFile
+LogManager ..> LogRecordCodec
+UndoManager ..> LogManager
+UndoManager ..> RecoveryPageStore
+CheckpointManager ..> RecoveryCoordinator
+CheckpointManager ..> RecoveryPageStore
+CheckpointManager ..> LogManager
+CrashRecoveryManager ..> LogManager
+CrashRecoveryManager ..> WalService
+CrashRecoveryManager ..> GenerationManifestStore
+CrashRecoveryManager ..> RecoveryPageStore
+CrashRecoveryManager ..> UndoManager
+CrashRecoveryManager ..> RecoveryState
+CrashRecoveryManager ..> StorageGenerationAdmin
+HistoricalRecoveryManager ..> HistoricalRecoveryStorage
+HistoricalRecoveryManager ..> StorageGenerationAdmin
+HistoricalRecoveryManager ..> RecoveryCoordinator
+HistoricalRecoveryManager ..> HistoryCatalog
+HistoricalRecoveryManager ..> LogManager
+HistoricalRecoveryManager ..> WalService
+HistoricalRecoveryManager ..> GenerationManifestStore
+HistoryCatalog ..> GenerationManifestStore
+HistoryCatalog ..> LogManager
+RecoveryTestDriver ..> CrashRecovery
+RecoveryTestDriver ..> HistoricalRecoveryService
+RecoveryTestDriver ..> CheckpointService
+RecoveryTestDriver ..> LogInspection
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass TransactionWal,RollbackService,WalDurability,CrashRecovery,CheckpointService,HistoricalRecoveryService,LogInspection,RecoveryCoordinator,RecoveryPageStore,HistoricalRecoveryStorage,StorageGenerationAdmin,GenerationManifestStore interfaceStyle
+cssClass RecoveryManagerImpl,RecoveryInitializer,RecoveryTestDriver,WalService,LogManager,LogFile,LogRecordCodec,CommitClock,ChangeLogRecord,TransactionEventLogRecord,CompensationLogRecord,CheckpointLogRecord,UndoManager,HistoricalRecoveryManager,HistoryCatalog,AtomicGenerationManifestStore,CheckpointManager,CrashRecoveryManager classStyle
+cssClass LogRecord classStyle
+cssClass RecoveryState recordStyle
+cssClass TxEvent,CheckpointEvent enumStyle

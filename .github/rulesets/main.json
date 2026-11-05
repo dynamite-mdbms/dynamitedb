@@ -1,5 +1,5 @@
 {
-  "name": "main: five group leader approvals",
+  "name": "main: three group leader approvals",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [],
@@ -18,13 +18,14 @@
         "allowed_merge_methods": ["squash"],
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
+        "require_extra_approval_for_unattributed_changes": false,
         "require_last_push_approval": true,
-        "required_approving_review_count": 5,
+        "required_approving_review_count": 3,
         "required_review_thread_resolution": true,
         "required_reviewers": [
           {
             "file_patterns": ["**"],
-            "minimum_approvals": 5,
+            "minimum_approvals": 3,
             "reviewer": {
               "id": 20324116,
               "type": "Team"

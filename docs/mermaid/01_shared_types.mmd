@@ -1,0 +1,543 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% Identitas, data dan indeks
+class TransactionId {
+  <<record>>
+  +value: long
+}
+class SessionId {
+  <<record>>
+  +value: long
+}
+class LogSequenceNumber {
+  <<record>>
+  +value: long
+}
+class RecordId {
+  <<record>>
+  +tableId: long
+  +pageNumber: long
+  +slotNumber: int
+  +generation: long
+}
+class ResourceKind {
+  <<enumeration>>
+  TABLE
+  RECORD
+}
+class ResourceId {
+  <<record>>
+  +kind: ResourceKind
+  +tableId: long
+  +recordId: Optional~RecordId~
+}
+class DataType {
+  <<enumeration>>
+  INTEGER
+  FLOAT
+  CHAR
+  VARCHAR
+}
+class Value {
+  <<interface>>
+}
+class IntValue {
+  <<record>>
+  +value: int
+}
+class FloatValue {
+  <<record>>
+  +value: double
+}
+class TextValue {
+  <<record>>
+  +value: String
+}
+class BooleanValue {
+  <<record>>
+  +value: boolean
+}
+class NullValue {
+  <<enumeration>>
+  INSTANCE
+}
+class Column {
+  <<record>>
+  +relation: String
+  +name: String
+  +dataType: DataType
+  +maxLength: int
+  +nullable: boolean
+}
+class Schema {
+  <<record>>
+  +columns: List~Column~
+}
+class Row {
+  <<record>>
+  +values: List~Value~
+}
+class StoredRow {
+  <<record>>
+  +rid: RecordId
+  +row: Row
+}
+class OperatorRow {
+  <<record>>
+  +row: Row
+  +schema: Schema
+  +origins: Map~String_RecordId~
+}
+class ImmutableBytes {
+  -bytes: byte[]
+  +copyOf(bytes: byte[]) ImmutableBytes
+  +copy() byte[]
+}
+class RecordImage {
+  <<record>>
+  +exists: boolean
+  +encoded: ImmutableBytes
+}
+class TableStatistics {
+  <<record>>
+  +rowCount: long
+  +blockCount: long
+  +averageRowBytes: int
+  +distinctCounts: Map~String_Long~
+}
+class IndexKind {
+  <<enumeration>>
+  HASH
+  B_PLUS_TREE
+}
+class IndexMetadata {
+  <<record>>
+  +name: String
+  +table: String
+  +column: String
+  +kind: IndexKind
+}
+class IndexPredicate {
+  <<record>>
+  +operator: ComparisonOp
+  +value: Value
+}
+class ComparisonOp {
+  <<enumeration>>
+  EQ
+  NEQ
+  LT
+  LTE
+  GT
+  GTE
+}
+class PreparedWrite {
+  <<record>>
+  +tx: TransactionId
+  +table: String
+  +rid: RecordId
+  +before: RecordImage
+  +after: RecordImage
+  +reservation: WriteReservationId
+}
+class WriteReservationId {
+  <<record>>
+  +value: UUID
+}
+class RecoveryMutation {
+  <<record>>
+  +rid: RecordId
+  +targetImage: RecordImage
+}
+
+%% AST dan expression
+class Statement {
+  <<interface>>
+}
+class SelectStatement {
+  <<record>>
+  +projection: List~ColumnRef~
+  +from: FromSource
+  +predicate: Optional~Expression~
+  +orderBy: List~SortKey~
+}
+class InsertStatement {
+  <<record>>
+  +table: String
+  +values: List~Expression~
+}
+class UpdateStatement {
+  <<record>>
+  +table: String
+  +target: ColumnRef
+  +expression: Expression
+  +predicate: Optional~Expression~
+}
+class DeleteStatement {
+  <<record>>
+  +table: String
+  +predicate: Optional~Expression~
+}
+class CreateIndexStatement {
+  <<record>>
+  +index: String
+  +table: String
+  +column: String
+  +kind: IndexKind
+}
+class TransactionStatement {
+  <<record>>
+  +command: TransactionCommand
+}
+class TransactionCommand {
+  <<enumeration>>
+  BEGIN
+  COMMIT
+  ABORT
+}
+class ColumnRef {
+  <<record>>
+  +relation: Optional~String~
+  +column: String
+}
+class FromSource {
+  <<interface>>
+}
+class TableSource {
+  <<record>>
+  +table: String
+  +alias: String
+}
+class JoinSource {
+  <<record>>
+  +left: FromSource
+  +right: FromSource
+  +kind: JoinKind
+  +condition: Optional~Expression~
+}
+class Expression {
+  <<interface>>
+}
+class LiteralExpression {
+  <<record>>
+  +value: Value
+}
+class ColumnExpression {
+  <<record>>
+  +column: ColumnRef
+}
+class BinaryExpression {
+  <<record>>
+  +left: Expression
+  +operator: BinaryOp
+  +right: Expression
+}
+class BinaryOp {
+  <<enumeration>>
+  EQ
+  NEQ
+  LT
+  LTE
+  GT
+  GTE
+  ADD
+  SUB
+  MUL
+  DIV
+  AND
+}
+
+%% Prepared execution plan
+class PlanNode {
+  <<interface>>
+}
+class TableScanPlan {
+  <<record>>
+  +table: String
+  +alias: String
+}
+class IndexScanPlan {
+  <<record>>
+  +index: String
+  +table: String
+  +alias: String
+  +predicate: IndexPredicate
+  +residual: Optional~Expression~
+}
+class FilterPlan {
+  <<record>>
+  +child: PlanNode
+  +predicate: Expression
+}
+class ProjectPlan {
+  <<record>>
+  +child: PlanNode
+  +columns: List~ColumnRef~
+}
+class JoinKind {
+  <<enumeration>>
+  CARTESIAN
+  THETA
+  NATURAL
+}
+class JoinPlan {
+  <<record>>
+  +left: PlanNode
+  +right: PlanNode
+  +kind: JoinKind
+  +condition: Optional~Expression~
+}
+class SortDirection {
+  <<enumeration>>
+  ASC
+  DESC
+}
+class SortKey {
+  <<record>>
+  +column: ColumnRef
+  +direction: SortDirection
+}
+class SortPlan {
+  <<record>>
+  +child: PlanNode
+  +keys: List~SortKey~
+}
+class InsertPlan {
+  <<record>>
+  +table: String
+  +row: Row
+}
+class UpdatePlan {
+  <<record>>
+  +source: PlanNode
+  +table: String
+  +target: ColumnRef
+  +value: Expression
+}
+class DeletePlan {
+  <<record>>
+  +source: PlanNode
+  +table: String
+}
+class CreateIndexPlan {
+  <<record>>
+  +index: String
+  +table: String
+  +column: String
+  +kind: IndexKind
+}
+class TransactionCommandPlan {
+  <<record>>
+  +command: TransactionCommand
+}
+class PreparedQuery {
+  <<record>>
+  +root: PlanNode
+  +outputSchema: Schema
+}
+class QueryResult {
+  <<record>>
+  +schema: Schema
+  +rows: List~Row~
+  +affectedRows: long
+  +message: String
+}
+class PlanExplanation {
+  <<record>>
+  +before: String
+  +after: String
+  +cost: double
+}
+
+%% Concurrency dan Recovery
+class AccessMode {
+  <<enumeration>>
+  READ
+  WRITE
+}
+class AccessState {
+  <<enumeration>>
+  GRANTED
+  WAITING
+  ABORTED
+}
+class WaitToken {
+  <<record>>
+  +tx: TransactionId
+  +requestId: UUID
+}
+class AccessRequest {
+  <<record>>
+  +tx: TransactionId
+  +resource: ResourceId
+  +mode: AccessMode
+}
+class AccessDecision {
+  <<record>>
+  +state: AccessState
+  +ticket: Optional~WaitToken~
+  +reason: String
+}
+class TransactionStatus {
+  <<enumeration>>
+  ACTIVE
+  PARTIALLY_COMMITTED
+  FAILED
+  ABORTED
+  COMMITTED
+}
+class ProtocolType {
+  <<enumeration>>
+  STRICT_2PL
+  STRICT_TIMESTAMP
+}
+class ChangeRecord {
+  <<record>>
+  +tx: TransactionId
+  +table: String
+  +rid: RecordId
+  +before: RecordImage
+  +after: RecordImage
+}
+class RecoveryStatus {
+  <<enumeration>>
+  SUCCESS
+  FAILED
+}
+class RecoveryHighWater {
+  <<record>>
+  +lsn: LogSequenceNumber
+  +maxTx: TransactionId
+  +maxTimestamp: long
+  +maxCommitTime: Optional~Instant~
+}
+class RecoveryResult {
+  <<record>>
+  +status: RecoveryStatus
+  +highWater: RecoveryHighWater
+  +message: String
+}
+class RecoveryTarget {
+  <<record>>
+  +commitTime: Optional~Instant~
+  +committedTx: Optional~TransactionId~
+}
+class RecoveryBoundary {
+  <<record>>
+  +inclusiveLsn: LogSequenceNumber
+  +commitTime: Optional~Instant~
+}
+class SnapshotMetadata {
+  <<record>>
+  +id: UUID
+  +walLineage: UUID
+  +baseLsn: LogSequenceNumber
+  +createdAt: Instant
+}
+class RecoveryStage {
+  <<record>>
+  +id: UUID
+}
+class SealedGeneration {
+  <<record>>
+  +id: UUID
+  +boundary: RecoveryBoundary
+}
+class GenerationManifest {
+  <<record>>
+  +activeId: UUID
+  +walLineage: UUID
+  +boundaryLsn: LogSequenceNumber
+  +highWater: RecoveryHighWater
+}
+class LogFilter {
+  <<record>>
+  +tx: Optional~TransactionId~
+  +fromLsn: Optional~LogSequenceNumber~
+}
+class LogView {
+  <<record>>
+  +lines: List~String~
+}
+class CheckpointResult {
+  <<record>>
+  +checkpointLsn: LogSequenceNumber
+}
+class TestResult {
+  <<record>>
+  +passed: boolean
+  +message: String
+}
+class TestReport {
+  <<record>>
+  +results: List~TestResult~
+}
+class ErrorCode {
+  <<enumeration>>
+  SQL_SYNTAX
+  SQL_BIND
+  INVALID_PLAN
+  ACCESS_ABORTED
+  WAL_FAILURE
+  STORAGE_FAILURE
+  RECOVERY_FAILURE
+  INVALID_STATE
+  UNSUPPORTED_OPERATION
+  CORRUPT_LOG
+}
+class DbmsException {
+  +code: ErrorCode
+  +getCode() ErrorCode
+}
+
+Value <|.. IntValue
+Value <|.. FloatValue
+Value <|.. TextValue
+Value <|.. BooleanValue
+Value <|.. NullValue
+Statement <|.. SelectStatement
+Statement <|.. InsertStatement
+Statement <|.. UpdateStatement
+Statement <|.. DeleteStatement
+Statement <|.. CreateIndexStatement
+Statement <|.. TransactionStatement
+FromSource <|.. TableSource
+FromSource <|.. JoinSource
+Expression <|.. LiteralExpression
+Expression <|.. ColumnExpression
+Expression <|.. BinaryExpression
+PlanNode <|.. TableScanPlan
+PlanNode <|.. IndexScanPlan
+PlanNode <|.. FilterPlan
+PlanNode <|.. ProjectPlan
+PlanNode <|.. JoinPlan
+PlanNode <|.. SortPlan
+PlanNode <|.. InsertPlan
+PlanNode <|.. UpdatePlan
+PlanNode <|.. DeletePlan
+PlanNode <|.. CreateIndexPlan
+PlanNode <|.. TransactionCommandPlan
+Schema --> Column
+Row --> Value
+StoredRow --> RecordId
+StoredRow --> Row
+OperatorRow --> Row
+PreparedQuery --> PlanNode
+PreparedWrite --> RecordImage
+ChangeRecord --> RecordImage
+RecoveryMutation --> RecordImage
+GenerationManifest --> RecoveryHighWater
+AccessRequest --> ResourceId
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass Value,Statement,FromSource,Expression,PlanNode interfaceStyle
+cssClass ImmutableBytes,DbmsException classStyle
+cssClass TransactionId,SessionId,LogSequenceNumber,RecordId,ResourceId,IntValue,FloatValue,TextValue,BooleanValue,Column,Schema,Row,StoredRow,OperatorRow,RecordImage,TableStatistics,IndexMetadata,IndexPredicate,PreparedWrite,WriteReservationId,RecoveryMutation,SelectStatement,InsertStatement,UpdateStatement,DeleteStatement,CreateIndexStatement,TransactionStatement,ColumnRef,TableSource,JoinSource,LiteralExpression,ColumnExpression,BinaryExpression,TableScanPlan,IndexScanPlan,FilterPlan,ProjectPlan,JoinPlan,SortKey,SortPlan,InsertPlan,UpdatePlan,DeletePlan,CreateIndexPlan,TransactionCommandPlan,PreparedQuery,QueryResult,PlanExplanation,WaitToken,AccessRequest,AccessDecision,ChangeRecord,RecoveryHighWater,RecoveryResult,RecoveryTarget,RecoveryBoundary,SnapshotMetadata,RecoveryStage,SealedGeneration,GenerationManifest,LogFilter,LogView,CheckpointResult,TestResult,TestReport recordStyle
+cssClass ResourceKind,DataType,NullValue,IndexKind,ComparisonOp,TransactionCommand,BinaryOp,JoinKind,SortDirection,AccessMode,AccessState,TransactionStatus,ProtocolType,RecoveryStatus,ErrorCode enumStyle
