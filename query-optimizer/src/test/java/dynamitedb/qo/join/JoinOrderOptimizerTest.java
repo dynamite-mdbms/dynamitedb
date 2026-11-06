@@ -37,7 +37,7 @@ class JoinOrderOptimizerTest {
   }
 
   @Test
-  void enumeratesAllOrdersForThreeLeaves() {
+  void enumeratesAllOrdersAndGroupingsForThreeLeaves() {
     PlanNode student = scan("student", "s");
     PlanNode course = scan("course", "c");
     PlanNode enrollment = scan("enrollment", "e");
@@ -54,8 +54,12 @@ class JoinOrderOptimizerTest {
 
     List<PlanNode> candidates = new JoinOrderOptimizer().enumerate(original);
 
-    assertEquals(6, candidates.size());
+    assertEquals(12, candidates.size());
     assertEquals(original, candidates.get(0));
+    assertTrue(
+        candidates.stream()
+            .map(JoinPlan.class::cast)
+            .anyMatch(candidate -> candidate.right() instanceof JoinPlan));
   }
 
   @Test
@@ -80,6 +84,18 @@ class JoinOrderOptimizerTest {
     JoinPlan bottom = assertInstanceOf(JoinPlan.class, originalCandidate.left());
     assertEquals(JoinKind.THETA, bottom.kind());
     assertEquals(first, bottom.condition().orElseThrow());
+
+    JoinPlan rightDeep =
+        candidates.stream()
+            .map(JoinPlan.class::cast)
+            .filter(candidate -> candidate.left().equals(course))
+            .filter(candidate -> candidate.right() instanceof JoinPlan)
+            .findFirst()
+            .orElseThrow();
+    JoinPlan rightDeepBottom = assertInstanceOf(JoinPlan.class, rightDeep.right());
+    assertEquals(first, rightDeepBottom.condition().orElseThrow());
+    assertEquals(second, rightDeep.condition().orElseThrow());
+
     for (PlanNode candidate : candidates) {
       assertInstanceOf(JoinPlan.class, candidate);
       assertEquals(3, leafCount(candidate));
@@ -145,6 +161,11 @@ class JoinOrderOptimizerTest {
     JoinPlan original = new JoinPlan(left, right, JoinKind.CARTESIAN, Optional.empty());
 
     assertEquals(List.of(original), new JoinOrderOptimizer().enumerate(original));
+  }
+
+  @Test
+  void limitsEnumerationToSixtyFourCandidates() {
+    assertEquals(64, new JoinOrderOptimizer().enumerate(leftDeepChain(6)).size());
   }
 
   private static PlanNode leftDeepChain(int leaves) {

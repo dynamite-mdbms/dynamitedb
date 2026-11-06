@@ -13,7 +13,6 @@ import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -68,63 +67,68 @@ public class JoinOrderOptimizer {
     int[] indexes = new int[flat.leaves().size()];
     for (int i = 0; i < indexes.length; i++) indexes[i] = i;
     for (int[] order : permutations(indexes)) {
-      if (identity(order)) continue;
-      PlanNode candidate = build(flat.leaves(), flat.conditions(), order);
-      if (unique.add(candidate)) {
-        candidates.add(candidate);
-        if (candidates.size() >= limit) break;
+      List<PlanNode> ordered = new ArrayList<>();
+      for (int index : order) ordered.add(flat.leaves().get(index));
+      for (PlanNode grouping : groupings(ordered, 0, ordered.size(), limit)) {
+        PlanNode candidate = attachConditions(grouping, flat.conditions());
+        if (unique.add(candidate)) {
+          candidates.add(candidate);
+          if (candidates.size() >= limit) return candidates;
+        }
       }
     }
     return candidates;
   }
 
-  private static PlanNode build(List<PlanNode> leaves, List<Expression> conditions, int[] order) {
-    Set<String> all = new LinkedHashSet<>();
-    for (PlanNode leaf : leaves) all.addAll(relations(leaf));
-
-    PlanNode current = leaves.get(order[0]);
-    Set<String> available = new LinkedHashSet<>(relations(current));
-    List<Expression> pending = new ArrayList<>(conditions);
-    for (int i = 1; i < order.length; i++) {
-      PlanNode next = leaves.get(order[i]);
-      available.addAll(relations(next));
-      List<Expression> ready = new ArrayList<>();
-      Iterator<Expression> iterator = pending.iterator();
-      while (iterator.hasNext()) {
-        Expression condition = iterator.next();
-        if (ready(condition, available, all)) {
-          ready.add(condition);
-          iterator.remove();
+  /** Generates every ordered binary grouping for one table order, bounded before cross products. */
+  private static List<PlanNode> groupings(List<PlanNode> leaves, int start, int end, int limit) {
+    if (end - start == 1) return List.of(leaves.get(start));
+    List<PlanNode> result = new ArrayList<>();
+    for (int split = start + 1; split < end; split++) {
+      List<PlanNode> left = groupings(leaves, start, split, limit);
+      List<PlanNode> right = groupings(leaves, split, end, limit);
+      for (PlanNode leftPlan : left) {
+        for (PlanNode rightPlan : right) {
+          result.add(new JoinPlan(leftPlan, rightPlan, JoinKind.CARTESIAN, Optional.empty()));
+          if (result.size() >= limit) return result;
         }
       }
-      if (ready.isEmpty()) {
-        current = new JoinPlan(current, next, JoinKind.CARTESIAN, Optional.empty());
-      } else {
-        current =
-            new JoinPlan(current, next, JoinKind.THETA, Optional.of(PlanExpressions.and(ready)));
-      }
     }
-    if (!pending.isEmpty() && current instanceof JoinPlan join) {
-      List<Expression> merged = new ArrayList<>();
-      join.condition().ifPresent(condition -> merged.addAll(PlanExpressions.conjuncts(condition)));
-      merged.addAll(pending);
-      current =
-          new JoinPlan(
-              join.left(), join.right(), JoinKind.THETA, Optional.of(PlanExpressions.and(merged)));
-    }
-    return current;
+    return result;
   }
 
-  private static boolean ready(Expression condition, Set<String> available, Set<String> all) {
-    boolean unqualified = false;
+  private static PlanNode attachConditions(PlanNode plan, List<Expression> conditions) {
+    PlanNode result = plan;
+    for (Expression condition : conditions) result = attachCondition(result, condition);
+    return result;
+  }
+
+  /** Places a predicate at the lowest subtree that contains every referenced relation. */
+  private static PlanNode attachCondition(PlanNode node, Expression condition) {
+    Set<String> used = new LinkedHashSet<>();
+    boolean qualified = true;
     for (ColumnRef column : PlanExpressions.columns(condition)) {
-      if (column.relation().isEmpty()) {
-        unqualified = true;
-      } else if (!available.contains(column.relation().get())) {
-        return false;
-      }
+      if (column.relation().isEmpty()) qualified = false;
+      else used.add(column.relation().get());
     }
-    return !unqualified || available.containsAll(all);
+    if (used.isEmpty()) qualified = false;
+
+    if (node instanceof JoinPlan join) {
+      if (qualified && relations(join.left()).containsAll(used)) {
+        return new JoinPlan(
+            attachCondition(join.left(), condition), join.right(), join.kind(), join.condition());
+      }
+      if (qualified && relations(join.right()).containsAll(used)) {
+        return new JoinPlan(
+            join.left(), attachCondition(join.right(), condition), join.kind(), join.condition());
+      }
+      return new JoinPlan(
+          join.left(),
+          join.right(),
+          JoinKind.THETA,
+          PlanExpressions.combine(join.condition(), condition));
+    }
+    return new FilterPlan(node, condition);
   }
 
   private static Flat flatten(PlanNode node) {
@@ -195,13 +199,6 @@ public class JoinOrderOptimizer {
 
   private static boolean reorderable(JoinKind kind) {
     return kind == JoinKind.CARTESIAN || kind == JoinKind.THETA;
-  }
-
-  private static boolean identity(int[] order) {
-    for (int i = 0; i < order.length; i++) {
-      if (order[i] != i) return false;
-    }
-    return true;
   }
 
   private static List<int[]> permutations(int[] values) {
