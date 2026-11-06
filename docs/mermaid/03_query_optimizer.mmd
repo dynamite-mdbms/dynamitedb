@@ -1,0 +1,149 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% Published and consumed interfaces
+class QueryOptimizer {
+  <<interface>>
+  +prepare(sql: String) PreparedQuery
+  +estimateCost(plan: PlanNode) double
+  +explain(sql: String) PlanExplanation
+}
+class CatalogAccess {
+  <<interface>>
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+
+%% Parsing and pipeline - QO1/QO2
+class QueryOptimizerImpl {
+  -lexer: Lexer
+  -parser: SqlParser
+  -binder: Binder
+  -builder: PlanBuilder
+  -pipeline: OptimizerPipeline
+  -cost: CostEstimator
+  -visualizer: PlanVisualizer
+  +prepare(sql: String) PreparedQuery
+  +estimateCost(plan: PlanNode) double
+  +explain(sql: String) PlanExplanation
+}
+class Lexer {
+  +tokenize(sql: String) List~Token~
+}
+class Token {
+  <<record>>
+  +kind: TokenKind
+  +lexeme: String
+  +offset: int
+}
+class TokenKind {
+  <<enumeration>>
+  KEYWORD
+  IDENTIFIER
+  LITERAL
+  SYMBOL
+}
+class SqlParser {
+  -statements: StatementParser
+  -expressions: ExpressionParser
+  +parse(tokens: List~Token~) Statement
+}
+class StatementParser {
+  +parseStatement(tokens: List~Token~) Statement
+}
+class ExpressionParser {
+  +parseExpression(tokens: List~Token~) Expression
+}
+class PlanBuilder {
+  +build(bound: Statement) PlanNode
+}
+class PlanVisualizer {
+  +render(plan: PlanNode) String
+}
+class QueryOptimizerDriver {
+  +runSuite(queries: List~String~) TestReport
+}
+class OptimizerPipeline {
+  -rewrites: List~PlanRewrite~
+  -joinEnumerator: JoinOrderOptimizer
+  -selector: BestPlanSelector
+  +optimize(plan: PlanNode) PlanNode
+}
+class PlanRewrite {
+  <<interface>>
+  +rewrite(plan: PlanNode) PlanNode
+}
+
+%% Binding and costing - QO3
+class Binder {
+  -catalog: CatalogAccess
+  +bind(statement: Statement) Statement
+  +resolve(column: ColumnRef, scope: Schema) Column
+}
+class CostEstimator {
+  -catalog: CatalogAccess
+  +estimate(plan: PlanNode) double
+  +estimateRows(plan: PlanNode) long
+}
+
+%% Pushdown - QO4
+class SelectionPushdown {
+  +rewrite(plan: PlanNode) PlanNode
+}
+class ProjectionPushdown {
+  +rewrite(plan: PlanNode) PlanNode
+}
+
+%% Join and plan selection - QO5
+class JoinRewriter {
+  +rewrite(plan: PlanNode) PlanNode
+}
+class JoinOrderOptimizer {
+  +enumerate(plan: PlanNode) List~PlanNode~
+}
+class AccessPathOptimizer {
+  -catalog: CatalogAccess
+  +rewrite(plan: PlanNode) PlanNode
+}
+class BestPlanSelector {
+  -cost: CostEstimator
+  +choose(candidates: List~PlanNode~) PlanNode
+}
+
+QueryOptimizer <|.. QueryOptimizerImpl
+PlanRewrite <|.. SelectionPushdown
+PlanRewrite <|.. ProjectionPushdown
+PlanRewrite <|.. JoinRewriter
+PlanRewrite <|.. AccessPathOptimizer
+QueryOptimizerImpl ..> Lexer
+QueryOptimizerImpl ..> SqlParser
+QueryOptimizerImpl ..> Binder
+QueryOptimizerImpl ..> PlanBuilder
+QueryOptimizerImpl ..> OptimizerPipeline
+QueryOptimizerImpl ..> CostEstimator
+QueryOptimizerImpl ..> PlanVisualizer
+SqlParser ..> StatementParser
+SqlParser ..> ExpressionParser
+OptimizerPipeline ..> PlanRewrite
+OptimizerPipeline ..> JoinOrderOptimizer
+OptimizerPipeline ..> BestPlanSelector
+Binder ..> CatalogAccess
+CostEstimator ..> CatalogAccess
+AccessPathOptimizer ..> CatalogAccess
+BestPlanSelector ..> CostEstimator
+QueryOptimizerDriver ..> QueryOptimizer
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass QueryOptimizer,CatalogAccess,PlanRewrite interfaceStyle
+cssClass QueryOptimizerImpl,Lexer,SqlParser,StatementParser,ExpressionParser,PlanBuilder,PlanVisualizer,QueryOptimizerDriver,OptimizerPipeline,Binder,CostEstimator,SelectionPushdown,ProjectionPushdown,JoinRewriter,JoinOrderOptimizer,AccessPathOptimizer,BestPlanSelector classStyle
+cssClass Token recordStyle
+cssClass TokenKind enumStyle

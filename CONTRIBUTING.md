@@ -19,7 +19,8 @@ by the hooks; commits from an IDE must also inherit a valid `JAVA_HOME`.
 ## Contribution flow
 
 1. Agree on the scope with the component owner. Propose shared contract changes
-   and obtain affected owners' agreement before implementing them.
+   and obtain affected owners' agreement before implementing them. Check the
+   [initial shared-contract owners](contracts/OWNERSHIP.md) for the first contact.
 2. Start from current `main` and create a focused branch such as `feat/qp-session`,
    `fix/sm-bufferpool`, `feat/ccm-locking`, `feat/frm-wal`, or `build/repo-hooks`.
 3. Make the smallest complete change. Update affected callers and relevant
@@ -37,7 +38,7 @@ by the hooks; commits from an IDE must also inherit a valid `JAVA_HOME`.
 7. Mark the PR ready when local checks pass and the description is complete.
    Request review from `@dynamite-mdbms/group-leaders`. Address feedback in small
    commits. Changes to the diff invalidate previous approvals.
-8. Merge only after five distinct eligible leaders approve the latest changes
+8. Merge only after three distinct eligible leaders approve the latest changes
    and all review threads are resolved. Squash merge using the PR title as the
    final commit subject, then remove the feature branch.
 
@@ -59,8 +60,9 @@ framework dependencies have been added.
 The hook rejects untracked source/build inputs and unstaged tracked changes
 before running tools. It never stashes or stages files for you. Local checks can
 be bypassed by Git options, so contributors must keep the hooks enabled and
-reviewers should run the local checks when reviewing. No GitHub Actions
-workflow or required CI status check runs these tools.
+reviewers should run the local checks when reviewing. A GitHub Actions workflow
+runs `./gradlew lint build` on pull requests to `main`, but the `main` ruleset
+does not currently require its status check.
 
 Maintainers can run `python scripts/test_hooks.py -v` to verify the hook behavior
 using disposable repositories and a stub Gradle launcher. Python 3.10+ is only
@@ -117,9 +119,9 @@ Do not rewrite already published shared history to rename older commits.
 | QO, Group 4 | `@stefaniangeline` |
 | CCM, Group 5 | `@PikaProgram` |
 
-Every PR requires approving reviews from at least five distinct members of this
+Every PR requires approving reviews from at least three distinct members of this
 six-person leadership team. An author's own approval never counts. When a leader
-authors the PR, the other five leaders review it. Comments or checked boxes in
+authors the PR, three of the other five leaders review it. Comments or checked boxes in
 the PR description do not substitute for GitHub approving reviews.
 
 Each approving leader must read the entire diff, check ownership and contract
@@ -129,7 +131,7 @@ human responsibilities. Reviewers must request changes on incomplete PR template
 failing local checks, invalid PR titles, or unresolved contract changes.
 
 The repository ruleset is versioned in `.github/rulesets/main.json`. It targets
-`main`, requires five approvals from `group-leaders`, dismisses stale approvals,
+`main`, requires three approvals from `group-leaders`, dismisses stale approvals,
 requires approval of the latest push and resolved threads, permits squash merges,
 and blocks force pushes and branch deletion. No bypass actors or CI checks are
 configured. Team members must have write access for GitHub to count team approvals.

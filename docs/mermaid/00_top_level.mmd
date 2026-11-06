@@ -1,0 +1,301 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% Aplikasi / composition root
+class DbmsBootstrap {
+  -server: TcpServer
+  -storage: StorageManagerImpl
+  -recovery: RecoveryManagerImpl
+  -concurrency: ConcurrencyManagerImpl
+  +start(config: DbmsConfig) void
+  +shutdown() void
+}
+class DbmsConfig {
+  <<record>>
+  +port: int
+  +dataDirectory: Path
+  +protocol: ProtocolType
+}
+class TcpServer {
+  -processor: QueryProcessor
+  -port: int
+  +start() void
+  +stop() void
+}
+
+%% QP
+class QueryProcessor {
+  <<interface>>
+  +openSession(clientId: String) SessionId
+  +execute(sessionId: SessionId, sql: String) QueryResult
+  +closeSession(sessionId: SessionId) void
+}
+class QueryProcessorImpl {
+  -optimizer: QueryOptimizer
+  -sessions: SessionManager
+  -engine: ExecutionEngine
+  -txCoordinator: TransactionCoordinator
+  +openSession(clientId: String) SessionId
+  +execute(sessionId: SessionId, sql: String) QueryResult
+  +closeSession(sessionId: SessionId) void
+}
+
+%% QO
+class QueryOptimizer {
+  <<interface>>
+  +prepare(sql: String) PreparedQuery
+  +estimateCost(plan: PlanNode) double
+  +explain(sql: String) PlanExplanation
+}
+class CatalogAccess {
+  <<interface>>
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+class QueryOptimizerImpl {
+  -lexer: Lexer
+  -parser: SqlParser
+  -binder: Binder
+  -builder: PlanBuilder
+  -pipeline: OptimizerPipeline
+  -cost: CostEstimator
+  -visualizer: PlanVisualizer
+  +prepare(sql: String) PreparedQuery
+  +estimateCost(plan: PlanNode) double
+  +explain(sql: String) PlanExplanation
+}
+class StorageCatalogAdapter {
+  -catalog: CatalogManager
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+
+%% SM
+class TupleReader {
+  <<interface>>
+  +openTableScan(table: String, tx: TransactionId) RowCursor
+  +openIndexScan(index: String, predicate: IndexPredicate, tx: TransactionId) RowCursor
+  +fetch(rid: RecordId, tx: TransactionId) Optional~StoredRow~
+}
+class WriteStore {
+  <<interface>>
+  +prepareInsert(tx: TransactionId, table: String, row: Row) PreparedWrite
+  +prepareUpdate(tx: TransactionId, rid: RecordId, row: Row) PreparedWrite
+  +prepareDelete(tx: TransactionId, rid: RecordId) PreparedWrite
+  +applyWrite(prepared: PreparedWrite, lsn: LogSequenceNumber) void
+  +cancelPrepared(prepared: PreparedWrite) void
+}
+class IndexAdmin {
+  <<interface>>
+  +createIndex(name: String, table: String, column: String, kind: IndexKind) void
+}
+class StorageManagerImpl {
+  -records: RecordStore
+  -catalog: CatalogManager
+  -indexes: IndexManager
+  +openTableScan(table: String, tx: TransactionId) RowCursor
+  +openIndexScan(index: String, predicate: IndexPredicate, tx: TransactionId) RowCursor
+  +fetch(rid: RecordId, tx: TransactionId) Optional~StoredRow~
+  +prepareInsert(tx: TransactionId, table: String, row: Row) PreparedWrite
+  +prepareUpdate(tx: TransactionId, rid: RecordId, row: Row) PreparedWrite
+  +prepareDelete(tx: TransactionId, rid: RecordId) PreparedWrite
+  +applyWrite(prepared: PreparedWrite, lsn: LogSequenceNumber) void
+  +cancelPrepared(prepared: PreparedWrite) void
+  +createIndex(name: String, table: String, column: String, kind: IndexKind) void
+}
+class RecoveryPageStore {
+  <<interface>>
+  +readRecord(rid: RecordId) RecordImage
+  +applyRecovery(mutation: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildIndexes() void
+  +flushDirtyThrough(lsn: LogSequenceNumber) void
+}
+class HistoricalRecoveryStorage {
+  <<interface>>
+  +captureSnapshot(boundary: RecoveryBoundary) SnapshotMetadata
+  +createStage(snapshot: SnapshotMetadata, id: UUID) RecoveryStage
+  +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildStageIndexes(stage: RecoveryStage) void
+  +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+}
+class StorageGenerationAdmin {
+  <<interface>>
+  +readActiveManifest() GenerationManifest
+  +switchToPublishedGeneration(manifest: GenerationManifest) void
+}
+class StorageRecoveryAdapter {
+  -records: RecordStore
+  -generations: GenerationStore
+  -indexes: IndexManager
+  -buffer: BufferPool
+  +readRecord(rid: RecordId) RecordImage
+  +applyRecovery(mutation: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildIndexes() void
+  +flushDirtyThrough(lsn: LogSequenceNumber) void
+  +captureSnapshot(boundary: RecoveryBoundary) SnapshotMetadata
+  +createStage(snapshot: SnapshotMetadata, id: UUID) RecoveryStage
+  +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
+  +rebuildStageIndexes(stage: RecoveryStage) void
+  +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+  +readActiveManifest() GenerationManifest
+  +switchToPublishedGeneration(manifest: GenerationManifest) void
+}
+
+%% CCM
+class AccessController {
+  <<interface>>
+  +requestAccess(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+}
+class TransactionManager {
+  <<interface>>
+  +begin() TransactionId
+  +commit(tx: TransactionId) void
+  +abort(tx: TransactionId) void
+  +status(tx: TransactionId) TransactionStatus
+}
+class ChangeLogger {
+  <<interface>>
+  +recordChange(tx: TransactionId, write: PreparedWrite) LogSequenceNumber
+}
+class ProtocolAdmin {
+  <<interface>>
+  +setProtocol(type: ProtocolType) void
+  +activeProtocol() ProtocolType
+}
+class RecoveryCoordinator {
+  <<interface>>
+  +acquireMaintenance() MaintenanceGuard
+  +transactionTimestamp(tx: TransactionId) long
+  +initializeRecoveredState(highWater: RecoveryHighWater) void
+}
+class ConcurrencyManagerImpl {
+  -registry: TransactionRegistry
+  -protocol: ConcurrencyProtocol
+  -bridge: TransactionRecoveryBridge
+  -maintenance: MaintenanceController
+  +requestAccess(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+  +begin() TransactionId
+  +commit(tx: TransactionId) void
+  +abort(tx: TransactionId) void
+  +status(tx: TransactionId) TransactionStatus
+  +recordChange(tx: TransactionId, write: PreparedWrite) LogSequenceNumber
+  +setProtocol(type: ProtocolType) void
+  +activeProtocol() ProtocolType
+  +acquireMaintenance() MaintenanceGuard
+  +transactionTimestamp(tx: TransactionId) long
+  +initializeRecoveredState(highWater: RecoveryHighWater) void
+}
+
+%% FRM
+class TransactionWal {
+  <<interface>>
+  +begin(tx: TransactionId, timestamp: long) void
+  +appendChange(change: ChangeRecord) LogSequenceNumber
+  +commitDurably(tx: TransactionId) void
+}
+class RollbackService {
+  <<interface>>
+  +rollbackCompletely(tx: TransactionId) void
+}
+class WalDurability {
+  <<interface>>
+  +ensureDurable(lsn: LogSequenceNumber) void
+}
+class CrashRecovery {
+  <<interface>>
+  +recover() RecoveryResult
+}
+class CheckpointService {
+  <<interface>>
+  +checkpoint() CheckpointResult
+}
+class HistoricalRecoveryService {
+  <<interface>>
+  +recoverTo(target: RecoveryTarget) RecoveryResult
+}
+class LogInspection {
+  <<interface>>
+  +readLog(filter: LogFilter) LogView
+}
+class RecoveryManagerImpl {
+  -wal: WalService
+  -rollback: UndoManager
+  -crash: CrashRecoveryManager
+  -historical: HistoricalRecoveryManager
+  -checkpoint: CheckpointManager
+  +begin(tx: TransactionId, timestamp: long) void
+  +appendChange(change: ChangeRecord) LogSequenceNumber
+  +commitDurably(tx: TransactionId) void
+  +rollbackCompletely(tx: TransactionId) void
+  +ensureDurable(lsn: LogSequenceNumber) void
+  +recover() RecoveryResult
+  +checkpoint() CheckpointResult
+  +recoverTo(target: RecoveryTarget) RecoveryResult
+  +readLog(filter: LogFilter) LogView
+}
+
+QueryProcessor <|.. QueryProcessorImpl
+QueryOptimizer <|.. QueryOptimizerImpl
+CatalogAccess <|.. StorageCatalogAdapter
+TupleReader <|.. StorageManagerImpl
+WriteStore <|.. StorageManagerImpl
+IndexAdmin <|.. StorageManagerImpl
+RecoveryPageStore <|.. StorageRecoveryAdapter
+HistoricalRecoveryStorage <|.. StorageRecoveryAdapter
+StorageGenerationAdmin <|.. StorageRecoveryAdapter
+AccessController <|.. ConcurrencyManagerImpl
+TransactionManager <|.. ConcurrencyManagerImpl
+ChangeLogger <|.. ConcurrencyManagerImpl
+ProtocolAdmin <|.. ConcurrencyManagerImpl
+RecoveryCoordinator <|.. ConcurrencyManagerImpl
+TransactionWal <|.. RecoveryManagerImpl
+RollbackService <|.. RecoveryManagerImpl
+WalDurability <|.. RecoveryManagerImpl
+CrashRecovery <|.. RecoveryManagerImpl
+CheckpointService <|.. RecoveryManagerImpl
+HistoricalRecoveryService <|.. RecoveryManagerImpl
+LogInspection <|.. RecoveryManagerImpl
+DbmsBootstrap ..> TcpServer
+DbmsBootstrap ..> QueryProcessorImpl
+DbmsBootstrap ..> QueryOptimizerImpl
+DbmsBootstrap ..> StorageManagerImpl
+DbmsBootstrap ..> ConcurrencyManagerImpl
+DbmsBootstrap ..> RecoveryManagerImpl
+DbmsBootstrap ..> StorageCatalogAdapter
+DbmsBootstrap ..> StorageRecoveryAdapter
+TcpServer ..> QueryProcessor
+QueryProcessorImpl ..> QueryOptimizer
+QueryProcessorImpl ..> TupleReader
+QueryProcessorImpl ..> WriteStore
+QueryProcessorImpl ..> IndexAdmin
+QueryProcessorImpl ..> AccessController
+QueryProcessorImpl ..> TransactionManager
+QueryProcessorImpl ..> ChangeLogger
+QueryOptimizerImpl ..> CatalogAccess
+StorageManagerImpl ..> WalDurability
+ConcurrencyManagerImpl ..> TransactionWal
+ConcurrencyManagerImpl ..> RollbackService
+RecoveryManagerImpl ..> RecoveryCoordinator
+RecoveryManagerImpl ..> RecoveryPageStore
+RecoveryManagerImpl ..> HistoricalRecoveryStorage
+RecoveryManagerImpl ..> StorageGenerationAdmin
+QueryProcessorImpl ..> CatalogAccess
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass QueryProcessor,QueryOptimizer,CatalogAccess,TupleReader,WriteStore,IndexAdmin,RecoveryPageStore,HistoricalRecoveryStorage,StorageGenerationAdmin,AccessController,TransactionManager,ChangeLogger,ProtocolAdmin,RecoveryCoordinator,TransactionWal,RollbackService,WalDurability,CrashRecovery,CheckpointService,HistoricalRecoveryService,LogInspection interfaceStyle
+cssClass DbmsBootstrap,TcpServer,QueryProcessorImpl,QueryOptimizerImpl,StorageCatalogAdapter,StorageManagerImpl,StorageRecoveryAdapter,ConcurrencyManagerImpl,RecoveryManagerImpl classStyle
+cssClass DbmsConfig recordStyle

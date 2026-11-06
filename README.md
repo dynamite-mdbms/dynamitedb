@@ -77,8 +77,9 @@ git config --local core.hooksPath .githooks
 
 The local pre-commit hook formats first and blocks if files change, so you can
 review and re-stage them. It then runs lint and build; any failure blocks the
-commit. Java uses Google Java Format and compiler warnings as errors. No GitHub
-Actions workflow runs these checks.
+commit. Java uses Google Java Format and compiler warnings as errors. Pull requests
+to `main` run `./gradlew lint build` through GitHub Actions. The `main` ruleset does
+not currently require that CI check.
 
 ## Ownership and boundaries
 
@@ -109,7 +110,7 @@ or constructing a provider graph does not implement those behavioral contracts.
 Follow the [contribution guide](CONTRIBUTING.md) for the full branch-to-merge flow.
 Use `<type> (<component>): <description>` for commit subjects and PR titles, for
 example `feat (qp): add session lifecycle`. Fill every section of the PR template.
-Every PR requires five distinct approving leaders from the six-person leadership
+Every PR requires three distinct approving leaders from the six-person leadership
 team; an author cannot approve their own PR. Keep shared contract changes agreed
 with affected component owners and keep local runtime data in ignored `data/`.
 
@@ -122,3 +123,6 @@ Local supporting references: [draft architecture and contract process](docs/arch
 These architecture/contract documents and diagrams are intentionally uncommitted
 and will not appear in a fresh clone. The contribution guide and PR template are
 versioned with the repository.
+
+Initial ownership for every shared contract is listed in
+[contracts/OWNERSHIP.md](contracts/OWNERSHIP.md).
