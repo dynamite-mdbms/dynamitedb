@@ -100,7 +100,8 @@ public class AccessPathOptimizer implements PlanRewrite {
     if (best == null) return Optional.empty();
 
     double estimatedRows = statistics.rowCount() * best.selectivity();
-    if (estimatedRows >= statistics.rowCount()) return Optional.empty();
+    double indexCost = 1 + estimatedRows;
+    if (indexCost >= statistics.blockCount()) return Optional.empty();
 
     List<Expression> remaining = new ArrayList<>(conjuncts);
     remaining.remove(best.position());

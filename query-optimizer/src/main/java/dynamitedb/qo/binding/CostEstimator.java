@@ -46,7 +46,7 @@ public class CostEstimator {
       case TableScanPlan scan -> stats(scan.table()).blockCount();
       // shortcut: one I/O per index probe and per matching row; use index height and
       // clustering once the catalog exposes them.
-      case IndexScanPlan scan -> 1 + rows(scan);
+      case IndexScanPlan scan -> 1 + indexRows(scan);
       case FilterPlan filter -> estimate(filter.child());
       case ProjectPlan project -> estimate(project.child());
       // QP sorts in memory, so sorting adds no I/O.
@@ -70,9 +70,7 @@ public class CostEstimator {
     return switch (plan) {
       case TableScanPlan scan -> stats(scan.table()).rowCount();
       case IndexScanPlan scan ->
-          stats(scan.table()).rowCount()
-              * selectivity(indexCondition(scan), scan)
-              * scan.residual().map(r -> selectivity(r, scan)).orElse(1.0);
+          indexRows(scan) * scan.residual().map(r -> selectivity(r, scan)).orElse(1.0);
       case FilterPlan filter ->
           rows(filter.child()) * selectivity(filter.predicate(), filter.child());
       case ProjectPlan project -> rows(project.child());
@@ -84,6 +82,11 @@ public class CostEstimator {
       case CreateIndexPlan create -> 0;
       case TransactionCommandPlan command -> 0;
     };
+  }
+
+  /** Rows fetched from storage before an IndexScan residual predicate is evaluated. */
+  private double indexRows(IndexScanPlan scan) {
+    return stats(scan.table()).rowCount() * selectivity(indexCondition(scan), scan);
   }
 
   private double joinSelectivity(JoinPlan join) {

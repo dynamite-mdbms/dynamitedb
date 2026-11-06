@@ -34,12 +34,15 @@ class AccessPathOptimizerTest {
   private final CatalogAccess catalog =
       catalog(
           Map.of(
-              "student", new TableStatistics(1_000, 100, 50, Map.of("id", 100L, "age", 20L)),
-              "flat", new TableStatistics(100, 10, 50, Map.of("id", 1L))),
+              "student", new TableStatistics(1_000, 400, 50, Map.of("id", 100L, "age", 20L)),
+              "flat", new TableStatistics(100, 10, 50, Map.of("id", 1L)),
+              "range_heavy", new TableStatistics(1_000, 100, 50, Map.of("age", 20L))),
           List.of(
               new IndexMetadata("idx_student_id", "student", "id", IndexKind.HASH),
               new IndexMetadata("idx_student_age", "student", "age", IndexKind.B_PLUS_TREE),
-              new IndexMetadata("idx_flat_id", "flat", "id", IndexKind.HASH)));
+              new IndexMetadata("idx_flat_id", "flat", "id", IndexKind.HASH),
+              new IndexMetadata(
+                  "idx_range_heavy_age", "range_heavy", "age", IndexKind.B_PLUS_TREE)));
 
   @Test
   void choosesHashIndexForEqualityPredicate() {
@@ -108,6 +111,18 @@ class AccessPathOptimizerTest {
     PlanNode rewritten = new AccessPathOptimizer(catalog).rewrite(plan);
 
     assertInstanceOf(FilterPlan.class, rewritten);
+  }
+
+  @Test
+  void keepsSequentialScanWhenSelectiveIndexStillCostsMore() {
+    Expression predicate =
+        compare(columnExpression("r", "age"), BinaryOp.GT, literal(new IntValue(20)));
+    PlanNode plan = new FilterPlan(scan("range_heavy", "r"), predicate);
+
+    PlanNode rewritten = new AccessPathOptimizer(catalog).rewrite(plan);
+
+    FilterPlan filter = assertInstanceOf(FilterPlan.class, rewritten);
+    assertInstanceOf(TableScanPlan.class, filter.child());
   }
 
   @Test

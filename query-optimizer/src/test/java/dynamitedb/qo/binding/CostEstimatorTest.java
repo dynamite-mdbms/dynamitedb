@@ -104,6 +104,20 @@ class CostEstimatorTest {
   }
 
   @Test
+  void indexResidualReducesOutputRowsButNotRowsFetchedFromStorage() {
+    var lookup =
+        new IndexScanPlan(
+            "idx_sid",
+            "student",
+            "s",
+            new IndexPredicate(ComparisonOp.EQ, new IntValue(5)),
+            Optional.of(compare("s", "gpa", BinaryOp.GT, 3.0)));
+
+    assertEquals(0, cost.estimateRows(lookup));
+    assertEquals(2.0, cost.estimate(lookup));
+  }
+
+  @Test
   void projectionSortAndWritesFollowTheirSource() {
     var sorted =
         new ProjectPlan(
