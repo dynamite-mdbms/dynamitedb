@@ -2,7 +2,6 @@ package dynamitedb.qo.facade;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CatalogAccess;
@@ -37,12 +36,19 @@ class QueryOptimizerImplTest {
     var prepared = optimizer.prepare("SELECT name FROM student ORDER BY name");
 
     assertInstanceOf(ProjectPlan.class, prepared.root());
-    assertNotNull(prepared.outputSchema());
+    assertEquals(
+        new Schema(List.of(new Column("student", "name", DataType.VARCHAR, 50, false))),
+        prepared.outputSchema());
     assertEquals(7.0, optimizer.estimateCost(prepared.root()));
     var explanation = optimizer.explain("SELECT name FROM student");
     assertTrue(explanation.before().contains("Project"));
     assertTrue(explanation.after().contains("TableScan"));
     assertEquals(7.0, explanation.cost());
+  }
+
+  @Test
+  void returnsEmptyOutputSchemaForNonSelectStatements() {
+    assertEquals(new Schema(List.of()), optimizer().prepare("BEGIN").outputSchema());
   }
 
   @Test

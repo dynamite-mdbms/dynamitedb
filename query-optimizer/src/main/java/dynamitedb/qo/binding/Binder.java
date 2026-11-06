@@ -1,5 +1,12 @@
 package dynamitedb.qo.binding;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
@@ -29,14 +36,8 @@ import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.Set;
 
-/** Memvalidasi statement terhadap katalog (QO-07). */
+
 public class Binder {
 
   private static final String NUMBER = "number";
@@ -59,6 +60,12 @@ public class Binder {
       case CreateIndexStatement create -> bindCreateIndex(create);
       case TransactionStatement transaction -> transaction;
     };
+  }
+
+  public Schema outputSchema(Statement bound) {
+    if (!(bound instanceof SelectStatement select)) return new Schema(List.of());
+    Schema scope = sourceScope(select.from());
+    return new Schema(select.projection().stream().map(ref -> resolve(ref, scope)).toList());
   }
 
   public Column resolve(ColumnRef column, Schema scope) {
@@ -98,7 +105,6 @@ public class Binder {
               + insert.values().size());
     }
     for (int i = 0; i < columns.size(); i++) {
-      // Non-literal values are rejected later by PlanBuilder.
       if (insert.values().get(i) instanceof LiteralExpression literal) {
         checkValue(columns.get(i), literal.value());
       }
@@ -138,11 +144,9 @@ public class Binder {
     return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
   }
 
-  /** Rebinds a FROM tree and appends its visible columns to {@code scope}. */
   private FromSource bindFrom(FromSource source, Set<String> aliases, List<Column> scope) {
     if (source instanceof TableSource table) {
       String name = tableName(table.table());
-      // Without AS the parser copies the typed table name, so use the catalog spelling instead.
       String alias = table.alias().equals(table.table()) ? name : table.alias();
       if (!aliases.add(alias.toLowerCase(Locale.ROOT))) {
         throw error("Duplicate table alias: " + alias);
@@ -156,8 +160,6 @@ public class Binder {
     List<Column> rightColumns = new ArrayList<>();
     FromSource right = bindFrom(join.right(), aliases, rightColumns);
     for (Column column : rightColumns) {
-      // shortcut: a NATURAL JOIN shared column keeps only the left relation, so right.col is
-      // rejected; track both relations if queries need it.
       Column common =
           join.kind() == JoinKind.NATURAL
               ? leftColumns.stream()
@@ -188,6 +190,14 @@ public class Binder {
         catalog.getSchema(table).columns().stream()
             .map(c -> new Column(alias, c.name(), c.dataType(), c.maxLength(), c.nullable()))
             .toList());
+  }
+
+  private Schema sourceScope(FromSource source) {
+    if (source instanceof TableSource table) return tableScope(table.table(), table.alias());
+    JoinSource join = (JoinSource) source;
+    List<Column> columns = new ArrayList<>(sourceScope(join.left()).columns());
+    columns.addAll(sourceScope(join.right()).columns());
+    return new Schema(columns);
   }
 
   private List<ColumnRef> expand(ColumnRef ref, Schema scope) {

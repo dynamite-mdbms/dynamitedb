@@ -5,8 +5,8 @@ import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.PlanExplanation;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.PreparedQuery;
+import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommandPlan;
-import dynamitedb.contracts.storage.Schema;
 import dynamitedb.qo.binding.Binder;
 import dynamitedb.qo.binding.CostEstimator;
 import dynamitedb.qo.parser.Lexer;
@@ -14,7 +14,6 @@ import dynamitedb.qo.parser.SqlParser;
 import dynamitedb.qo.pipeline.OptimizerPipeline;
 import dynamitedb.qo.plan.PlanBuilder;
 import dynamitedb.qo.plan.PlanVisualizer;
-import java.util.List;
 import java.util.Objects;
 
 /** Pintu masuk QO untuk QP: parse, bind, lalu optimasi. */
@@ -47,9 +46,10 @@ public class QueryOptimizerImpl implements QueryOptimizer {
 
   @Override
   public PreparedQuery prepare(String sql) {
-    PlanNode initial = buildInitialPlan(sql);
+    Statement bound = bind(sql);
+    PlanNode initial = builder.build(bound);
     PlanNode optimized = shouldOptimize(initial) ? pipeline.optimize(initial) : initial;
-    return new PreparedQuery(optimized, new Schema(List.of()));
+    return new PreparedQuery(optimized, binder.outputSchema(bound));
   }
 
   @Override
@@ -66,10 +66,13 @@ public class QueryOptimizerImpl implements QueryOptimizer {
   }
 
   private PlanNode buildInitialPlan(String sql) {
+    return builder.build(bind(sql));
+  }
+
+  private Statement bind(String sql) {
     var tokens = lexer.tokenize(sql);
     var statement = parser.parse(tokens);
-    var bound = binder.bind(statement);
-    return builder.build(bound);
+    return binder.bind(statement);
   }
 
   private static boolean shouldOptimize(PlanNode plan) {

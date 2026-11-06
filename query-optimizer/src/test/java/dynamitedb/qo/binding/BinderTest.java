@@ -85,6 +85,30 @@ class BinderTest {
   }
 
   @Test
+  void derivesOutputSchemaFromBoundProjectionAndAliases() {
+    Statement bound = bind("SELECT e.cid, s.name FROM student AS s, enroll AS e");
+
+    assertEquals(
+        new Schema(
+            List.of(
+                new Column("e", "cid", DataType.INTEGER, 0, false),
+                new Column("s", "name", DataType.VARCHAR, 5, false))),
+        binder.outputSchema(bound));
+
+    Statement naturalJoin = bind("SELECT * FROM student NATURAL JOIN enroll");
+    assertEquals(
+        new Schema(
+            List.of(
+                new Column("student", "sid", DataType.INTEGER, 0, false),
+                new Column("student", "name", DataType.VARCHAR, 5, false),
+                new Column("student", "gpa", DataType.FLOAT, 0, true),
+                new Column("enroll", "cid", DataType.INTEGER, 0, false))),
+        binder.outputSchema(naturalJoin));
+
+    assertEquals(new Schema(List.of()), binder.outputSchema(bind("BEGIN")));
+  }
+
+  @Test
   void bindsWritesAndPassesThroughTransactions() {
     bind("INSERT INTO student VALUES (1, 'Ann', 3.5)");
     bind("INSERT INTO student VALUES (1, 'Ann', 3)");
