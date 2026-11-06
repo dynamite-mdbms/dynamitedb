@@ -74,6 +74,7 @@ class PlanTranslatorTest {
         }
       };
 
+  // tiap jenis plan harus jadi operator yang pasangannya
   @Test
   void mapsEveryRelationalNodeToItsOperator() {
     PlanNode indexScan =
@@ -96,6 +97,7 @@ class PlanTranslatorTest {
         translate(new SortPlan(SCAN, List.of(new SortKey(ID, SortDirection.ASC)))));
   }
 
+  // Project(Filter(Scan)) harus selesai dari Scan dulu, terakhir Project
   @Test
   void translatesChildrenBeforeParent() {
     PlanNode plan = new ProjectPlan(new FilterPlan(SCAN, truth()), List.of(ID));
@@ -105,6 +107,7 @@ class PlanTranslatorTest {
     assertEquals(List.of("TableScanPlan", "FilterPlan", "ProjectPlan"), translated);
   }
 
+  // join harus nerjemahin kiri dan kanan sebelum join-nya sendiri
   @Test
   void translatesBothSidesOfJoin() {
     PlanNode right = new TableScanPlan("department", "d");
@@ -114,6 +117,7 @@ class PlanTranslatorTest {
     assertEquals(List.of("TableScanPlan", "TableScanPlan", "JoinPlan"), translated);
   }
 
+  // DML, CREATE INDEX, sama BEGIN ga boleh lewat translator
   @Test
   void rejectsNonRelationalPlans() {
     List<PlanNode> plans =
@@ -130,10 +134,12 @@ class PlanTranslatorTest {
     }
   }
 
+  // helper biar ga nulis TX terus
   private Operator translate(PlanNode plan) {
     return translator.translate(plan, TX);
   }
 
+  // kondisi TRUE sembarang, isinya ga penting buat test ini
   private static LiteralExpression truth() {
     return new LiteralExpression(new BooleanValue(true));
   }

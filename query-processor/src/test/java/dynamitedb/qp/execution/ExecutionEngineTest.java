@@ -49,6 +49,7 @@ class ExecutionEngineTest {
   private final SessionContext session = new SessionContext(new SessionId(1), "client");
   private final ExecutionEngine engine = engine();
 
+  // BEGIN langsung ke TransactionCommandExecutor, ga butuh transaksi aktif
   @Test
   void sendsTransactionCommandsToTransactionExecutor() {
     QueryResult result = run(new TransactionCommandPlan(TransactionCommand.BEGIN));
@@ -57,6 +58,7 @@ class ExecutionEngineTest {
     assertEquals(List.of("transaction BEGIN"), calls);
   }
 
+  // INSERT/UPDATE/DELETE ke WriteExecutor, hasilnya jumlah baris yang kena
   @Test
   void sendsWritesToWriteExecutorWithAffectedRows() {
     session.setActiveTx(Optional.of(TX));
@@ -72,6 +74,7 @@ class ExecutionEngineTest {
     assertEquals(List.of("insert", "update", "delete"), calls);
   }
 
+  // CREATE INDEX juga ke WriteExecutor, balikin pesan index dibuat
   @Test
   void sendsCreateIndexToWriteExecutor() {
     session.setActiveTx(Optional.of(TX));
@@ -82,6 +85,7 @@ class ExecutionEngineTest {
     assertEquals(List.of("createIndex"), calls);
   }
 
+  // SELECT diterjemahin dulu baru dijalanin ReadExecutor, schema dari QO diterusin
   @Test
   void readsRelationalPlansThroughTranslator() {
     session.setActiveTx(Optional.of(TX));
@@ -93,6 +97,7 @@ class ExecutionEngineTest {
     assertEquals(List.of("translate", "read"), calls);
   }
 
+  // tanpa transaksi aktif harus error dan ga ada executor yang kepanggil
   @Test
   void statementsNeedActiveTransaction() {
     DbmsException error =
@@ -102,6 +107,7 @@ class ExecutionEngineTest {
     assertTrue(calls.isEmpty());
   }
 
+  // helper bungkus plan jadi PreparedQuery
   private QueryResult run(PlanNode root) {
     return engine.execute(new PreparedQuery(root, EMPTY), session);
   }
@@ -166,6 +172,7 @@ class ExecutionEngineTest {
     return new ExecutionEngine(translator, reader, writer, transactions);
   }
 
+  // operator kosong, cuma buat gantiin hasil translate
   private static final class EmptyOperator implements Operator {
     @Override
     public void open() {}
