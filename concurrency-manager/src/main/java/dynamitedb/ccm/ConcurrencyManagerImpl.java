@@ -1,8 +1,10 @@
 package dynamitedb.ccm;
 
+import dynamitedb.ccm.deadlock.DeadlockMonitor;
 import dynamitedb.ccm.lifecycle.Transaction;
 import dynamitedb.ccm.lifecycle.TransactionRegistry;
 import dynamitedb.ccm.protocol.ConcurrencyProtocol;
+import dynamitedb.ccm.protocol.Strict2PLProtocol;
 import dynamitedb.ccm.recovery.MaintenanceController;
 import dynamitedb.ccm.recovery.TransactionRecoveryBridge;
 import dynamitedb.ccm.timestamp.TimestampOrderingProtocol;
@@ -91,7 +93,21 @@ public class ConcurrencyManagerImpl
   @Override
   public AccessDecision requestAccess(AccessRequest request) {
     Objects.requireNonNull(request, "request");
-    return decide(request.tx(), () -> protocol.request(request));
+    AccessDecision decision = decide(request.tx(), () -> protocol.request(request));
+    if (decision.state() == AccessState.WAITING && activeType == ProtocolType.STRICT_2PL) {
+      ConcurrencyProtocol locking = protocols.get(ProtocolType.STRICT_2PL);
+      if (locking instanceof Strict2PLProtocol strict2PL) {
+        new DeadlockMonitor(strict2PL.lockManager(), this).resolveDeadlock();
+      }
+      Optional<Transaction> transaction = registry.find(request.tx());
+      if (transaction.isEmpty() || !transaction.orElseThrow().isActive()) {
+        return AccessDecision.aborted(
+            transaction
+                .map(ConcurrencyManagerImpl::inactiveReason)
+                .orElse("Transaksi " + request.tx() + " tidak dikenal"));
+      }
+    }
+    return decision;
   }
 
   @Override
