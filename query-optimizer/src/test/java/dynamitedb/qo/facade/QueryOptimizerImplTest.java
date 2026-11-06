@@ -55,7 +55,8 @@ class QueryOptimizerImplTest {
   void driverReportsBothPlansAndStructuredSyntaxFailures() {
     var report =
         new QueryOptimizerDriver(optimizer())
-            .runSuite(List.of("SELECT * FROM student", "SELEC * FROM student"));
+            .runSuite(
+                List.of("SELECT * FROM student", "-- expect: SQL_SYNTAX\nSELEC * FROM student"));
 
     assertTrue(report.passed());
     assertEquals(2, report.results().size());

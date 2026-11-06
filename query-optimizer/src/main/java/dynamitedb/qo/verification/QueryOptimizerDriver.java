@@ -104,7 +104,7 @@ public class QueryOptimizerDriver {
               + "COST: "
               + explanation.cost());
     } catch (DbmsException handled) {
-      boolean expected = expectation == null || expectation.equals(handled.getCode().name());
+      boolean expected = expectation != null && expectation.equals(handled.getCode().name());
       return new TestResult(
           expected,
           (expected ? "HANDLED " : "FAIL: unexpected ")

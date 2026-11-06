@@ -1,12 +1,5 @@
 package dynamitedb.qo.binding;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.Set;
-
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
@@ -36,7 +29,12 @@ import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
-
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 
 public class Binder {
 

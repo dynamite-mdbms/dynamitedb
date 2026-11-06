@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.QueryOptimizer;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.PlanExplanation;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.PreparedQuery;
@@ -59,5 +61,31 @@ class QueryOptimizerDriverTest {
 
     assertFalse(report.passed());
     assertTrue(report.results().get(0).message().contains("expected SQL_SYNTAX"));
+  }
+
+  @Test
+  void failsUnexpectedErrorWhenScenarioHasNoExpectationDirective() {
+    QueryOptimizer alwaysFails =
+        new QueryOptimizer() {
+          @Override
+          public PreparedQuery prepare(String sql) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public double estimateCost(PlanNode plan) {
+            return 1;
+          }
+
+          @Override
+          public PlanExplanation explain(String sql) {
+            throw new DbmsException(ErrorCode.SQL_SYNTAX, "invalid SQL");
+          }
+        };
+
+    var report = new QueryOptimizerDriver(alwaysFails).runSuite(List.of("SELEC * FROM student;"));
+
+    assertFalse(report.passed());
+    assertTrue(report.results().get(0).message().contains("unexpected SQL_SYNTAX"));
   }
 }
