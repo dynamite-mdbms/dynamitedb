@@ -853,4 +853,8 @@ helper	dynamitedb.frm.mock.MockRecoveryPorts$Coordinator
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Generations
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Historical
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Pages
+helper	dynamitedb.qo.join.AccessPathOptimizer$Comparison
+helper	dynamitedb.qo.join.AccessPathOptimizer$Match
+helper	dynamitedb.qo.join.JoinOrderOptimizer$Flat
+helper	dynamitedb.qo.join.PlanExpressions
 helper	dynamitedb.qp.driver.QueryProcessorTestDriver$Scenario
