@@ -13,6 +13,10 @@ public class Strict2PLProtocol implements ConcurrencyProtocol {
     this.locks = Objects.requireNonNull(locks, "locks");
   }
 
+  public LockManager lockManager() {
+    return locks;
+  }
+
   @Override
   public AccessDecision request(AccessRequest request) {
     return locks.acquire(request);
