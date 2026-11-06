@@ -150,15 +150,39 @@ public final class TcpServer implements AutoCloseable {
         }
       } finally {
         cancel();
-        if (session != null) {
+        cleanupSession();
+        connections.remove(this);
+      }
+    }
+
+    private void cleanupSession() {
+      // A cancelled request must not prevent its transaction's abort from being retried.
+      boolean interrupted = Thread.interrupted();
+      boolean reported = false;
+      try {
+        while (session != null) {
           try {
             processor.closeSession(session);
+            session = null;
           } catch (RuntimeException failure) {
-            LOG.warning(
-                "Session " + session.value() + " cleanup requires retry: " + failure.getMessage());
+            if (!reported || !running.get()) {
+              LOG.warning(
+                  "Session "
+                      + session.value()
+                      + " cleanup requires retry: "
+                      + failure.getMessage());
+              reported = true;
+            }
+            if (!running.get()) return;
+            try {
+              Thread.sleep(100);
+            } catch (InterruptedException cancelled) {
+              interrupted = true;
+            }
           }
         }
-        connections.remove(this);
+      } finally {
+        if (interrupted) Thread.currentThread().interrupt();
       }
     }
 

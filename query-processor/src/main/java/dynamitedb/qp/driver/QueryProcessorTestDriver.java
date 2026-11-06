@@ -37,7 +37,9 @@ public final class QueryProcessorTestDriver {
   public TestReport runSuite(List<String> queries) {
     return runScenarios(
         queries.stream()
-            .map(sql -> new Scenario(sql, sql, Optional.empty(), result -> true))
+            .map(
+                sql ->
+                    new Scenario("Execution only: " + sql, sql, Optional.empty(), result -> true))
             .toList());
   }
 
@@ -58,6 +60,8 @@ public final class QueryProcessorTestDriver {
                       + result.rows().size()
                       + ", affected="
                       + result.affectedRows()
+                      + ", values="
+                      + result.rows()
                       + ", message="
                       + result.message()));
         } catch (DbmsException failure) {
@@ -70,7 +74,10 @@ public final class QueryProcessorTestDriver {
                       + ": "
                       + failure.getMessage()));
         } catch (RuntimeException failure) {
-          results.add(new TestResult(false, scenario.name() + ": unexpected execution failure"));
+          results.add(
+              new TestResult(
+                  false,
+                  scenario.name() + ": unexpected execution failure: " + failure.getMessage()));
         }
       }
     } finally {
