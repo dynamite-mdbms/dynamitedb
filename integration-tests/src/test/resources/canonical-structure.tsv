@@ -667,6 +667,12 @@ method	dynamitedb.frm.LogManager	scanFrom	java.util.Iterator<dynamitedb.frm.LogR
 method	dynamitedb.frm.LogManager	reverseByTx	java.util.Iterator<dynamitedb.frm.LogRecord>	dynamitedb.contracts.transaction.TransactionId
 method	dynamitedb.frm.LogManager	read	dynamitedb.contracts.recovery.LogView	dynamitedb.contracts.recovery.LogFilter
 type	dynamitedb.frm.WalService	class
+type	dynamitedb.frm.driver.FileRecoveryStorage	class
+type	dynamitedb.frm.driver.RealRecoveryDriver	class
+helper	dynamitedb.frm.driver.CrashChild
+helper	dynamitedb.frm.driver.DriverAssertions
+helper	dynamitedb.frm.driver.DriverScenarios
+helper	dynamitedb.frm.driver.RecoveryHarness
 method	dynamitedb.frm.WalService	begin	void	dynamitedb.contracts.transaction.TransactionId|long
 method	dynamitedb.frm.WalService	appendChange	dynamitedb.contracts.recovery.LogSequenceNumber	dynamitedb.contracts.recovery.ChangeRecord
 method	dynamitedb.frm.WalService	commitDurably	void	dynamitedb.contracts.transaction.TransactionId
@@ -700,6 +706,7 @@ method	dynamitedb.frm.UndoManager	rollbackCompletely	void	dynamitedb.contracts.t
 method	dynamitedb.frm.UndoManager	undoLosers	void	dynamitedb.frm.RecoveryState
 method	dynamitedb.frm.UndoManager	emitClr	dynamitedb.frm.CompensationLogRecord	dynamitedb.frm.ChangeLogRecord
 type	dynamitedb.frm.CrashRecoveryManager	class
+helper	dynamitedb.frm.CrashRecoveryManager$Analysis
 method	dynamitedb.frm.CrashRecoveryManager	recover	dynamitedb.contracts.recovery.RecoveryResult
 method	dynamitedb.frm.CrashRecoveryManager	analyze	dynamitedb.frm.RecoveryState	dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.frm.CrashRecoveryManager	redo	void	dynamitedb.frm.RecoveryState

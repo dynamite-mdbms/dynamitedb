@@ -9,11 +9,13 @@ import dynamitedb.contracts.recovery.RecoveryMutation;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Reverses a transaction through recovery storage port */
+/** Balikin transaksi lewat port recovery storage. */
 public final class UndoManager implements RollbackService {
   private final LogManager log;
   private final RecoveryPageStore storage;
@@ -84,7 +86,33 @@ public final class UndoManager implements RollbackService {
       context.invoked("UndoManager.undoLosers");
       return;
     }
-    for (var tx : state.losers()) rollbackCompletely(tx);
+    if (state.losers().isEmpty()) return;
+
+    var changes = new ArrayList<ChangeLogRecord>();
+    var compensated = new HashSet<Long>();
+    log.scanFrom(new LogSequenceNumber(0))
+        .forEachRemaining(
+            record -> {
+              if (record instanceof CompensationLogRecord clr) {
+                compensated.add(clr.compensates.value());
+              } else if (record instanceof ChangeLogRecord change
+                  && state.losers().contains(change.change.tx())) {
+                changes.add(change);
+              }
+            });
+
+    // global descending LSN: undo per-transaksi bisa salah kalau record-nya sama
+    changes.sort(
+        Comparator.comparingLong((ChangeLogRecord change) -> change.lsn.value()).reversed());
+    for (ChangeLogRecord change : changes) {
+      if (compensated.contains(change.lsn.value())) continue;
+      CompensationLogRecord clr = emitClr(change);
+      storage.applyRecovery(clr.mutation, clr.lsn);
+      compensated.add(change.lsn.value());
+    }
+    for (TransactionId tx : state.losers()) {
+      log.finishAbort(tx);
+    }
   }
 
   public CompensationLogRecord emitClr(ChangeLogRecord record) {
