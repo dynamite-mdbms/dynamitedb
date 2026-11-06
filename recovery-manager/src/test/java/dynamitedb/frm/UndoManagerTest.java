@@ -239,6 +239,7 @@ class UndoManagerTest {
     return result;
   }
 
+  // TODO: Check rollback against real storage, check also page LSNs and index maintenance
   private static final class Store implements RecoveryPageStore {
     final Map<RecordId, RecordImage> data = new HashMap<>();
     final List<RecordId> applied = new ArrayList<>();
