@@ -91,12 +91,12 @@ public final class StubRuntime {
 
     var disk = new DiskManager(config.dataDirectory());
     var buffer = new BufferPool(disk, wal);
-    var catalog = new CatalogManager();
+    var catalog = new CatalogManager(config.dataDirectory());
     var catalogAccess = new StorageCatalogAdapter(catalog);
     var serializer = new RecordSerializer();
-    var heap = new HeapFile();
-    var indexes = new IndexManager();
-    var records = new RecordStore(heap, buffer, serializer, indexes);
+    var heap = new HeapFile(config.dataDirectory(), buffer, serializer, catalog);
+    var indexes = new IndexManager(heap, serializer);
+    var records = new RecordStore(heap, buffer, serializer, indexes, catalog);
     var generations =
         new GenerationStore(config.dataDirectory(), manifests, buffer, catalog, indexes, records);
     storage = new StorageManagerImpl(records, catalog, indexes);

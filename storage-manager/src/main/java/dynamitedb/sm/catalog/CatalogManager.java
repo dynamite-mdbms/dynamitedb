@@ -208,6 +208,29 @@ public final class CatalogManager {
                     old.rowCount(), blocks, old.averageRowBytes(), old.distinctCounts())));
   }
 
+  /** Reload catalog dari disk, dipakai SM1 saat generation switch. */
+  public synchronized void reload() {
+    schemas.clear();
+    tableIds.clear();
+    stats.clear();
+    indexes.clear();
+    rowBytes.clear();
+    frequencies.clear();
+    nextTableId = 1;
+    sampleState = 0;
+    present = false;
+    failed = false;
+    if (!Files.notExists(file)) {
+      try {
+        load();
+      } catch (RuntimeException e) {
+        failed = true;
+        throw e;
+      }
+      present = true;
+    }
+  }
+
   private void changeRows(String table, Row before, Row after) {
     var schema = getSchema(table);
     int removed = before == null ? 0 : encodedSize(before, schema);
@@ -514,6 +537,8 @@ public final class CatalogManager {
           temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
       try (var directory = FileChannel.open(root, StandardOpenOption.READ)) {
         directory.force(true);
+      } catch (IOException unsupported) {
+        // Windows tidak support directory fsync; atomic rename sudah cukup.
       }
     } catch (IOException e) {
       failed = true;

@@ -11,3 +11,10 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+tasks.register('smDriver', JavaExec) {
+    group = 'verification'
+    description = 'Runs the standalone Storage Manager test driver (SM-15).'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dynamitedb.sm.verification.StorageTestDriver'
+}

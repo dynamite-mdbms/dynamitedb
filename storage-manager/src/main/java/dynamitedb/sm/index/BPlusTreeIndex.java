@@ -1,9 +1,9 @@
 package dynamitedb.sm.index;
 
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.ComparisonOp;
-import dynamitedb.contracts.storage.DbmsException;
-import dynamitedb.contracts.storage.ErrorCode;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
@@ -14,7 +14,6 @@ import dynamitedb.contracts.storage.Value;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-
 
 public final class BPlusTreeIndex implements EqualityIndex, OrderedIndex {
 
@@ -55,6 +54,9 @@ public final class BPlusTreeIndex implements EqualityIndex, OrderedIndex {
     Objects.requireNonNull(predicate, "predicate");
     Value bound = Objects.requireNonNull(predicate.value(), "predicate.value()");
     ComparisonOp op = predicate.operator();
+    if (bound instanceof NullValue) {
+      return List.of(); // NULL comparison = UNKNOWN, tidak ada row yang match
+    }
     List<RecordId> result = new ArrayList<>();
     switch (op) {
       case EQ -> result.addAll(lookup(bound));
@@ -76,6 +78,9 @@ public final class BPlusTreeIndex implements EqualityIndex, OrderedIndex {
       List<Value> keys = nodeKeys.get(leaf);
       List<List<RecordId>> rids = nodeRids.get(leaf);
       for (int i = 0; i < keys.size(); i++) {
+        if (keys.get(i) instanceof NullValue) {
+          continue; // NULL key tidak pernah match < atau <=
+        }
         int cmp = compareValues(keys.get(i), bound);
         boolean include = inclusive ? cmp <= 0 : cmp < 0;
         if (!include) {
@@ -87,7 +92,7 @@ public final class BPlusTreeIndex implements EqualityIndex, OrderedIndex {
     }
   }
 
-  //scan untuk > dan >=
+  // scan untuk > dan >=
   private void scanFrom(Value bound, boolean inclusive, List<RecordId> out) {
     int leaf = findLeaf(bound);
     int idx = entryIndex(nodeKeys.get(leaf), bound);
@@ -281,7 +286,9 @@ public final class BPlusTreeIndex implements EqualityIndex, OrderedIndex {
       nodeChildren
           .get(child)
           .add(0, nodeChildren.get(left).remove(nodeChildren.get(left).size() - 1));
-      nodeKeys.get(parent).set(childPos - 1, nodeKeys.get(left).remove(nodeKeys.get(left).size() - 1));
+      nodeKeys
+          .get(parent)
+          .set(childPos - 1, nodeKeys.get(left).remove(nodeKeys.get(left).size() - 1));
     }
   }
 

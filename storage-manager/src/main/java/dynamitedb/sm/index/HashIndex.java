@@ -23,7 +23,8 @@ public final class HashIndex implements EqualityIndex {
   public synchronized void insert(Value key, RecordId rid) {
     Objects.requireNonNull(key, "key");
     Objects.requireNonNull(rid, "rid");
-    List<RecordId> bucket = buckets.computeIfAbsent(key, k -> new java.util.ArrayList<>()); // key duplikat
+    List<RecordId> bucket =
+        buckets.computeIfAbsent(key, k -> new java.util.ArrayList<>()); // key duplikat
     if (!bucket.contains(rid)) {
       bucket.add(rid);
     }
