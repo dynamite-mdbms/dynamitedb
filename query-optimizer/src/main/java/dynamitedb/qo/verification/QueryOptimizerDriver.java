@@ -6,6 +6,7 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableStatistics;
@@ -29,6 +30,7 @@ import dynamitedb.qo.plan.PlanVisualizer;
 import dynamitedb.qo.pushdown.ProjectionPushdown;
 import dynamitedb.qo.pushdown.SelectionPushdown;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -40,6 +42,8 @@ import java.util.Map;
 public class QueryOptimizerDriver {
 
   private static final String EXPECT_PREFIX = "-- expect:";
+  private static final String AFTER_PREFIX = "-- expect-after:";
+  private static final String SCENARIO_RESOURCE = "/qo1-driver.sql";
 
   private final QueryOptimizer optimizer;
 
@@ -72,9 +76,10 @@ public class QueryOptimizerDriver {
     if (!report.passed()) throw new IllegalStateException("One or more QO driver scenarios failed");
   }
 
-  private TestResult runScenario(String scenario) {
-    String expectation = expectation(scenario);
-    String query = sql(scenario);
+  private TestResult runScenario(String text) {
+    Scenario scenario = Scenario.parse(text);
+    String expectation = scenario.expectation();
+    String query = scenario.sql();
     if (query.isBlank()) return new TestResult(false, "FAIL: scenario contains no SQL");
     try {
       var explanation = optimizer.explain(query);
@@ -88,8 +93,7 @@ public class QueryOptimizerDriver {
         return new TestResult(
             false, "FAIL: expected " + expectation + " but query succeeded: " + query);
       }
-      return new TestResult(
-          true,
+      String plans =
           "SQL: "
               + query
               + System.lineSeparator()
@@ -102,7 +106,16 @@ public class QueryOptimizerDriver {
               + explanation.after()
               + System.lineSeparator()
               + "COST: "
-              + explanation.cost());
+              + explanation.cost();
+      List<String> missing =
+          scenario.afterContains().stream()
+              .filter(expected -> !explanation.after().contains(expected))
+              .toList();
+      if (!missing.isEmpty()) {
+        return new TestResult(
+            false, "FAIL: AFTER plan lacks " + missing + System.lineSeparator() + plans);
+      }
+      return new TestResult(true, plans);
     } catch (DbmsException handled) {
       boolean expected = expectation != null && expectation.equals(handled.getCode().name());
       return new TestResult(
@@ -125,15 +138,12 @@ public class QueryOptimizerDriver {
     }
   }
 
-  private static List<String> builtInScenarios() {
-    return List.of(
-        "-- expect: OK\nSELECT student.name FROM student ORDER BY student.name DESC;",
-        "-- expect: OK\nSELECT * FROM student NATURAL JOIN enrollment;",
-        "-- expect: OK\n"
-            + "SELECT student.name FROM student JOIN enrollment "
-            + "ON student.student_id = enrollment.student_id WHERE gpa > 3.0;",
-        "-- expect: SQL_SYNTAX\nSELEC * FROM student;",
-        "-- expect: SQL_BIND\nSELECT * FROM missing_table;");
+  /** Scenarios bundled from {@code examples/qo1-driver.sql}, the single source of the demo. */
+  static List<String> builtInScenarios() throws IOException {
+    try (var in = QueryOptimizerDriver.class.getResourceAsStream(SCENARIO_RESOURCE)) {
+      if (in == null) throw new IOException("Missing driver resource " + SCENARIO_RESOURCE);
+      return splitSqlScript(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+    }
   }
 
   private static List<String> readScenarios(List<String> files) throws IOException {
@@ -148,7 +158,7 @@ public class QueryOptimizerDriver {
       String leading = line.stripLeading();
       if (leading.startsWith("#")
           || (leading.startsWith("--")
-              && !leading.toLowerCase(Locale.ROOT).startsWith(EXPECT_PREFIX))) continue;
+              && !leading.toLowerCase(Locale.ROOT).startsWith("-- expect"))) continue;
       filtered.append(line).append('\n');
     }
 
@@ -175,20 +185,30 @@ public class QueryOptimizerDriver {
     return List.copyOf(scenarios);
   }
 
-  private static String expectation(String scenario) {
-    String firstLine = scenario.lines().findFirst().orElse("").strip();
-    if (!firstLine.toLowerCase(Locale.ROOT).startsWith(EXPECT_PREFIX)) return null;
-    return firstLine.substring(EXPECT_PREFIX.length()).strip().toUpperCase(Locale.ROOT);
+  /** Leading {@code -- expect:} and {@code -- expect-after:} headers followed by one SQL. */
+  private record Scenario(String expectation, List<String> afterContains, String sql) {
+
+    static Scenario parse(String text) {
+      String expectation = null;
+      List<String> after = new ArrayList<>();
+      StringBuilder sql = new StringBuilder();
+      for (String line : text.lines().toList()) {
+        String header = line.strip();
+        String lower = header.toLowerCase(Locale.ROOT);
+        if (sql.toString().isBlank() && lower.startsWith(AFTER_PREFIX)) {
+          after.add(header.substring(AFTER_PREFIX.length()).strip());
+        } else if (sql.toString().isBlank() && lower.startsWith(EXPECT_PREFIX)) {
+          expectation = header.substring(EXPECT_PREFIX.length()).strip().toUpperCase(Locale.ROOT);
+        } else {
+          sql.append(line).append('\n');
+        }
+      }
+      return new Scenario(expectation, List.copyOf(after), sql.toString().strip());
+    }
   }
 
-  private static String sql(String scenario) {
-    String firstLine = scenario.lines().findFirst().orElse("").strip();
-    if (!firstLine.toLowerCase(Locale.ROOT).startsWith(EXPECT_PREFIX)) return scenario.strip();
-    int newline = scenario.indexOf('\n');
-    return newline < 0 ? "" : scenario.substring(newline + 1).strip();
-  }
-
-  private static QueryOptimizer standaloneOptimizer() {
+  /** Full QO pipeline wired to the deterministic fake catalog below. */
+  public static QueryOptimizer standaloneOptimizer() {
     CatalogAccess catalog = fakeCatalog();
     CostEstimator cost = new CostEstimator(catalog);
     Binder binder = new Binder(catalog);
@@ -209,59 +229,82 @@ public class QueryOptimizerDriver {
         new PlanVisualizer());
   }
 
-  private static CatalogAccess fakeCatalog() {
-    Map<String, Schema> schemas =
+  /**
+   * Fake SM catalog: three tables with asymmetric statistics, a HASH and a B+Tree index, so the
+   * driver can show join rewrite/reorder, an IndexScan being chosen, and a TableScan fallback.
+   */
+  static CatalogAccess fakeCatalog() {
+    Map<String, FakeTable> tables =
         Map.of(
             "student",
-            new Schema(
+            new FakeTable(
+                1,
+                new Schema(
+                    List.of(
+                        new Column("student", "student_id", DataType.INTEGER, 0, false),
+                        new Column("student", "name", DataType.VARCHAR, 50, false),
+                        new Column("student", "gpa", DataType.FLOAT, 0, true))),
+                new TableStatistics(
+                    1000, 100, 64, Map.of("student_id", 1000L, "name", 950L, "gpa", 40L)),
                 List.of(
-                    new Column("student", "student_id", DataType.INTEGER, 0, false),
-                    new Column("student", "name", DataType.VARCHAR, 50, false),
-                    new Column("student", "gpa", DataType.FLOAT, 0, true))),
+                    new IndexMetadata("idx_student_gpa", "student", "gpa", IndexKind.B_PLUS_TREE),
+                    new IndexMetadata("idx_student_id", "student", "student_id", IndexKind.HASH))),
             "enrollment",
-            new Schema(
-                List.of(
-                    new Column("enrollment", "student_id", DataType.INTEGER, 0, false),
-                    new Column("enrollment", "course_id", DataType.INTEGER, 0, false))));
+            new FakeTable(
+                2,
+                new Schema(
+                    List.of(
+                        new Column("enrollment", "student_id", DataType.INTEGER, 0, false),
+                        new Column("enrollment", "course_id", DataType.INTEGER, 0, false),
+                        new Column("enrollment", "grade", DataType.CHAR, 2, true))),
+                new TableStatistics(
+                    5000, 250, 32, Map.of("student_id", 1000L, "course_id", 50L, "grade", 5L)),
+                List.of()),
+            "course",
+            new FakeTable(
+                3,
+                new Schema(
+                    List.of(
+                        new Column("course", "course_id", DataType.INTEGER, 0, false),
+                        new Column("course", "title", DataType.VARCHAR, 50, false),
+                        new Column("course", "credits", DataType.INTEGER, 0, false))),
+                new TableStatistics(
+                    50, 5, 64, Map.of("course_id", 50L, "title", 50L, "credits", 4L)),
+                List.of()));
     return new CatalogAccess() {
       @Override
       public List<String> listTables() {
-        return schemas.keySet().stream().sorted().toList();
+        return tables.keySet().stream().sorted().toList();
       }
 
       @Override
       public long getTableId(String table) {
-        requireTable(table, schemas);
-        return table.equals("student") ? 1 : 2;
+        return table(table).id();
       }
 
       @Override
       public Schema getSchema(String table) {
-        requireTable(table, schemas);
-        return schemas.get(table);
+        return table(table).schema();
       }
 
       @Override
       public TableStatistics getStatistics(String table) {
-        requireTable(table, schemas);
-        Schema schema = schemas.get(table);
-        Map<String, Long> distinct =
-            schema.columns().stream()
-                .collect(java.util.stream.Collectors.toMap(Column::name, c -> 3L));
-        return new TableStatistics(3, 1, 64, distinct);
+        return table(table).statistics();
       }
 
       @Override
       public List<IndexMetadata> listIndexes(String table) {
-        requireTable(table, schemas);
-        return List.of();
+        return table(table).indexes();
+      }
+
+      private FakeTable table(String table) {
+        FakeTable found = tables.get(table.toLowerCase(Locale.ROOT));
+        if (found == null) throw new DbmsException(ErrorCode.SQL_BIND, "Unknown table: " + table);
+        return found;
       }
     };
   }
 
-  private static void requireTable(String table, Map<String, Schema> schemas) {
-    if (!schemas.containsKey(table)) {
-      throw new DbmsException(ErrorCode.SQL_BIND, "Unknown table: " + table);
-    }
-  }
+  private record FakeTable(
+      long id, Schema schema, TableStatistics statistics, List<IndexMetadata> indexes) {}
 }

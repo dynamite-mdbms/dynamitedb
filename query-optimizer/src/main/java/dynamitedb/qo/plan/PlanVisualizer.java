@@ -17,6 +17,12 @@ import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
+import dynamitedb.contracts.storage.BooleanValue;
+import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.TextValue;
+import dynamitedb.contracts.storage.Value;
 import java.util.stream.Collectors;
 
 /** Menampilkan plan dalam bentuk pohon teks (QO-15). */
@@ -49,8 +55,12 @@ public class PlanVisualizer {
           + scan.index()
           + ", table="
           + scan.table()
+          + ", alias="
+          + scan.alias()
           + ", predicate="
-          + scan.predicate()
+          + scan.predicate().operator()
+          + " "
+          + value(scan.predicate().value())
           + ", residual="
           + scan.residual().map(PlanVisualizer::expression).orElse("none")
           + "]";
@@ -76,7 +86,11 @@ public class PlanVisualizer {
           + "]";
     }
     if (plan instanceof InsertPlan insert) {
-      return "Insert [table=" + insert.table() + ", values=" + insert.row().values() + "]";
+      String values =
+          insert.row().values().stream()
+              .map(PlanVisualizer::value)
+              .collect(Collectors.joining(", "));
+      return "Insert [table=" + insert.table() + ", values=(" + values + ")]";
     }
     if (plan instanceof UpdatePlan update) {
       return "Update [table="
@@ -107,7 +121,7 @@ public class PlanVisualizer {
 
   private static String expression(Expression expression) {
     if (expression instanceof ColumnExpression column) return column(column.column());
-    if (expression instanceof LiteralExpression literal) return literal.value().toString();
+    if (expression instanceof LiteralExpression literal) return value(literal.value());
     if (expression instanceof BinaryExpression binary) {
       return "("
           + expression(binary.left())
@@ -118,6 +132,16 @@ public class PlanVisualizer {
           + ")";
     }
     return expression.toString();
+  }
+
+  private static String value(Value value) {
+    return switch (value) {
+      case IntValue integer -> String.valueOf(integer.value());
+      case FloatValue real -> String.valueOf(real.value());
+      case TextValue text -> "'" + text.value().replace("'", "''") + "'";
+      case BooleanValue bool -> String.valueOf(bool.value()).toUpperCase(java.util.Locale.ROOT);
+      case NullValue nil -> "NULL";
+    };
   }
 
   private static String columns(java.util.List<ColumnRef> columns) {

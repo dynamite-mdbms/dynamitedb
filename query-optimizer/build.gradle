@@ -8,6 +8,9 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
 }
 
+// Bundles examples/qo1-driver.sql as the driver's built-in scenario suite.
+sourceSets.main.resources.srcDir 'examples'
+
 tasks.named('test') {
     useJUnitPlatform()
 }
