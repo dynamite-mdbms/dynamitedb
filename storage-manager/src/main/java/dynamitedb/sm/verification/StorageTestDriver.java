@@ -108,6 +108,7 @@ public final class StorageTestDriver {
     results.add(run("Index: unknown column rejected with SQL_BIND", this::indexUnknownColumn));
     results.add(run("Index: maintained by insert, update and delete", this::indexMaintenance));
     results.add(run("Statistics: rowCount follows insert and delete", this::statistics));
+    results.add(run("Delete: clearing a whole table empties scan, index and stats", this::clear));
     return new TestReport(results);
   }
 
@@ -342,6 +343,19 @@ public final class StorageTestDriver {
     apply(writes.prepareDelete(DRIVER_TX, rid));
     require(indexScan(name, key2).size() == base2, "deleted row still indexed");
     return "insert, update and delete reflected in " + name;
+  }
+
+  /** Clear table (SM-07) = DELETE tanpa WHERE: satu prepareDelete per row lewat WriteStore. */
+  private String clear() {
+    List<StoredRow> rows = scanAll("course");
+    for (StoredRow row : rows) {
+      apply(writes.prepareDelete(DRIVER_TX, row.rid()));
+    }
+    require(scanAll("course").isEmpty(), "scan still returns rows");
+    require(catalog.getStatistics("course").rowCount() == 0, "rowCount not 0");
+    IndexPredicate any = new IndexPredicate(ComparisonOp.EQ, new IntValue(1));
+    require(indexScan("drv_course_id_" + suffix, any).isEmpty(), "index still returns rows");
+    return rows.size() + " rows deleted from course";
   }
 
   private String statistics() {
