@@ -855,9 +855,9 @@ helper	dynamitedb.app.protocol.WireProtocol
 helper	dynamitedb.app.StubRuntime
 helper	dynamitedb.app.cli.SqlStatementReader$State
 helper	dynamitedb.app.mock.MockRuntime$MockAccess
-helper	dynamitedb.app.mock.MockRuntime$MockCatalog
-helper	dynamitedb.app.mock.MockRuntime$MockCoordinator
 helper	dynamitedb.app.mock.MockRuntime$MockOptimizer
+helper	dynamitedb.app.mock.MockRuntime$MockStorage
+helper	dynamitedb.app.mock.MockRuntime$MockStorage$Mutation
 helper	dynamitedb.app.mock.MockRuntime$MockTransactions
 helper	dynamitedb.app.server.TcpServer$Connection
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Coordinator
