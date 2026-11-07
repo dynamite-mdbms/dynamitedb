@@ -13,7 +13,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Standalone contract smoke driver. Results describe mocks, never real crash/durability tests. */
+/**
+ * Legacy Milestone 1 contract smoke driver. Use {@link dynamitedb.frm.driver.RealRecoveryDriver}
+ * for file-backed FR-07/FR-09 scenarios.
+ */
 public final class RecoveryTestDriver {
   private static final List<String> SCENARIOS =
       List.of(
