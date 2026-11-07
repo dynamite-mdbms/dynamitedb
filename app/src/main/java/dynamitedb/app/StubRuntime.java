@@ -147,7 +147,7 @@ public final class StubRuntime {
             new OptimizerPipeline(
                 List.<PlanRewrite>of(
                     new SelectionPushdown(),
-                    new ProjectionPushdown(),
+                    new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
                 new JoinOrderOptimizer(),
