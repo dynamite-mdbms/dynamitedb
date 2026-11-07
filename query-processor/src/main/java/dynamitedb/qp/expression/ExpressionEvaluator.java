@@ -90,7 +90,7 @@ public class ExpressionEvaluator {
         });
   }
 
-  private static int compare(Value left, Value right) {
+  public static int compare(Value left, Value right) {
     if (left instanceof TextValue a && right instanceof TextValue b) {
       // CHAR disimpen dengan padding, jadi spasi di belakang ga dihitung
       return a.value().stripTrailing().compareTo(b.value().stripTrailing());
