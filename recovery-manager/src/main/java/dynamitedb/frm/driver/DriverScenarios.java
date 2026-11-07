@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -304,7 +305,42 @@ final class DriverScenarios {
       check(
           !harness.store.readRecord(COMMITTED_FLUSHED).exists(),
           "historical malah ikut commit setelah target");
-      return new TestResult(true, "historical: target di antara dua commit benar");
+    }
+
+    try (RecoveryHarness reopened = RecoveryHarness.open(root, "historical")) {
+      TransactionId third = new TransactionId(3);
+      reopened.wal.begin(third, 3);
+      LogSequenceNumber thirdLsn =
+          reopened.wal.appendChange(
+              new ChangeRecord(third, "items", COMMITTED_FLUSHED, RecordImage.absent(), image(3)));
+      reopened.store.applyRecovery(new RecoveryMutation(COMMITTED_FLUSHED, image(3)), thirdLsn);
+      reopened.wal.commitDurably(third);
+
+      RecoveryResult branchResult =
+          reopened.historical.recoverTo(
+              new RecoveryTarget(Optional.of(Instant.now().plusSeconds(120)), Optional.empty()));
+      requireSuccess(branchResult, "historical recovery on reopened branch");
+      check(
+          image(3).equals(reopened.store.readRecord(COMMITTED_FLUSHED)),
+          "PITR pada branch baru kehilangan commit setelah restart");
+      check(
+          reopened.store.readRecord(COMMITTED_NOT_FLUSHED).exists(),
+          "PITR branch baru kehilangan data snapshot sebelumnya");
+    }
+
+    try (RecoveryHarness reopenedAgain = RecoveryHarness.open(root, "historical")) {
+      RecoveryResult repeatedResult =
+          reopenedAgain.historical.recoverTo(
+              new RecoveryTarget(Optional.of(Instant.now().plusSeconds(240)), Optional.empty()));
+      requireSuccess(repeatedResult, "repeated historical recovery after restart");
+      check(
+          image(3).equals(reopenedAgain.store.readRecord(COMMITTED_FLUSHED)),
+          "snapshot branch hasil PITR tidak bertahan setelah restart");
+      check(
+          reopenedAgain.store.readRecord(COMMITTED_NOT_FLUSHED).exists(),
+          "snapshot branch kehilangan record dari recovery sebelumnya");
+      return new TestResult(
+          true, "historical: target commit, branch baru, dan PITR berulang setelah restart benar");
     }
   }
 

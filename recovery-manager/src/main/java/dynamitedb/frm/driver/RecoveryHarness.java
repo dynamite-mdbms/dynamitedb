@@ -77,8 +77,17 @@ final class RecoveryHarness implements AutoCloseable, RecoveryCoordinator {
 
     Path walPath = LogFile.path(directory, lineage);
     long floor = Files.exists(walPath) ? readWalFloor(walPath) : 0;
+    RecoveryHighWater manifestHighWater = active.highWater();
+    if (manifestHighWater.lsn().value() < floor) {
+      throw new IllegalStateException("Manifest high-water does not match active WAL floor");
+    }
+    boolean manifestAtWalFloor = manifestHighWater.lsn().value() == floor;
     RecoveryHighWater seed =
-        new RecoveryHighWater(new LogSequenceNumber(floor), ZERO_TX, 0, Optional.empty());
+        new RecoveryHighWater(
+            new LogSequenceNumber(floor),
+            manifestAtWalFloor || floor > 0 ? manifestHighWater.maxTx() : ZERO_TX,
+            manifestAtWalFloor || floor > 0 ? manifestHighWater.maxTimestamp() : 0,
+            manifestAtWalFloor || floor > 0 ? manifestHighWater.maxCommitTime() : Optional.empty());
     this.log =
         Files.exists(walPath)
             ? LogManager.openExisting(directory, lineage, seed)
@@ -89,9 +98,13 @@ final class RecoveryHarness implements AutoCloseable, RecoveryCoordinator {
     this.undo = new UndoManager(log, store);
     var crash = new CrashRecoveryManager(log, wal, manifests, store, undo, store);
     this.checkpoint = new CheckpointManager(this, store, log);
-    SnapshotMetadata base =
-        store.captureSnapshot(new RecoveryBoundary(new LogSequenceNumber(0), Optional.empty()));
-    var history = new HistoryCatalog(manifests, log, List.of(base));
+    List<SnapshotMetadata> retainedSnapshots =
+        fresh
+            ? List.of(
+                store.captureSnapshot(
+                    new RecoveryBoundary(new LogSequenceNumber(0), Optional.empty())))
+            : List.of();
+    var history = new HistoryCatalog(manifests, log, retainedSnapshots);
     this.historical =
         new HistoricalRecoveryManager(store, history, store, log, wal, manifests, this);
     this.initializer = new RecoveryInitializer(manifests, crash, this);

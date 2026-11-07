@@ -1,6 +1,6 @@
 /**
- * Milestone 1 FRM contract mocks, matching the supplied Class Diagrams signatures. No class in this
- * package implements durable WAL, transaction undo, periodic scheduling, crash recovery, or on-disk
- * generation publication. Use the mock environment for isolated calls.
+ * Failure Recovery Manager services, including persistent WAL, rollback, checkpoint, crash
+ * recovery, and point-in-time recovery implementations. Milestone 1 mock constructors remain
+ * available for isolated contract tests; file-backed recovery scenarios live in the driver package.
  */
 package dynamitedb.frm;

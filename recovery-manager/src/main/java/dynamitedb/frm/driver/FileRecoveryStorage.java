@@ -101,6 +101,7 @@ public final class FileRecoveryStorage
 
   @Override
   public SealedGeneration sealStage(RecoveryStage stage, RecoveryBoundary boundary) {
+    copyDirectory(stages.resolve(stage.id().toString()), snapshots.resolve(stage.id().toString()));
     return new SealedGeneration(stage.id(), boundary);
   }
 

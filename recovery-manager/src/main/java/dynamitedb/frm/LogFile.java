@@ -121,6 +121,34 @@ public final class LogFile implements AutoCloseable {
     return new LogFile(root, lineage, floor, false, true);
   }
 
+  static long readHistoryFloor(Path root, UUID lineage) {
+    Path path = path(root, lineage);
+    try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+      ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES);
+      long offset = 0;
+      while (header.hasRemaining()) {
+        int count = channel.read(header, offset);
+        if (count < 0) throw corrupt("Truncated WAL header: " + path);
+        offset += count;
+      }
+      byte[] data = header.array();
+      int checksum = ByteBuffer.wrap(data, HEADER_BYTES - 4, 4).getInt();
+      byte[] prefix = java.util.Arrays.copyOf(data, HEADER_BYTES - 4);
+      if (checksum != crc(prefix)) throw corrupt("WAL header checksum mismatch: " + path);
+      header.flip();
+      if (header.getInt() != FILE_MAGIC || header.getInt() != VERSION)
+        throw corrupt("Unsupported WAL header: " + path);
+      UUID stored = new UUID(header.getLong(), header.getLong());
+      if (!stored.equals(lineage)) throw corrupt("WAL lineage mismatch: " + path);
+      long floor = header.getLong();
+      if (floor < 0) throw corrupt("Negative WAL floor: " + path);
+      return floor;
+    } catch (IOException failure) {
+      throw new DbmsException(
+          ErrorCode.WAL_FAILURE, "Cannot read WAL header: " + failure.getMessage());
+    }
+  }
+
   public long floor() {
     return floor;
   }

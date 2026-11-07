@@ -127,6 +127,14 @@ public final class LogManager implements AutoCloseable {
     return lineage;
   }
 
+  Path rootDirectory() {
+    return root;
+  }
+
+  synchronized boolean isMock() {
+    return mock != null;
+  }
+
   public synchronized long appendedLsn() {
     return lastLsn;
   }
@@ -406,6 +414,12 @@ public final class LogManager implements AutoCloseable {
     Objects.requireNonNull(id);
     if (id.equals(lineage) || floor < 0) throw invalid("Invalid historical lineage");
     knownHistory.put(id, floor);
+  }
+
+  synchronized void registerHistory(UUID id) {
+    requireReal();
+    Objects.requireNonNull(id, "lineage");
+    if (!id.equals(lineage)) registerHistory(id, LogFile.readHistoryFloor(root, id));
   }
 
   public synchronized Iterator<LogRecord> scanFrom(LogSequenceNumber lsn) {

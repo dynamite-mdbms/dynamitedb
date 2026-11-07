@@ -5,11 +5,15 @@ import dynamitedb.contracts.api.GenerationManifestStore;
 import dynamitedb.contracts.api.RecoveryCoordinator;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.recovery.RecoveryResult;
 import dynamitedb.contracts.recovery.RecoveryStatus;
 import dynamitedb.contracts.recovery.SnapshotMetadata;
+import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Buka database baru atau delegasi open existing ke crash recovery. */
 public final class RecoveryInitializer {
@@ -42,7 +46,18 @@ public final class RecoveryInitializer {
       context.invoked("RecoveryInitializer.createNew");
       return context.result();
     }
-    throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Initialisasi database baru belum diwire");
+    RecoveryHighWater highWater =
+        new RecoveryHighWater(seed.baseLsn(), new TransactionId(0), 0, Optional.empty());
+    GenerationManifest initial =
+        new GenerationManifest(seed.id(), seed.walLineage(), seed.baseLsn(), highWater);
+    try {
+      manifest.publishAtomically(initial);
+      coordinator.initializeRecoveredState(highWater);
+      return new RecoveryResult(RecoveryStatus.SUCCESS, highWater, "Database baru diinisialisasi");
+    } catch (RuntimeException failure) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "Gagal menginisialisasi database baru", failure);
+    }
   }
 
   public RecoveryResult openExisting() {

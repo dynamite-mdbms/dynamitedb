@@ -17,7 +17,9 @@ import dynamitedb.contracts.recovery.RecoveryStage;
 import dynamitedb.contracts.recovery.RecoveryStatus;
 import dynamitedb.contracts.recovery.RecoveryTarget;
 import dynamitedb.contracts.recovery.SealedGeneration;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.frm.mock.MockRecoveryContext;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -136,6 +138,12 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
             "Storage sealed a generation with an unexpected identity or boundary");
       }
       wal.prepareLineage(newLineage, sealed, highWater);
+      catalog.registerSnapshot(
+          new SnapshotMetadata(
+              sealed.id(),
+              newLineage,
+              highWater.lsn(),
+              targetBoundary.commitTime().orElseGet(Instant::now)));
       GenerationManifest published = catalog.buildManifest(sealed, newLineage, highWater);
       manifests.publishAtomically(published);
       generations.switchToPublishedGeneration(published);

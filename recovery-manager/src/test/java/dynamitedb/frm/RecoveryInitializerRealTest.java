@@ -15,9 +15,11 @@ import dynamitedb.contracts.recovery.LogSequenceNumber;
 import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.recovery.RecoveryResult;
 import dynamitedb.contracts.recovery.RecoveryStatus;
+import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.mock.MockRecoveryContext;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,6 +55,25 @@ class RecoveryInitializerRealTest {
     assertEquals(RecoveryStatus.SUCCESS, result.status());
     assertTrue(coordinator.initialized.get());
     assertEquals(highWater, coordinator.highWater.get());
+  }
+
+  @Test
+  void createNewPublishesSeedManifestAndInitializesCcm() {
+    var store = (AtomicGenerationManifestStore) manifests();
+    var coordinator = new RecordingCoordinator();
+    var initializer = new RecoveryInitializer(store, failedRecovery(), coordinator);
+    var seed =
+        new SnapshotMetadata(
+            new UUID(0, 11), new UUID(0, 12), new LogSequenceNumber(0), Instant.now());
+
+    var result = initializer.createNew(seed);
+
+    assertEquals(RecoveryStatus.SUCCESS, result.status());
+    assertEquals(seed.id(), store.readActive().activeId());
+    assertEquals(seed.walLineage(), store.readActive().walLineage());
+    assertEquals(seed.baseLsn(), store.readActive().boundaryLsn());
+    assertTrue(coordinator.initialized.get());
+    assertEquals(result.highWater(), coordinator.highWater.get());
   }
 
   private GenerationManifestStore manifests() {

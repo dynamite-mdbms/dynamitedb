@@ -8,7 +8,7 @@ final class CrashChild {
 
   static void run(Path directory) {
     RecoveryHarness harness =
-        RecoveryHarness.open(directory.getParent(), directory.getFileName().toString());
+        RecoveryHarness.fresh(directory.getParent(), directory.getFileName().toString());
     DriverScenarios.seedCrashState(harness);
     // sengaja: nggak close, nggak shutdown hook, biar mirip crash beneran
     Runtime.getRuntime().halt(0);
