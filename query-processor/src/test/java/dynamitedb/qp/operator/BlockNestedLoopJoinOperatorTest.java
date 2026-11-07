@@ -126,7 +126,8 @@ class BlockNestedLoopJoinOperatorTest {
   @Test
   @DisplayName("NATURAL mengeliminasi kolom duplikat dari hasil")
   void naturalDropsDuplicateColumn() {
-    List<OperatorRow> out = drain(join(table(STUDENTS, r(1, "Andi")), table(TAKES, r(1, "SBD")), JoinKind.NATURAL));
+    List<OperatorRow> out =
+        drain(join(table(STUDENTS, r(1, "Andi")), table(TAKES, r(1, "SBD")), JoinKind.NATURAL));
 
     OperatorRow row = out.get(0);
     assertEquals(3, row.row().values().size()); // nim, name, course
@@ -139,7 +140,8 @@ class BlockNestedLoopJoinOperatorTest {
   void naturalWithoutCommonColumnsIsCartesian() {
     Schema a = schema("a", "x");
     Schema b = schema("b", "y");
-    List<OperatorRow> out = drain(join(table(a, r(1), r(2)), table(b, r(3), r(4)), JoinKind.NATURAL));
+    List<OperatorRow> out =
+        drain(join(table(a, r(1), r(2)), table(b, r(3), r(4)), JoinKind.NATURAL));
     assertEquals(4, out.size());
   }
 
@@ -161,7 +163,8 @@ class BlockNestedLoopJoinOperatorTest {
     Schema a = schema("a", "name", "x");
     Schema b = schema("b", "name", "y");
 
-    List<OperatorRow> out = drain(join(table(a, r("Andi  ", 1)), table(b, r("Andi", 2)), JoinKind.NATURAL));
+    List<OperatorRow> out =
+        drain(join(table(a, r("Andi  ", 1)), table(b, r("Andi", 2)), JoinKind.NATURAL));
 
     assertEquals(1, out.size());
   }
@@ -171,7 +174,8 @@ class BlockNestedLoopJoinOperatorTest {
   @Test
   @DisplayName("Join dengan tabel kosong menghasilkan 0 baris tanpa error")
   void emptySideProducesNoRows() {
-    assertTrue(drain(join(table(STUDENTS), table(TAKES, r(1, "SBD")), JoinKind.CARTESIAN)).isEmpty());
+    assertTrue(
+        drain(join(table(STUDENTS), table(TAKES, r(1, "SBD")), JoinKind.CARTESIAN)).isEmpty());
     assertTrue(drain(join(table(STUDENTS, r(1, "A")), table(TAKES), JoinKind.CARTESIAN)).isEmpty());
   }
 
@@ -192,7 +196,8 @@ class BlockNestedLoopJoinOperatorTest {
             table(STUDENTS, r(1, "Andi"), r(2, "Budi")),
             table(TAKES, r(1, "SBD"), r(2, "AI")),
             JoinKind.NATURAL);
-    BlockNestedLoopJoinOperator stc = join(st, table(courses, r("SBD", 3), r("AI", 4)), JoinKind.NATURAL);
+    BlockNestedLoopJoinOperator stc =
+        join(st, table(courses, r("SBD", 3), r("AI", 4)), JoinKind.NATURAL);
 
     List<OperatorRow> out = drain(stc);
 
@@ -204,12 +209,13 @@ class BlockNestedLoopJoinOperatorTest {
   @Test
   @DisplayName("Kolom hasil join bisa diakses dengan prefix tabel (tabel.kolom)")
   void columnsAccessibleWithTablePrefix() {
-    List<OperatorRow> out = drain(join(table(STUDENTS, r(1, "Andi")), table(TAKES, r(7, "SBD")), JoinKind.CARTESIAN));
+    List<OperatorRow> out =
+        drain(join(table(STUDENTS, r(1, "Andi")), table(TAKES, r(7, "SBD")), JoinKind.CARTESIAN));
     OperatorRow joined = out.get(0);
 
     assertEquals(0, joined.findColumnIndex(col("students", "nim")));
     assertEquals(2, joined.findColumnIndex(col("takes", "nim")));
-    assertThrows(DbmsException.class, () -> joined.findColumnIndex(col("nim"))); 
+    assertThrows(DbmsException.class, () -> joined.findColumnIndex(col("nim")));
   }
 
   @Test

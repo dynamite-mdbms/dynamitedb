@@ -21,6 +21,7 @@ import java.util.Optional;
 final class TestRows {
 
   private TestRows() {}
+
   // Membuat schema dari nama kolom, semuanya milik relasi yang sama.
   static Schema schema(String relation, String... columnNames) {
     List<Column> cols = new ArrayList<>();
@@ -102,7 +103,7 @@ final class TestRows {
     if (v instanceof String s) {
       return new TextValue(s);
     }
-    
+
     throw new IllegalArgumentException("Tipe tidak didukung di test: " + v);
   }
 
