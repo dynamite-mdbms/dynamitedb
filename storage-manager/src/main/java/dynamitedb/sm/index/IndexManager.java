@@ -1,8 +1,8 @@
 package dynamitedb.sm.index;
 
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.Column;
-import dynamitedb.contracts.storage.DbmsException;
-import dynamitedb.contracts.storage.ErrorCode;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
@@ -12,7 +12,7 @@ import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.Value;
-import dynamitedb.sm.heap.RecordStore;
+import dynamitedb.sm.heap.HeapFile;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,16 +22,19 @@ import java.util.Objects;
 
 /** Membuat, mencari, dan memelihara index (SM-10, SM-11). */
 public final class IndexManager {
-  private final RecordStore records;
+  private final HeapFile heap;
   private final RecordSerializer serializer;
 
   private final Map<String, EqualityIndex> indexes = new HashMap<>(); // Nama index -> index aktif
   private final Map<String, IndexMetadata> metadata = new HashMap<>(); // Nama index -> metadata
-  private final Map<String, List<String>> indexesByTable = new HashMap<>(); // Nama tabel -> daftar nama index
-  private final Map<String, Schema> schemas = new HashMap<>(); // Nama tabel -> schema terakhir yang diketahui
+  private final Map<String, List<String>> indexesByTable =
+      new HashMap<>(); // Nama tabel -> daftar nama index
+  private final Map<String, Schema> schemas =
+      new HashMap<>(); // Nama tabel -> schema terakhir yang diketahui
 
-  public IndexManager(RecordStore records, RecordSerializer serializer) {
-    this.records = Objects.requireNonNull(records, "records");
+  /** Read heap via HeapFile (bukan RecordStore) untuk hindari constructor cycle. */
+  public IndexManager(HeapFile heap, RecordSerializer serializer) {
+    this.heap = Objects.requireNonNull(heap, "heap");
     this.serializer = Objects.requireNonNull(serializer, "serializer");
   }
 
@@ -80,6 +83,32 @@ public final class IndexManager {
     }
   }
 
+  /** True bila index sudah aktif. */
+  public synchronized boolean hasIndex(String name) {
+    return indexes.containsKey(Objects.requireNonNull(name, "name"));
+  }
+
+  /** Drop index, dipakai bila publish ke catalog gagal. */
+  public synchronized void dropIndex(String name) {
+    Objects.requireNonNull(name, "name");
+    indexes.remove(name);
+    IndexMetadata meta = metadata.remove(name);
+    if (meta != null) {
+      List<String> names = indexesByTable.get(meta.table());
+      if (names != null) {
+        names.remove(name);
+      }
+    }
+  }
+
+  /** Clear semua index dan schema, dipakai saat generation switch. */
+  public synchronized void clear() {
+    indexes.clear();
+    metadata.clear();
+    indexesByTable.clear();
+    schemas.clear();
+  }
+
   public synchronized void rebuildAll() {
     for (IndexMetadata meta : metadata.values()) {
       EqualityIndex fresh =
@@ -118,16 +147,15 @@ public final class IndexManager {
   private void backfill(IndexMetadata meta, EqualityIndex target) {
     Schema schema = schemas.get(meta.table());
     if (schema == null) {
-      throw new DbmsException(
-          ErrorCode.SQL_BIND, "Schema tabel belum terdaftar: " + meta.table());
+      throw new DbmsException(ErrorCode.SQL_BIND, "Schema tabel belum terdaftar: " + meta.table());
     }
     int columnPos = columnPosition(schema, meta.column());
-    for (RecordId rid : records.recordIds(meta.table())) {
-      RecordImage image = records.read(rid).orElse(null);
-      if (image == null || !image.exists()) {
+    for (RecordId rid : heap.recordIds(meta.table())) {
+      RecordImage image = heap.read(rid);
+      if (!image.exists()) {
         continue; // hanya baris hidup yang masuk index
       }
-      Row row = serializer.decode(image.encoded(), schema);
+      Row row = serializer.decode(image, schema);
       target.insert(row.values().get(columnPos), rid);
     }
   }
@@ -135,11 +163,10 @@ public final class IndexManager {
   private Value extractKey(IndexMetadata meta, RecordImage image) {
     Schema schema = schemas.get(meta.table());
     if (schema == null) {
-      throw new DbmsException(
-          ErrorCode.SQL_BIND, "Schema tabel belum terdaftar: " + meta.table());
+      throw new DbmsException(ErrorCode.SQL_BIND, "Schema tabel belum terdaftar: " + meta.table());
     }
     int columnPos = columnPosition(schema, meta.column());
-    Row row = serializer.decode(image.encoded(), schema);
+    Row row = serializer.decode(image, schema);
     return row.values().get(columnPos);
   }
 
@@ -150,6 +177,6 @@ public final class IndexManager {
         return i;
       }
     }
-    throw new DbmsException(ErrorCode.SQL_BIND, "Kolom tidak ada: " + column);
+    throw new DbmsException(ErrorCode.SQL_BIND, "Column tidak ada: " + column);
   }
 }

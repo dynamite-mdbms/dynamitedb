@@ -1,8 +1,8 @@
 package dynamitedb.sm.index;
 
 import dynamitedb.contracts.api.RowCursor;
-import dynamitedb.contracts.storage.DbmsException;
-import dynamitedb.contracts.storage.ErrorCode;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.storage.Row;
@@ -23,7 +23,8 @@ public final class IndexRowCursor implements RowCursor {
   private final BufferPool buffer;
   private final RecordSerializer serializer;
 
-  private volatile boolean closed; // Penanda cursor sudah ditutup; volatile agar terlihat antar thread
+  private volatile boolean
+      closed; // Penanda cursor sudah ditutup; volatile agar terlihat antar thread
 
   public IndexRowCursor(
       RecordStore records,
@@ -45,11 +46,11 @@ public final class IndexRowCursor implements RowCursor {
     }
     while (rids.hasNext()) { // Lewati RID mati
       RecordId rid = rids.next();
-      RecordImage image = records.read(rid).orElse(null);
-      if (image == null || !image.exists()) {
-        continue; // RID mati
+      RecordImage image = records.read(rid);
+      if (!image.exists()) {
+        continue; // dead RID: deleted, atau slot reused dengan incarnation beda
       }
-      Row row = serializer.decode(image.encoded(), schema);
+      Row row = serializer.decode(image, schema);
       return Optional.of(new StoredRow(rid, row));
     }
     return Optional.empty();

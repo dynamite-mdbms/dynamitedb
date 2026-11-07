@@ -45,9 +45,10 @@ public final class StorageRecoveryAdapter
     records.applyRecovery(mutation, lsn);
   }
 
+  /** Load index definitions dan rebuild dari recovered heap; statistics ikut refresh. */
   @Override
   public void rebuildIndexes() {
-    indexes.rebuildAll();
+    records.rebuildIndexes();
   }
 
   @Override

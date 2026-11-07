@@ -140,6 +140,18 @@ public final class BufferPool {
     }
   }
 
+  /** Discard semua frame tanpa flush, dipakai SM1 saat generation switch. */
+  public synchronized void discardAll() {
+    requireOutsideCallback();
+    for (var page : pages.values()) {
+      if (page.getPinCount() != 0) {
+        throw new DbmsException(
+            ErrorCode.INVALID_STATE, "Generation tidak bisa di-switch, page masih di-pin");
+      }
+    }
+    pages.clear();
+  }
+
   private Page findVictim() {
     if (pages.size() < capacity) {
       return null;
