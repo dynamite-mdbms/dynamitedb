@@ -8,7 +8,6 @@ import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.qp.expression.ExpressionEvaluator;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -35,7 +34,7 @@ public class SortOperator implements Operator {
   @Override
   public void open() {
     child.open();
-    sorted = null; 
+    sorted = null;
     position = 0;
     isOpen = true;
   }
@@ -55,7 +54,7 @@ public class SortOperator implements Operator {
       position++;
       return result;
     } else {
-        return Optional.empty();
+      return Optional.empty();
     }
   }
 
@@ -85,15 +84,16 @@ public class SortOperator implements Operator {
 
     for (SortKey key : keys) {
       int idx = sample.findColumnIndex(key.column());
-      Comparator<OperatorRow> c = (r1, r2) -> compareForSort(r1.row().values().get(idx), r2.row().values().get(idx));
+      Comparator<OperatorRow> c =
+          (r1, r2) -> compareForSort(r1.row().values().get(idx), r2.row().values().get(idx));
       if (key.direction() == SortDirection.DESC) {
         c = c.reversed();
-      } 
+      }
 
       if (result == null) {
-          result = c;
+        result = c;
       } else {
-          result = result.thenComparing(c);
+        result = result.thenComparing(c);
       }
     }
 

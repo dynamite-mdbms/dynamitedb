@@ -4,7 +4,7 @@ import dynamitedb.contracts.query.OperatorRow;
 import java.util.List;
 import java.util.Optional;
 
-// Buat pengganti test untuk scanoperator. 
+// Buat pengganti test untuk scanoperator.
 final class ListOperator implements Operator {
 
   private final List<OperatorRow> rows;
@@ -29,7 +29,7 @@ final class ListOperator implements Operator {
     if (!isOpen) {
       throw new IllegalStateException("next() dipanggil sebelum open()");
     }
-    
+
     return pos < rows.size() ? Optional.of(rows.get(pos++)) : Optional.empty();
   }
 

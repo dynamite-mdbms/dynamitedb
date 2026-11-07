@@ -52,8 +52,14 @@ class SortOperatorTest {
   @Test
   @DisplayName("Lebih dari satu kunci: kunci kedua dipakai saat kunci pertama seri")
   void multipleKeys() {
-    ListOperator child = table(STUDENTS, r("Citra", 3.5), r("Andi", 3.9), r("Budi", 3.5), r("Dewi", 3.2));
-    SortOperator sort = new SortOperator(child, List.of(new SortKey(col("gpa"), SortDirection.DESC), new SortKey(col("name"), SortDirection.ASC)));
+    ListOperator child =
+        table(STUDENTS, r("Citra", 3.5), r("Andi", 3.9), r("Budi", 3.5), r("Dewi", 3.2));
+    SortOperator sort =
+        new SortOperator(
+            child,
+            List.of(
+                new SortKey(col("gpa"), SortDirection.DESC),
+                new SortKey(col("name"), SortDirection.ASC)));
 
     List<OperatorRow> out = drain(sort);
 
@@ -124,7 +130,8 @@ class SortOperatorTest {
             JoinKind.CARTESIAN,
             Optional.empty(),
             null);
-    SortOperator sort = new SortOperator(join, List.of(new SortKey(col("s", "id"), SortDirection.ASC)));
+    SortOperator sort =
+        new SortOperator(join, List.of(new SortKey(col("s", "id"), SortDirection.ASC)));
     assertEquals(list("Andi", "Budi"), column(drain(sort), 1));
   }
 

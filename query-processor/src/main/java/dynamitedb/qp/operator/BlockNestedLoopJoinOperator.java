@@ -12,7 +12,6 @@ import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.qp.expression.ExpressionEvaluator;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +33,10 @@ public class BlockNestedLoopJoinOperator implements Operator {
   private boolean leftEmpty;
   private boolean rightOpen;
   private boolean isOpen;
-  private NaturalJoin natural;
+
+  private int[] leftJoinIdx;
+  private int[] rightJoinIdx;
+  private boolean[] isDuplicateRight;
 
   public BlockNestedLoopJoinOperator(
       Operator left,
@@ -49,14 +51,15 @@ public class BlockNestedLoopJoinOperator implements Operator {
     this.evaluator = evaluator;
 
     if (kind == JoinKind.THETA && (condition.isEmpty() || evaluator == null)) {
-      throw new IllegalArgumentException("Conditional join perlu kondisi ON dan ExpressionEvaluator");
+      throw new IllegalArgumentException(
+          "Conditional join perlu kondisi ON dan ExpressionEvaluator");
     }
   }
 
   @Override
   public void open() {
     if (isOpen) {
-      close(); 
+      close();
     }
 
     left.open();
@@ -65,21 +68,22 @@ public class BlockNestedLoopJoinOperator implements Operator {
     curRight = null;
     position = 0;
     leftEmpty = false;
-    natural = null;
+    leftJoinIdx = null;
     isOpen = true;
   }
 
   @Override
   public Optional<OperatorRow> next() {
     if (!isOpen) {
-      throw new DbmsException(ErrorCode.INVALID_STATE, "BlockNestedLoopJoinOperator harus sudah di open()");
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "BlockNestedLoopJoinOperator harus sudah di open()");
     }
 
     while (true) {
       if (curRight != null) {
         while (position < block.size()) {
           OperatorRow l = block.get(position++);
-          Optional<OperatorRow> joined = matchandMerge(l, curRight);
+          Optional<OperatorRow> joined = matchAndMerge(l, curRight);
 
           if (joined.isPresent()) {
             return joined;
@@ -87,7 +91,7 @@ public class BlockNestedLoopJoinOperator implements Operator {
         }
         curRight = null;
       }
- 
+
       if (!block.isEmpty()) {
         Optional<OperatorRow> r = right.next();
         if (r.isPresent()) {
@@ -98,9 +102,9 @@ public class BlockNestedLoopJoinOperator implements Operator {
         closeRight();
         block.clear();
       }
- 
+
       if (leftEmpty || !insertBlock()) {
-        return Optional.empty(); 
+        return Optional.empty();
       }
 
       right.open();
@@ -124,7 +128,7 @@ public class BlockNestedLoopJoinOperator implements Operator {
       rightOpen = false;
     }
   }
- 
+
   private boolean insertBlock() {
     while (block.size() < BLOCK_SIZE) {
       Optional<OperatorRow> l = left.next();
@@ -137,8 +141,8 @@ public class BlockNestedLoopJoinOperator implements Operator {
 
     return !block.isEmpty();
   }
- 
-  private Optional<OperatorRow> matchandMerge(OperatorRow l, OperatorRow r) {
+
+  private Optional<OperatorRow> matchAndMerge(OperatorRow l, OperatorRow r) {
     switch (kind) {
       case CARTESIAN:
         return Optional.of(concat(l, r));
@@ -151,17 +155,17 @@ public class BlockNestedLoopJoinOperator implements Operator {
         }
       case NATURAL:
         {
-          if (natural == null) {
-            natural = NaturalJoin.fromSchema(l.schema(), r.schema());
+          if (leftJoinIdx == null) {
+            planNaturalJoin(l.schema(), r.schema());
           }
-          return natural.isMatch(l, r) ? Optional.of(natural.merge(l, r)) : Optional.empty();
+          return isNaturalMatch(l, r) ? Optional.of(naturalMerge(l, r)) : Optional.empty();
         }
 
       default:
         throw new IllegalStateException("JoinKind tidak dikenal: " + kind);
     }
   }
- 
+
   static OperatorRow concat(OperatorRow l, OperatorRow r) {
     List<Value> values = new ArrayList<>(l.row().values());
     values.addAll(r.row().values());
@@ -171,62 +175,60 @@ public class BlockNestedLoopJoinOperator implements Operator {
 
     return new OperatorRow(new Row(values), new Schema(cols), mergeOrigins(l, r));
   }
- 
+
   static Map<String, RecordId> mergeOrigins(OperatorRow l, OperatorRow r) {
     Map<String, RecordId> origins = new HashMap<>(l.origins());
     origins.putAll(r.origins());
     return origins;
   }
- 
-  private record NaturalJoin(int[] leftJoinIdx, int[] rightJoinIdx, boolean[] isDuplicateRight) {
-    static NaturalJoin fromSchema(Schema ls, Schema rs) {
-      List<Integer> lk = new ArrayList<>();
-      List<Integer> rk = new ArrayList<>();
-      boolean[] drop = new boolean[rs.columns().size()];
-      for (int j = 0; j < rs.columns().size(); j++) {
-        String name = rs.columns().get(j).name();
-        for (int i = 0; i < ls.columns().size(); i++) {
-          if (ls.columns().get(i).name().equalsIgnoreCase(name)) {
-            lk.add(i);
-            rk.add(j);
-            drop[j] = true;
-            break;
-          }
+
+  // Cari pasangan kolom yg namanya sama di left dan right, terus disimpen di field.
+  private void planNaturalJoin(Schema ls, Schema rs) {
+    List<Integer> lk = new ArrayList<>();
+    List<Integer> rk = new ArrayList<>();
+    boolean[] drop = new boolean[rs.columns().size()];
+    for (int j = 0; j < rs.columns().size(); j++) {
+      String name = rs.columns().get(j).name();
+      for (int i = 0; i < ls.columns().size(); i++) {
+        if (ls.columns().get(i).name().equalsIgnoreCase(name)) {
+          lk.add(i);
+          rk.add(j);
+          drop[j] = true;
+          break;
         }
       }
-
-      return new NaturalJoin(
-          lk.stream().mapToInt(Integer::intValue).toArray(),
-          rk.stream().mapToInt(Integer::intValue).toArray(),
-          drop);
     }
- 
-    boolean isMatch(OperatorRow l, OperatorRow r) {
-      for (int k = 0; k < leftJoinIdx.length; k++) {
-        Value a = l.row().values().get(leftJoinIdx[k]);
-        Value b = r.row().values().get(rightJoinIdx[k]);
 
-        // Supaya nilai Null nilainya ga sama dengan yg lain
-        if (a instanceof NullValue || b instanceof NullValue || ExpressionEvaluator.compare(a, b) != 0) {
-          return false;
-        }
+    leftJoinIdx = lk.stream().mapToInt(Integer::intValue).toArray();
+    rightJoinIdx = rk.stream().mapToInt(Integer::intValue).toArray();
+    isDuplicateRight = drop;
+  }
 
+  private boolean isNaturalMatch(OperatorRow l, OperatorRow r) {
+    for (int k = 0; k < leftJoinIdx.length; k++) {
+      Value a = l.row().values().get(leftJoinIdx[k]);
+      Value b = r.row().values().get(rightJoinIdx[k]);
+
+      if (a instanceof NullValue
+          || b instanceof NullValue
+          || ExpressionEvaluator.compare(a, b) != 0) {
+        return false;
       }
-      return true;
     }
- 
-    OperatorRow merge(OperatorRow l, OperatorRow r) {
-      List<Value> values = new ArrayList<>(l.row().values());
-      List<Column> cols = new ArrayList<>(l.schema().columns());
+    return true;
+  }
 
-      for (int j = 0; j < r.row().values().size(); j++) {
-        if (!isDuplicateRight[j]) {
-          values.add(r.row().values().get(j));
-          cols.add(r.schema().columns().get(j));
-        }
+  private OperatorRow naturalMerge(OperatorRow l, OperatorRow r) {
+    List<Value> values = new ArrayList<>(l.row().values());
+    List<Column> cols = new ArrayList<>(l.schema().columns());
+
+    for (int j = 0; j < r.row().values().size(); j++) {
+      if (!isDuplicateRight[j]) {
+        values.add(r.row().values().get(j));
+        cols.add(r.schema().columns().get(j));
       }
-
-      return new OperatorRow(new Row(values), new Schema(cols), mergeOrigins(l, r));
     }
+
+    return new OperatorRow(new Row(values), new Schema(cols), mergeOrigins(l, r));
   }
 }
