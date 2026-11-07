@@ -5,6 +5,9 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.query.SortDirection;
 import dynamitedb.contracts.query.SortKey;
+import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.Value;
+import dynamitedb.qp.expression.ExpressionEvaluator;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -81,8 +84,8 @@ public class SortOperator implements Operator {
     Comparator<OperatorRow> result = null;
 
     for (SortKey key : keys) {
-      int idx = ColumnResolver.indexOf(sample.schema(), key.column());
-      Comparator<OperatorRow> c = Comparator.comparing(r -> r.row().values().get(idx), ValueComparator.INSTANCE);
+      int idx = sample.findColumnIndex(key.column());
+      Comparator<OperatorRow> c = (r1, r2) -> compareForSort(r1.row().values().get(idx), r2.row().values().get(idx));
       if (key.direction() == SortDirection.DESC) {
         c = c.reversed();
       } 
@@ -95,5 +98,23 @@ public class SortOperator implements Operator {
     }
 
     return result;
+  }
+
+  // Null dianggep nilainya paling kecil
+  private static int compareForSort(Value a, Value b) {
+    boolean aNull = a instanceof NullValue;
+    boolean bNull = b instanceof NullValue;
+
+    if (aNull && bNull) {
+      return 0;
+    }
+    if (aNull) {
+      return -1;
+    }
+    if (bNull) {
+      return 1;
+    }
+
+    return ExpressionEvaluator.compare(a, b);
   }
 }

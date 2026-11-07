@@ -6,6 +6,7 @@ import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
@@ -205,8 +206,9 @@ public class BlockNestedLoopJoinOperator implements Operator {
         Value a = l.row().values().get(leftJoinIdx[k]);
         Value b = r.row().values().get(rightJoinIdx[k]);
 
-        if (ValueComparator.isNull(a) || ValueComparator.isNull(b) || ValueComparator.INSTANCE.compare(a, b) != 0) {
-          return false; 
+        // Supaya nilai Null nilainya ga sama dengan yg lain
+        if (a instanceof NullValue || b instanceof NullValue || ExpressionEvaluator.compare(a, b) != 0) {
+          return false;
         }
 
       }
