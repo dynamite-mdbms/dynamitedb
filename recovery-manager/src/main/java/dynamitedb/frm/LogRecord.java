@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Immutable internal WAL envelope; no persistence is provided by Milestone 1 mocks. */
+/** Immutable internal WAL envelope shared by persistent and mock implementations. */
 public abstract class LogRecord {
   public final LogSequenceNumber lsn;
   public final Optional<TransactionId> tx;

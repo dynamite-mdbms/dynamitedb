@@ -71,7 +71,14 @@ class MockBehaviorTest {
             "LogManager.flush",
             "UndoManager.rollbackCompletely",
             "CrashRecoveryManager.recover",
-            "CheckpointManager.checkpoint",
+            "RecoveryCoordinator.acquireMaintenance",
+            "LogManager.readHighWater",
+            "LogManager.append",
+            "LogManager.flush",
+            "RecoveryPageStore.flushDirtyThrough",
+            "LogManager.append",
+            "LogManager.flush",
+            "MaintenanceGuard.close",
             "HistoricalRecoveryManager.recoverTo",
             "WalService.readLog",
             "LogManager.read"),
@@ -87,7 +94,6 @@ class MockBehaviorTest {
             "LogManager.flush",
             "UndoManager.rollbackCompletely",
             "CrashRecoveryManager.recover",
-            "CheckpointManager.checkpoint",
             "HistoricalRecoveryManager.recoverTo",
             "LogManager.read")
         .stream()
@@ -114,7 +120,6 @@ class MockBehaviorTest {
                                   case "UndoManager.rollbackCompletely" ->
                                       f.rollbackCompletely(c.tx());
                                   case "CrashRecoveryManager.recover" -> f.recover();
-                                  case "CheckpointManager.checkpoint" -> f.checkpoint();
                                   case "HistoricalRecoveryManager.recoverTo" ->
                                       f.recoverTo(
                                           new RecoveryTarget(

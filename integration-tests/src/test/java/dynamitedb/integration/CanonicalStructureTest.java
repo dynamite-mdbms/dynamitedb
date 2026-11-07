@@ -133,7 +133,7 @@ class CanonicalStructureTest {
   void fixtureHasCompleteCanonicalCoverageAndIndependentJavaTypeNames() throws Exception {
     var rows = fixtureRows();
     var canonicalTypes = rows.stream().filter(row -> row[0].equals("type")).toList();
-    assertEquals(218, canonicalTypes.size());
+    assertEquals(220, canonicalTypes.size());
     assertEquals(178, rows.stream().filter(row -> row[0].equals("component")).count());
     assertEquals(316, rows.stream().filter(row -> row[0].equals("method")).count());
     assertEquals(92, rows.stream().filter(row -> row[0].equals("provider")).count());
@@ -217,7 +217,7 @@ class CanonicalStructureTest {
             "StoredRow")) {
       assertThrowsClassAbsent("dynamitedb.contracts." + name);
     }
-    assertEquals(30, rows.stream().filter(row -> row[0].equals("helper")).count());
+    assertEquals(39, rows.stream().filter(row -> row[0].equals("helper")).count());
     assertEquals(5, rows.stream().filter(row -> row[0].equals("sealed")).count());
   }
 

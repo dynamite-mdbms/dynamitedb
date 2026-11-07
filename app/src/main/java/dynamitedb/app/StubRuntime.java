@@ -120,7 +120,7 @@ public final class StubRuntime {
             maintenance);
     concurrency.setProtocol(config.protocol());
 
-    var checkpoint = new CheckpointManager(concurrency, storageRecovery, log, recoveryContext);
+    var checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
     var history =
         new HistoryCatalog(manifests, log, List.of(recoveryContext.snapshot()), recoveryContext);
     var historical =
