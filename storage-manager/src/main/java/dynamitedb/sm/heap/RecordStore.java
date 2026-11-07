@@ -6,15 +6,19 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
 import dynamitedb.contracts.recovery.RecoveryMutation;
 import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.ImmutableBytes;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
+import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.PreparedWrite;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.Value;
 import dynamitedb.contracts.storage.WriteReservationId;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.sm.buffer.BufferPool;
@@ -264,7 +268,8 @@ public final class RecordStore {
               .orElseThrow(
                   () -> new DbmsException(ErrorCode.SQL_BIND, "Index tidak dikenal: " + index));
       schema = catalog.getSchema(meta.table());
-      rids = indexes.lookup(index, predicate);
+      Value key = promote(predicate.value(), column(schema, meta.column()).dataType());
+      rids = indexes.lookup(index, new IndexPredicate(predicate.operator(), key));
     }
     return new IndexRowCursor(this, rids.iterator(), schema, buffer, serializer);
   }
@@ -352,6 +357,28 @@ public final class RecordStore {
       }
     }
     return Optional.empty();
+  }
+
+  /** Samakan numeric key dengan column type supaya HASH lookup = scan. */
+  private static Value promote(Value value, DataType type) {
+    if (type == DataType.FLOAT && value instanceof IntValue i) {
+      return new FloatValue(i.value());
+    }
+    if (type == DataType.INTEGER
+        && value instanceof FloatValue f
+        && f.value() == Math.rint(f.value())
+        && f.value() >= Integer.MIN_VALUE
+        && f.value() <= Integer.MAX_VALUE) {
+      return new IntValue((int) f.value());
+    }
+    return value;
+  }
+
+  private static Column column(Schema schema, String name) {
+    return schema.columns().stream()
+        .filter(c -> c.name().equals(name))
+        .findFirst()
+        .orElseThrow(() -> new DbmsException(ErrorCode.SQL_BIND, "Column tidak ada: " + name));
   }
 
   private List<Row> rowsOf(String table) {

@@ -13,6 +13,7 @@ import dynamitedb.contracts.recovery.RecoveryMutation;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.ComparisonOp;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
@@ -24,6 +25,7 @@ import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
 import dynamitedb.contracts.storage.TextValue;
+import dynamitedb.contracts.storage.Value;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.sm.buffer.BufferPool;
 import dynamitedb.sm.buffer.DiskManager;
@@ -232,6 +234,82 @@ class RecordStoreTest {
   }
 
   @Test
+  void hashLookupPromotesNumericKeysLikeTableScan() {
+    var schema =
+        new Schema(
+            List.of(
+                new Column("reading", "id", DataType.INTEGER, 0, false),
+                new Column("reading", "score", DataType.FLOAT, 0, false)));
+    catalog.createTable("reading", schema);
+    records.apply(
+        records.prepareInsert(
+            TX, "reading", new Row(List.of(new IntValue(3), new FloatValue(80.0)))),
+        new LogSequenceNumber(lsn.incrementAndGet()));
+    records.createIndex(new IndexMetadata("reading_id", "reading", "id", IndexKind.HASH));
+    records.createIndex(new IndexMetadata("reading_score", "reading", "score", IndexKind.HASH));
+
+    assertEquals(1, count("reading_score", new IntValue(80)), "INTEGER key on FLOAT column");
+    assertEquals(1, count("reading_id", new FloatValue(3.0)), "integral FLOAT on INTEGER column");
+    assertEquals(0, count("reading_id", new FloatValue(3.5)), "non-integral never equals INTEGER");
+  }
+
+  @Test
+  void concurrentWritersOnDifferentTablesAndReadersStayConsistent() throws Exception {
+    open(16);
+    for (int t = 0; t < 4; t++) {
+      String name = "t" + t;
+      catalog.createTable(
+          name,
+          new Schema(
+              List.of(
+                  new Column(name, "id", DataType.INTEGER, 0, false),
+                  new Column(name, "label", DataType.VARCHAR, 400, false))));
+    }
+    var pool = java.util.concurrent.Executors.newFixedThreadPool(5);
+    try {
+      var futures = new ArrayList<java.util.concurrent.Future<?>>();
+      for (int t = 0; t < 4; t++) {
+        String table = "t" + t;
+        futures.add(
+            pool.submit(
+                () -> {
+                  for (int i = 0; i < 150; i++) {
+                    records.apply(
+                        records.prepareInsert(TX, table, row(i, table + "-" + i)),
+                        new LogSequenceNumber(lsn.incrementAndGet()));
+                  }
+                }));
+      }
+      futures.add(
+          pool.submit(
+              () -> {
+                for (int i = 0; i < 50; i++) {
+                  try (RowCursor cursor = records.openScan("t0")) {
+                    while (cursor.next().isPresent()) {
+                      // scan sambil writer jalan; tidak boleh error atau leak pin
+                    }
+                  }
+                }
+              }));
+      for (var future : futures) {
+        future.get();
+      }
+    } finally {
+      pool.shutdownNow();
+    }
+    for (int t = 0; t < 4; t++) {
+      try (RowCursor cursor = records.openScan("t" + t)) {
+        int rows = 0;
+        while (cursor.next().isPresent()) {
+          rows++;
+        }
+        assertEquals(150, rows);
+      }
+      assertEquals(150, catalog.getStatistics("t" + t).rowCount());
+    }
+  }
+
+  @Test
   void unknownTableIsABindingError() {
     DbmsException error =
         assertThrows(DbmsException.class, () -> records.prepareInsert(TX, "missing", row(1, "x")));
@@ -264,6 +342,17 @@ class RecordStoreTest {
         records.openIndexScan("item_id", new IndexPredicate(ComparisonOp.EQ, new IntValue(id)))) {
       for (var next = cursor.next(); next.isPresent(); next = cursor.next()) {
         rows.add(next.get());
+      }
+    }
+    return rows;
+  }
+
+  private int count(String index, Value key) {
+    int rows = 0;
+    try (RowCursor cursor =
+        records.openIndexScan(index, new IndexPredicate(ComparisonOp.EQ, key))) {
+      while (cursor.next().isPresent()) {
+        rows++;
       }
     }
     return rows;
