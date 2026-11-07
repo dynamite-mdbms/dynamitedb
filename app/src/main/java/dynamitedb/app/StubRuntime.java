@@ -9,6 +9,9 @@ import dynamitedb.ccm.recovery.TransactionRecoveryBridge;
 import dynamitedb.ccm.timestamp.StrictWriteIntentTable;
 import dynamitedb.ccm.timestamp.TimestampOrderingProtocol;
 import dynamitedb.ccm.timestamp.TimestampRegistry;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.RecoveryStatus;
 import dynamitedb.contracts.transaction.ProtocolType;
 import dynamitedb.frm.AtomicGenerationManifestStore;
 import dynamitedb.frm.CheckpointManager;
@@ -171,8 +174,18 @@ public final class StubRuntime {
         new DbmsBootstrap(
             processor,
             () -> {
-              initializer.openExisting();
-              storageRecovery.rebuildIndexes();
+              var guard = concurrency.acquireMaintenance();
+              try {
+                maintenance.beginRecovery();
+                var result = initializer.openExisting();
+                if (result.status() != RecoveryStatus.SUCCESS) {
+                  throw new DbmsException(ErrorCode.RECOVERY_FAILURE, result.message());
+                }
+                storageRecovery.rebuildIndexes();
+                concurrency.initializeRecoveredState(result.highWater());
+              } finally {
+                guard.close();
+              }
             });
   }
 
