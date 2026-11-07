@@ -25,8 +25,11 @@ class TimestampOrderingProtocolTest {
 
   @Test
   void rejectsNullDependencies() {
-    assertThrows(NullPointerException.class, () -> new TimestampOrderingProtocol(null, intents, registry));
-    assertThrows(NullPointerException.class, () -> new TimestampOrderingProtocol(timestamps, null, registry));
+    assertThrows(
+        NullPointerException.class, () -> new TimestampOrderingProtocol(null, intents, registry));
+    assertThrows(
+        NullPointerException.class,
+        () -> new TimestampOrderingProtocol(timestamps, null, registry));
     assertThrows(
         NullPointerException.class, () -> new TimestampOrderingProtocol(timestamps, intents, null));
   }

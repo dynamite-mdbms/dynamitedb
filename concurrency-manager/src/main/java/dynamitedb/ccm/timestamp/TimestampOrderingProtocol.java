@@ -5,7 +5,6 @@ import dynamitedb.ccm.protocol.ConcurrencyProtocol;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.transaction.AccessDecision;
-import dynamitedb.contracts.transaction.AccessMode;
 import dynamitedb.contracts.transaction.AccessRequest;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.WaitToken;
@@ -46,7 +45,7 @@ public class TimestampOrderingProtocol implements ConcurrencyProtocol {
         if (timestamps.writeTs(resource) > ts) {
           return AccessDecision.aborted(writeTsReason(resource, tx, timestamps.writeTs(resource)));
         }
-  
+
         if (intents.conflictingOwner(resource, tx).isPresent()) {
           return AccessDecision.aborted(intentReason(resource, tx));
         }
@@ -61,7 +60,8 @@ public class TimestampOrderingProtocol implements ConcurrencyProtocol {
   public AccessDecision awaitAccess(WaitToken ticket) {
     Objects.requireNonNull(ticket, "ticket");
     throw new DbmsException(
-        ErrorCode.INVALID_STATE, "Protokol timestamp tidak menunggu; tidak ada ticket untuk diakses");
+        ErrorCode.INVALID_STATE,
+        "Protokol timestamp tidak menunggu; tidak ada ticket untuk diakses");
   }
 
   @Override
@@ -70,12 +70,15 @@ public class TimestampOrderingProtocol implements ConcurrencyProtocol {
   }
 
   private static String readTsReason(Object resource, TransactionId tx) {
-    return "Transaksi " + tx + " ditolak: timestamp lebih tua dari akses yang lebih baru pada "
+    return "Transaksi "
+        + tx
+        + " ditolak: timestamp lebih tua dari akses yang lebih baru pada "
         + resource;
   }
 
   private static String writeTsReason(Object resource, TransactionId tx, long writeTs) {
-    return "Transaksi " + tx
+    return "Transaksi "
+        + tx
         + " ditolak: transaksi dengan timestamp "
         + writeTs
         + " sudah menulis "
@@ -83,7 +86,9 @@ public class TimestampOrderingProtocol implements ConcurrencyProtocol {
   }
 
   private static String intentReason(Object resource, TransactionId tx) {
-    return "Transaksi " + tx + " ditolak: transaksi lain memegang penulisan belum final pada "
+    return "Transaksi "
+        + tx
+        + " ditolak: transaksi lain memegang penulisan belum final pada "
         + resource;
   }
 }

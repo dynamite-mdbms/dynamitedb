@@ -18,29 +18,40 @@ class SerializabilityCheckerTest {
     var result =
         checker.verify(
             new Schedule(
-                List.of(op(1, 5, AccessMode.READ), op(2, 5, AccessMode.READ), op(3, 5, AccessMode.READ))));
+                List.of(
+                    op(1, 5, AccessMode.READ),
+                    op(2, 5, AccessMode.READ),
+                    op(3, 5, AccessMode.READ))));
     assertTrue(result.serializable());
     assertEquals(List.of(tx(1), tx(2), tx(3)), result.serialOrder());
   }
 
   @Test
   void writeWriteConflictCreatesEdge() {
-    var result = checker.verify(new Schedule(List.of(op(1, 5, AccessMode.WRITE), op(2, 5, AccessMode.WRITE))));
+    var result =
+        checker.verify(
+            new Schedule(List.of(op(1, 5, AccessMode.WRITE), op(2, 5, AccessMode.WRITE))));
     assertTrue(result.serializable());
     assertEquals(List.of(tx(1), tx(2)), result.serialOrder());
   }
 
   @Test
   void writeReadAndReadWriteConflictsCreateEdges() {
-    var writeRead = checker.verify(new Schedule(List.of(op(1, 5, AccessMode.WRITE), op(2, 5, AccessMode.READ))));
+    var writeRead =
+        checker.verify(
+            new Schedule(List.of(op(1, 5, AccessMode.WRITE), op(2, 5, AccessMode.READ))));
     assertEquals(List.of(tx(1), tx(2)), writeRead.serialOrder());
-    var readWrite = checker.verify(new Schedule(List.of(op(1, 5, AccessMode.READ), op(2, 5, AccessMode.WRITE))));
+    var readWrite =
+        checker.verify(
+            new Schedule(List.of(op(1, 5, AccessMode.READ), op(2, 5, AccessMode.WRITE))));
     assertEquals(List.of(tx(1), tx(2)), readWrite.serialOrder());
   }
 
   @Test
   void differentResourcesDoNotConflict() {
-    var result = checker.verify(new Schedule(List.of(op(1, 5, AccessMode.WRITE), op(2, 6, AccessMode.WRITE))));
+    var result =
+        checker.verify(
+            new Schedule(List.of(op(1, 5, AccessMode.WRITE), op(2, 6, AccessMode.WRITE))));
     assertTrue(result.serializable());
     assertEquals(List.of(tx(1), tx(2)), result.serialOrder());
   }

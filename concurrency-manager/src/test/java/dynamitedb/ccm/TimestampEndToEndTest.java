@@ -137,10 +137,12 @@ class TimestampEndToEndTest {
     private TransactionId[] olderNewer() {
       List<TransactionId> active = registry.activeTransactions();
       TransactionId older =
-          active.stream().min(Comparator.comparingLong(t -> registry.get(t).timestamp()))
+          active.stream()
+              .min(Comparator.comparingLong(t -> registry.get(t).timestamp()))
               .orElseThrow();
       TransactionId newer =
-          active.stream().max(Comparator.comparingLong(t -> registry.get(t).timestamp()))
+          active.stream()
+              .max(Comparator.comparingLong(t -> registry.get(t).timestamp()))
               .orElseThrow();
       return new TransactionId[] {older, newer};
     }
