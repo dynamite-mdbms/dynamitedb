@@ -1,0 +1,230 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% Public contracts and FRM dependencies
+class AccessController {
+  <<interface>>
+  +requestAccess(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+}
+class TransactionManager {
+  <<interface>>
+  +begin() TransactionId
+  +commit(tx: TransactionId) void
+  +abort(tx: TransactionId) void
+  +status(tx: TransactionId) TransactionStatus
+}
+class ChangeLogger {
+  <<interface>>
+  +recordChange(tx: TransactionId, write: PreparedWrite) LogSequenceNumber
+}
+class ProtocolAdmin {
+  <<interface>>
+  +setProtocol(type: ProtocolType) void
+  +activeProtocol() ProtocolType
+}
+class RecoveryCoordinator {
+  <<interface>>
+  +acquireMaintenance() MaintenanceGuard
+  +transactionTimestamp(tx: TransactionId) long
+  +initializeRecoveredState(highWater: RecoveryHighWater) void
+}
+class MaintenanceGuard {
+  <<interface>>
+  +close() void
+}
+class TransactionWal {
+  <<interface>>
+  +begin(tx: TransactionId, timestamp: long) void
+  +appendChange(change: ChangeRecord) LogSequenceNumber
+  +commitDurably(tx: TransactionId) void
+}
+class RollbackService {
+  <<interface>>
+  +rollbackCompletely(tx: TransactionId) void
+}
+
+%% Facade and state - CC1
+class ConcurrencyManagerImpl {
+  -registry: TransactionRegistry
+  -protocol: ConcurrencyProtocol
+  -bridge: TransactionRecoveryBridge
+  -maintenance: MaintenanceController
+  +requestAccess(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+  +begin() TransactionId
+  +commit(tx: TransactionId) void
+  +abort(tx: TransactionId) void
+  +status(tx: TransactionId) TransactionStatus
+  +recordChange(tx: TransactionId, write: PreparedWrite) LogSequenceNumber
+  +setProtocol(type: ProtocolType) void
+  +activeProtocol() ProtocolType
+  +acquireMaintenance() MaintenanceGuard
+  +transactionTimestamp(tx: TransactionId) long
+  +initializeRecoveredState(highWater: RecoveryHighWater) void
+}
+class TransactionRegistry {
+  -transactions: Map~TransactionId_Transaction~
+  -nextId: AtomicLong
+  -nextTimestamp: AtomicLong
+  +create() Transaction
+  +get(tx: TransactionId) Transaction
+  +activeCount() int
+  +restoreHighWater(highWater: RecoveryHighWater) void
+}
+class Transaction {
+  +id: TransactionId
+  +timestamp: long
+  +status: TransactionStatus
+  +transition(target: TransactionStatus) void
+}
+class ConcurrencyProtocol {
+  <<interface>>
+  +request(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+  +onFinish(tx: TransactionId) void
+}
+
+%% Strict locks - CC2
+class Strict2PLProtocol {
+  -locks: LockManager
+  +request(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+  +onFinish(tx: TransactionId) void
+}
+class LockManager {
+  -lockTable: Map~ResourceId_LockState~
+  +acquire(request: AccessRequest) AccessDecision
+  +awaitGrant(ticket: WaitToken) AccessDecision
+  +releaseAll(tx: TransactionId) void
+  +waitForGraph() WaitForGraph
+}
+class LockState {
+  +sharedOwners: Set~TransactionId~
+  +exclusiveOwner: Optional~TransactionId~
+  +waitQueue: List~WaitToken~
+}
+
+%% WAL bridge and maintenance - CC3
+class TransactionRecoveryBridge {
+  -wal: TransactionWal
+  -rollback: RollbackService
+  +begin(tx: TransactionId, timestamp: long) void
+  +recordChange(tx: TransactionId, write: PreparedWrite) LogSequenceNumber
+  +commit(tx: TransactionId) void
+  +rollback(tx: TransactionId) void
+}
+class MaintenanceController {
+  -registry: TransactionRegistry
+  +acquire() MaintenanceGuard
+  +blockAdmission() void
+  +resumeAdmission() void
+}
+class MaintenanceLease {
+  -controller: MaintenanceController
+  -closed: boolean
+  +close() void
+}
+
+%% Timestamp and serializability - CC4
+class TimestampOrderingProtocol {
+  -timestamps: TimestampRegistry
+  -intents: StrictWriteIntentTable
+  -registry: TransactionRegistry
+  +request(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+  +onFinish(tx: TransactionId) void
+}
+class TimestampRegistry {
+  +readTs(resource: ResourceId) long
+  +writeTs(resource: ResourceId) long
+  +markRead(resource: ResourceId, timestamp: long) void
+  +markWrite(resource: ResourceId, timestamp: long) void
+}
+class StrictWriteIntentTable {
+  +holdUntilFinal(tx: TransactionId, resource: ResourceId) void
+  +conflictingOwner(resource: ResourceId, requester: TransactionId) Optional~TransactionId~
+  +release(tx: TransactionId) void
+}
+class SerializabilityChecker {
+  +verify(schedule: Schedule) VerificationResult
+}
+class Schedule {
+  <<record>>
+  +operations: List~ScheduledOperation~
+}
+class ScheduledOperation {
+  <<record>>
+  +tx: TransactionId
+  +resource: ResourceId
+  +mode: AccessMode
+}
+class VerificationResult {
+  <<record>>
+  +serializable: boolean
+  +serialOrder: List~TransactionId~
+}
+
+%% Deadlock detection and driver - CC5
+class DeadlockMonitor {
+  -locks: LockManager
+  -victims: TransactionManager
+  +findCycle() Optional~TransactionCycle~
+  +selectVictim(cycle: List~TransactionId~) TransactionId
+  +resolveDeadlock() void
+}
+class TransactionCycle {
+  <<record>>
+  +txIds: List~TransactionId~
+}
+class WaitForGraph {
+  <<record>>
+  +edges: Map~TransactionId_TransactionCycle~
+}
+class ConcurrencyTestDriver {
+  +run(schedule: Schedule) TestReport
+}
+
+AccessController <|.. ConcurrencyManagerImpl
+TransactionManager <|.. ConcurrencyManagerImpl
+ChangeLogger <|.. ConcurrencyManagerImpl
+ProtocolAdmin <|.. ConcurrencyManagerImpl
+RecoveryCoordinator <|.. ConcurrencyManagerImpl
+MaintenanceGuard <|.. MaintenanceLease
+ConcurrencyProtocol <|.. Strict2PLProtocol
+ConcurrencyProtocol <|.. TimestampOrderingProtocol
+ConcurrencyManagerImpl ..> TransactionRegistry
+ConcurrencyManagerImpl ..> ConcurrencyProtocol
+ConcurrencyManagerImpl ..> TransactionRecoveryBridge
+ConcurrencyManagerImpl ..> MaintenanceController
+ConcurrencyManagerImpl ..> DeadlockMonitor
+TransactionRegistry ..> Transaction
+Strict2PLProtocol ..> LockManager
+LockManager ..> LockState
+TimestampOrderingProtocol ..> TimestampRegistry
+TimestampOrderingProtocol ..> StrictWriteIntentTable
+TimestampOrderingProtocol ..> TransactionRegistry
+TransactionRecoveryBridge ..> TransactionWal
+TransactionRecoveryBridge ..> RollbackService
+MaintenanceController ..> MaintenanceGuard
+MaintenanceController ..> MaintenanceLease
+MaintenanceController ..> TransactionRegistry
+MaintenanceLease ..> MaintenanceController
+DeadlockMonitor ..> LockManager
+DeadlockMonitor ..> TransactionManager
+DeadlockMonitor ..> WaitForGraph
+SerializabilityChecker ..> Schedule
+SerializabilityChecker ..> VerificationResult
+ConcurrencyTestDriver ..> SerializabilityChecker
+ConcurrencyTestDriver ..> ConcurrencyManagerImpl
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass AccessController,TransactionManager,ChangeLogger,ProtocolAdmin,RecoveryCoordinator,MaintenanceGuard,TransactionWal,RollbackService,ConcurrencyProtocol interfaceStyle
+cssClass ConcurrencyManagerImpl,TransactionRegistry,Transaction,Strict2PLProtocol,LockManager,LockState,TransactionRecoveryBridge,MaintenanceController,MaintenanceLease,TimestampOrderingProtocol,TimestampRegistry,StrictWriteIntentTable,SerializabilityChecker,DeadlockMonitor,ConcurrencyTestDriver classStyle
+cssClass Schedule,ScheduledOperation,VerificationResult,TransactionCycle,WaitForGraph recordStyle

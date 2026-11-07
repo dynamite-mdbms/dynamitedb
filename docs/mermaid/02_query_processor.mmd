@@ -1,0 +1,295 @@
+classDiagram
+direction TB
+%% Generated from canonical model; DO NOT hand-edit individual diagrams.
+%% Visibility: + public, - private, # protected. Realization <|..; generalization <|--; dependencies <..
+
+%% Public boundary
+class QueryProcessor {
+  <<interface>>
+  +openSession(clientId: String) SessionId
+  +execute(sessionId: SessionId, sql: String) QueryResult
+  +closeSession(sessionId: SessionId) void
+}
+class QueryOptimizer {
+  <<interface>>
+  +prepare(sql: String) PreparedQuery
+  +estimateCost(plan: PlanNode) double
+  +explain(sql: String) PlanExplanation
+}
+class CatalogAccess {
+  <<interface>>
+  +listTables() List~String~
+  +getTableId(table: String) long
+  +getSchema(table: String) Schema
+  +getStatistics(table: String) TableStatistics
+  +listIndexes(table: String) List~IndexMetadata~
+}
+class TupleReader {
+  <<interface>>
+  +openTableScan(table: String, tx: TransactionId) RowCursor
+  +openIndexScan(index: String, predicate: IndexPredicate, tx: TransactionId) RowCursor
+  +fetch(rid: RecordId, tx: TransactionId) Optional~StoredRow~
+}
+class RowCursor {
+  <<interface>>
+  +next() Optional~StoredRow~
+  +close() void
+}
+class WriteStore {
+  <<interface>>
+  +prepareInsert(tx: TransactionId, table: String, row: Row) PreparedWrite
+  +prepareUpdate(tx: TransactionId, rid: RecordId, row: Row) PreparedWrite
+  +prepareDelete(tx: TransactionId, rid: RecordId) PreparedWrite
+  +applyWrite(prepared: PreparedWrite, lsn: LogSequenceNumber) void
+  +cancelPrepared(prepared: PreparedWrite) void
+}
+class IndexAdmin {
+  <<interface>>
+  +createIndex(name: String, table: String, column: String, kind: IndexKind) void
+}
+class AccessController {
+  <<interface>>
+  +requestAccess(request: AccessRequest) AccessDecision
+  +awaitAccess(ticket: WaitToken) AccessDecision
+}
+class TransactionManager {
+  <<interface>>
+  +begin() TransactionId
+  +commit(tx: TransactionId) void
+  +abort(tx: TransactionId) void
+  +status(tx: TransactionId) TransactionStatus
+}
+class ChangeLogger {
+  <<interface>>
+  +recordChange(tx: TransactionId, write: PreparedWrite) LogSequenceNumber
+}
+
+%% Session and orchestration - QP1/QP2
+class QueryProcessorImpl {
+  -optimizer: QueryOptimizer
+  -sessions: SessionManager
+  -engine: ExecutionEngine
+  -txCoordinator: TransactionCoordinator
+  +openSession(clientId: String) SessionId
+  +execute(sessionId: SessionId, sql: String) QueryResult
+  +closeSession(sessionId: SessionId) void
+}
+class SessionManager {
+  -sessions: Map~SessionId_SessionContext~
+  +create(clientId: String) SessionId
+  +get(id: SessionId) SessionContext
+  +close(id: SessionId) void
+}
+class SessionContext {
+  +id: SessionId
+  +activeTx: Optional~TransactionId~
+  +clientId: String
+}
+class ExecutionEngine {
+  -translator: PlanTranslator
+  -reader: ReadExecutor
+  -writer: WriteExecutor
+  -transactionExecutor: TransactionCommandExecutor
+  +execute(plan: PreparedQuery, session: SessionContext) QueryResult
+}
+class PlanTranslator {
+  -evaluator: ExpressionEvaluator
+  -reader: TupleReader
+  -catalog: CatalogAccess
+  -coordinator: TransactionCoordinator
+  +translate(plan: PlanNode, tx: TransactionId) Operator
+}
+class ExpressionEvaluator {
+  +evaluate(expr: Expression, row: OperatorRow) Value
+  +evaluatePredicate(expr: Expression, row: OperatorRow) boolean
+}
+class Operator {
+  <<interface>>
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+class TransactionCoordinator {
+  -tx: TransactionManager
+  -access: AccessController
+  -catalog: CatalogAccess
+  +begin(session: SessionContext) TransactionId
+  +authorize(request: AccessRequest) void
+  +authorizeTable(tx: TransactionId, table: String, mode: AccessMode) void
+  +commit(session: SessionContext) void
+  +abort(session: SessionContext) void
+}
+class TransactionCommandExecutor {
+  -coordinator: TransactionCoordinator
+  +execute(cmd: TransactionCommand, session: SessionContext) QueryResult
+}
+class QueryProcessorTestDriver {
+  +runSuite(queries: List~String~) TestReport
+}
+class CliClient {
+  +run(host: String, port: int) void
+}
+class TcpServer {
+  -processor: QueryProcessor
+  -port: int
+  +start() void
+  +stop() void
+}
+
+%% Read and DELETE - QP3
+class ReadExecutor {
+  +execute(root: Operator, outputSchema: Schema) QueryResult
+}
+class ScanOperator {
+  -source: TupleReader
+  -table: String
+  -alias: String
+  -schema: Schema
+  -tx: TransactionId
+  -coordinator: TransactionCoordinator
+  -cursor: RowCursor
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+class IndexScanOperator {
+  -source: TupleReader
+  -index: String
+  -predicate: IndexPredicate
+  -table: String
+  -alias: String
+  -schema: Schema
+  -tx: TransactionId
+  -coordinator: TransactionCoordinator
+  -cursor: RowCursor
+  -residual: Optional~Expression~
+  -evaluator: ExpressionEvaluator
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+class FilterOperator {
+  -child: Operator
+  -predicate: Expression
+  -evaluator: ExpressionEvaluator
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+class ProjectOperator {
+  -child: Operator
+  -columns: List~ColumnRef~
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+class DeleteExecutor {
+  -store: WriteStore
+  -writes: WriteCoordinator
+  -translator: PlanTranslator
+  -evaluator: ExpressionEvaluator
+  -coordinator: TransactionCoordinator
+  +execute(plan: DeletePlan, tx: TransactionId) long
+}
+
+%% JOIN and SORT - QP4
+class BlockNestedLoopJoinOperator {
+  -left: Operator
+  -right: Operator
+  -kind: JoinKind
+  -condition: Optional~Expression~
+  -evaluator: ExpressionEvaluator
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+class SortOperator {
+  -child: Operator
+  -keys: List~SortKey~
+  +open() void
+  +next() Optional~OperatorRow~
+  +close() void
+}
+
+%% Write and transaction glue - QP5
+class WriteExecutor {
+  -store: WriteStore
+  -writes: WriteCoordinator
+  -translator: PlanTranslator
+  -evaluator: ExpressionEvaluator
+  -coordinator: TransactionCoordinator
+  -indexAdmin: IndexAdmin
+  -delete: DeleteExecutor
+  +insert(plan: InsertPlan, tx: TransactionId) long
+  +update(plan: UpdatePlan, tx: TransactionId) long
+  +delete(plan: DeletePlan, tx: TransactionId) long
+  +createIndex(plan: CreateIndexPlan, tx: TransactionId) void
+}
+class WriteCoordinator {
+  -storage: WriteStore
+  -logger: ChangeLogger
+  +execute(prepared: PreparedWrite) void
+  +cancel(prepared: PreparedWrite) void
+}
+
+QueryProcessor <|.. QueryProcessorImpl
+Operator <|.. ScanOperator
+Operator <|.. IndexScanOperator
+Operator <|.. FilterOperator
+Operator <|.. ProjectOperator
+Operator <|.. BlockNestedLoopJoinOperator
+Operator <|.. SortOperator
+QueryProcessorImpl ..> QueryOptimizer
+QueryProcessorImpl ..> SessionManager
+QueryProcessorImpl ..> ExecutionEngine
+QueryProcessorImpl ..> TransactionCoordinator
+SessionManager ..> SessionContext
+ExecutionEngine ..> PlanTranslator
+ExecutionEngine ..> ReadExecutor
+ExecutionEngine ..> WriteExecutor
+ExecutionEngine ..> TransactionCommandExecutor
+PlanTranslator ..> Operator
+PlanTranslator ..> ExpressionEvaluator
+PlanTranslator ..> TupleReader
+PlanTranslator ..> CatalogAccess
+PlanTranslator ..> TransactionCoordinator
+ReadExecutor ..> TupleReader
+ScanOperator ..> TupleReader
+ScanOperator ..> RowCursor
+ScanOperator ..> TransactionCoordinator
+IndexScanOperator ..> TupleReader
+IndexScanOperator ..> RowCursor
+IndexScanOperator ..> TransactionCoordinator
+IndexScanOperator ..> ExpressionEvaluator
+DeleteExecutor ..> WriteStore
+DeleteExecutor ..> WriteCoordinator
+DeleteExecutor ..> PlanTranslator
+DeleteExecutor ..> ExpressionEvaluator
+DeleteExecutor ..> TransactionCoordinator
+WriteExecutor ..> WriteStore
+WriteExecutor ..> WriteCoordinator
+WriteExecutor ..> PlanTranslator
+WriteExecutor ..> ExpressionEvaluator
+WriteExecutor ..> TransactionCoordinator
+WriteExecutor ..> IndexAdmin
+WriteExecutor ..> DeleteExecutor
+WriteCoordinator ..> WriteStore
+WriteCoordinator ..> ChangeLogger
+TransactionCoordinator ..> TransactionManager
+TransactionCoordinator ..> AccessController
+TransactionCoordinator ..> CatalogAccess
+TransactionCommandExecutor ..> TransactionCoordinator
+FilterOperator ..> ExpressionEvaluator
+BlockNestedLoopJoinOperator ..> ExpressionEvaluator
+SortOperator ..> ExpressionEvaluator
+TcpServer ..> QueryProcessor
+CliClient ..> TcpServer
+QueryProcessorTestDriver ..> QueryProcessor
+
+%% Common Mermaid visual styling
+classDef interfaceStyle fill:#eaf8f4,stroke:#4b8b79,color:#123a32
+classDef classStyle fill:#eef3fb,stroke:#748cab,color:#1c3451
+classDef recordStyle fill:#f2f3ff,stroke:#9294b9,color:#282c59
+classDef enumStyle fill:#fff7e5,stroke:#c8ab67,color:#66471e
+cssClass QueryProcessor,QueryOptimizer,CatalogAccess,TupleReader,RowCursor,WriteStore,IndexAdmin,AccessController,TransactionManager,ChangeLogger,Operator interfaceStyle
+cssClass QueryProcessorImpl,SessionManager,SessionContext,ExecutionEngine,PlanTranslator,ExpressionEvaluator,TransactionCoordinator,TransactionCommandExecutor,QueryProcessorTestDriver,CliClient,TcpServer,ReadExecutor,ScanOperator,IndexScanOperator,FilterOperator,ProjectOperator,DeleteExecutor,BlockNestedLoopJoinOperator,SortOperator,WriteExecutor,WriteCoordinator classStyle
