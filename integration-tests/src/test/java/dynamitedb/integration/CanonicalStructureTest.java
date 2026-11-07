@@ -217,7 +217,7 @@ class CanonicalStructureTest {
             "StoredRow")) {
       assertThrowsClassAbsent("dynamitedb.contracts." + name);
     }
-    assertEquals(33, rows.stream().filter(row -> row[0].equals("helper")).count());
+    assertEquals(39, rows.stream().filter(row -> row[0].equals("helper")).count());
     assertEquals(5, rows.stream().filter(row -> row[0].equals("sealed")).count());
   }
 

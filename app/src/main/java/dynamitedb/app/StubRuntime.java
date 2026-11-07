@@ -71,6 +71,8 @@ public final class StubRuntime {
   private final MockRecoveryContext recoveryContext;
   private final QueryOptimizerImpl optimizer;
   private final StorageManagerImpl storage;
+  private final StorageRecoveryAdapter storageRecovery;
+  private final CatalogManager catalog;
   private final ConcurrencyManagerImpl concurrency;
   private final RecoveryManagerImpl recovery;
   private final QueryProcessorImpl processor;
@@ -91,16 +93,16 @@ public final class StubRuntime {
 
     var disk = new DiskManager(config.dataDirectory());
     var buffer = new BufferPool(disk, wal);
-    var catalog = new CatalogManager();
+    catalog = new CatalogManager(config.dataDirectory());
     var catalogAccess = new StorageCatalogAdapter(catalog);
     var serializer = new RecordSerializer();
-    var heap = new HeapFile();
-    var indexes = new IndexManager();
-    var records = new RecordStore(heap, buffer, serializer, indexes);
+    var heap = new HeapFile(config.dataDirectory(), buffer, serializer, catalog);
+    var indexes = new IndexManager(heap, serializer);
+    var records = new RecordStore(heap, buffer, serializer, indexes, catalog);
     var generations =
         new GenerationStore(config.dataDirectory(), manifests, buffer, catalog, indexes, records);
     storage = new StorageManagerImpl(records, catalog, indexes);
-    var storageRecovery = new StorageRecoveryAdapter(records, generations, indexes, buffer);
+    storageRecovery = new StorageRecoveryAdapter(records, generations, indexes, buffer);
     var undo = new UndoManager(log, storageRecovery, recoveryContext);
 
     var registry = new TransactionRegistry();
@@ -147,7 +149,7 @@ public final class StubRuntime {
             new OptimizerPipeline(
                 List.<PlanRewrite>of(
                     new SelectionPushdown(),
-                    new ProjectionPushdown(),
+                    new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
                 new JoinOrderOptimizer(),
@@ -165,7 +167,13 @@ public final class StubRuntime {
     var commands = new TransactionCommandExecutor(coordinator);
     var engine = new ExecutionEngine(translator, new ReadExecutor(), writer, commands);
     processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
-    bootstrap = new DbmsBootstrap(processor, initializer::openExisting);
+    bootstrap =
+        new DbmsBootstrap(
+            processor,
+            () -> {
+              initializer.openExisting();
+              storageRecovery.rebuildIndexes();
+            });
   }
 
   public QueryProcessorImpl processor() {
@@ -178,6 +186,14 @@ public final class StubRuntime {
 
   public QueryOptimizerImpl optimizer() {
     return optimizer;
+  }
+
+  public CatalogManager catalog() {
+    return catalog;
+  }
+
+  public StorageRecoveryAdapter storageRecovery() {
+    return storageRecovery;
   }
 
   public StorageManagerImpl storage() {
