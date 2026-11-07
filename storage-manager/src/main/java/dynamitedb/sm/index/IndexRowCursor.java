@@ -1,7 +1,11 @@
 package dynamitedb.sm.index;
 
 import dynamitedb.contracts.api.RowCursor;
+import dynamitedb.contracts.storage.DbmsException;
+import dynamitedb.contracts.storage.ErrorCode;
 import dynamitedb.contracts.storage.RecordId;
+import dynamitedb.contracts.storage.RecordImage;
+import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
 import dynamitedb.sm.buffer.BufferPool;
@@ -19,6 +23,8 @@ public final class IndexRowCursor implements RowCursor {
   private final BufferPool buffer;
   private final RecordSerializer serializer;
 
+  private volatile boolean closed; // Penanda cursor sudah ditutup; volatile agar terlihat antar thread
+
   public IndexRowCursor(
       RecordStore records,
       Iterator<RecordId> rids,
@@ -34,12 +40,29 @@ public final class IndexRowCursor implements RowCursor {
 
   @Override
   public Optional<StoredRow> next() {
-    // TODO: baca dan decode RID berikutnya yang masih hidup
+    if (closed) { // Pelanggaran urutan operasi
+      throw new DbmsException(ErrorCode.INVALID_STATE, "IndexRowCursor sudah ditutup");
+    }
+    while (rids.hasNext()) { // Lewati RID mati
+      RecordId rid = rids.next();
+      RecordImage image = records.read(rid).orElse(null);
+      if (image == null || !image.exists()) {
+        continue; // RID mati
+      }
+      Row row = serializer.decode(image.encoded(), schema);
+      return Optional.of(new StoredRow(rid, row));
+    }
     return Optional.empty();
   }
 
   @Override
   public void close() {
-    // TODO: lepas resource sekali, tolak next setelah close
+    if (closed) {
+      return;
+    }
+    closed = true;
+    while (rids.hasNext()) { // Lepas sisa referensi RID
+      rids.next();
+    }
   }
 }
