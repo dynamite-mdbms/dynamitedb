@@ -19,3 +19,16 @@ tasks.register('runMockDriver', JavaExec) {
     mainClass = 'dynamitedb.frm.RecoveryTestDriver'
     args providers.gradleProperty('frmScenario').getOrElse('all')
 }
+
+tasks.register('runDriver', JavaExec) {
+    group = 'verification'
+    description = 'Runs the file-backed FRM crash-recovery driver.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dynamitedb.frm.driver.RealRecoveryDriver'
+    args = [
+        '--data-dir',
+        layout.buildDirectory.dir('frm-driver').get().asFile.absolutePath,
+        '--scenario',
+        providers.gradleProperty('frmScenario').getOrElse('all')
+    ]
+}

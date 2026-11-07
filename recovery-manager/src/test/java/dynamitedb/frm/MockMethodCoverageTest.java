@@ -77,11 +77,11 @@ class MockMethodCoverageTest {
                 DynamicTest.dynamicTest(
                     row,
                     () -> {
-                      var root = directory.resolve("not-created");
+                      var root = directory.resolve(UUID.randomUUID().toString());
                       var env = new MockRecoveryEnvironment(root, new MockRecoveryContext());
                       var parts = row.split("\t", -1);
                       var type = Class.forName(parts[1]);
-                      var provider = providers(env).get(type);
+                      var provider = providers(env, root).get(type);
                       assertNotNull(provider, type.getName());
                       var params =
                           parts.length < 5 || parts[4].isEmpty()
@@ -111,12 +111,18 @@ class MockMethodCoverageTest {
                           }
                         }
                       }
-                      assertFalse(Files.exists(root), "A mock must not create persistent storage");
+                      if (type == AtomicGenerationManifestStore.class
+                          && method.getName().equals("publishAtomically")) {
+                        assertTrue(Files.exists(root.resolve("active-generation.properties")));
+                      } else {
+                        assertFalse(
+                            Files.exists(root), "A mock must not create persistent storage");
+                      }
                       assertTrue(!env.context().calls().isEmpty());
                     }));
   }
 
-  static Map<Class<?>, Object> providers(MockRecoveryEnvironment e) {
+  static Map<Class<?>, Object> providers(MockRecoveryEnvironment e, Path root) {
     var p = new LinkedHashMap<Class<?>, Object>();
     for (var port :
         List.of(
@@ -135,6 +141,9 @@ class MockMethodCoverageTest {
     p.put(HistoricalRecoveryStorage.class, e.ports().historicalStorage());
     p.put(StorageGenerationAdmin.class, e.ports().generations());
     p.put(GenerationManifestStore.class, e.manifests());
+    p.put(
+        AtomicGenerationManifestStore.class,
+        new AtomicGenerationManifestStore(root, e.context().manifest(), e.context()));
     for (var service :
         List.of(
             e.recovery(),

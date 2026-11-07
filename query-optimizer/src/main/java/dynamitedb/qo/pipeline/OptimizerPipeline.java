@@ -20,7 +20,9 @@ public class OptimizerPipeline {
   }
 
   public PlanNode optimize(PlanNode plan) {
-    // TODO: terapkan rewrite, bangkitkan kandidat, lalu pilih yang termurah
-    return plan;
+    PlanNode rewritten = plan;
+    for (PlanRewrite rewrite : rewrites) rewritten = rewrite.rewrite(rewritten);
+    List<PlanNode> candidates = joinEnumerator.enumerate(rewritten);
+    return candidates.isEmpty() ? rewritten : selector.choose(candidates);
   }
 }
