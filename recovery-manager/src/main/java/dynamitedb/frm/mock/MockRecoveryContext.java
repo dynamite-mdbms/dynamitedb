@@ -17,6 +17,7 @@ import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.frm.ChangeLogRecord;
+import dynamitedb.frm.CheckpointLogRecord;
 import dynamitedb.frm.RecoveryState;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import java.util.UUID;
 /** Explicitly non-durable fixture responses and call recording for Milestone 1 only. */
 public final class MockRecoveryContext {
   private final List<String> calls = new ArrayList<>();
+  private final List<CheckpointLogRecord> checkpointRecords = new ArrayList<>();
   private final Map<String, DbmsException> failures = new HashMap<>();
   private final LogSequenceNumber lsn;
   private final Instant commitTime;
@@ -61,6 +63,14 @@ public final class MockRecoveryContext {
 
   public synchronized List<String> calls() {
     return List.copyOf(calls);
+  }
+
+  public synchronized void checkpointRecord(CheckpointLogRecord record) {
+    checkpointRecords.add(Objects.requireNonNull(record, "record"));
+  }
+
+  public synchronized List<CheckpointLogRecord> checkpointRecords() {
+    return List.copyOf(checkpointRecords);
   }
 
   public LogSequenceNumber lsn() {

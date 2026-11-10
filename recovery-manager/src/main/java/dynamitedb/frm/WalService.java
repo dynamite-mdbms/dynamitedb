@@ -15,7 +15,7 @@ import dynamitedb.frm.mock.MockRecoveryContext;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Milestone 1 mock only: fixture responses/call recording, no durable DBMS behavior. */
+/** Public WAL ports backed by one log manager; the Milestone 1 mock remains injectable. */
 public final class WalService implements TransactionWal, WalDurability, LogInspection {
   private final CommitClock clock;
   private final LogManager log;
@@ -27,31 +27,43 @@ public final class WalService implements TransactionWal, WalDurability, LogInspe
     this.context = Objects.requireNonNull(context, "context");
   }
 
+  public WalService(CommitClock clock, LogManager log) {
+    this.clock = Objects.requireNonNull(clock, "clock");
+    this.log = Objects.requireNonNull(log, "log");
+    this.context = null;
+    log.readHighWater().maxCommitTime().ifPresent(clock::seed);
+  }
+
   public void begin(TransactionId tx, long timestamp) {
     Objects.requireNonNull(tx, "tx");
-    context.invoked("WalService.begin");
+    if (context != null) context.invoked("WalService.begin");
+    else log.begin(tx, timestamp);
   }
 
   public LogSequenceNumber appendChange(ChangeRecord change) {
     Objects.requireNonNull(change, "change");
-    context.invoked("WalService.appendChange");
-    return context.lsn();
+    if (context != null) {
+      context.invoked("WalService.appendChange");
+      return context.lsn();
+    }
+    return log.appendChange(change);
   }
 
   public void commitDurably(TransactionId tx) {
     Objects.requireNonNull(tx, "tx");
-    context.invoked("WalService.commitDurably");
+    if (context != null) context.invoked("WalService.commitDurably");
+    else log.commit(tx, clock);
   }
 
   public void ensureDurable(LogSequenceNumber lsn) {
     Objects.requireNonNull(lsn, "lsn");
-    context.invoked("WalService.ensureDurable");
+    if (context != null) context.invoked("WalService.ensureDurable");
     log.flush(lsn);
   }
 
   public LogView readLog(LogFilter filter) {
     Objects.requireNonNull(filter, "filter");
-    context.invoked("WalService.readLog");
+    if (context != null) context.invoked("WalService.readLog");
     return log.read(filter);
   }
 
@@ -59,13 +71,14 @@ public final class WalService implements TransactionWal, WalDurability, LogInspe
     Objects.requireNonNull(id, "id");
     Objects.requireNonNull(base, "base");
     Objects.requireNonNull(highWater, "highWater");
-    context.invoked("WalService.prepareLineage");
+    if (context != null) context.invoked("WalService.prepareLineage");
     log.prepareLineage(id, base, highWater);
   }
 
   public void activate(GenerationManifest manifest) {
     Objects.requireNonNull(manifest, "manifest");
-    context.invoked("WalService.activate");
+    if (context != null) context.invoked("WalService.activate");
     log.activate(manifest);
+    if (context == null) log.readHighWater().maxCommitTime().ifPresent(clock::seed);
   }
 }

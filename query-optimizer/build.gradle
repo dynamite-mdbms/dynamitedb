@@ -1,3 +1,26 @@
+repositories {
+    mavenCentral()
+}
+
 dependencies {
     implementation project(':contracts')
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+// Bundles examples/qo1-driver.sql as the driver's built-in scenario suite.
+sourceSets.main.resources.srcDir 'examples'
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.register('runDriver', JavaExec) {
+    group = 'application'
+    description = 'Runs the standalone Query Optimizer driver.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dynamitedb.qo.verification.QueryOptimizerDriver'
+    if (providers.gradleProperty('queryFile').isPresent()) {
+        args rootProject.file(providers.gradleProperty('queryFile').get()).absolutePath
+    }
 }

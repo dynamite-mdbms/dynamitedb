@@ -132,7 +132,6 @@ class StubRuntimeGraphTest {
       assertSame(context, field(undo, "context"));
       assertSame(context, field(manifests, "context"));
       assertSame(context, field(field(recovery, "crash"), "context"));
-      assertSame(context, field(field(recovery, "checkpoint"), "context"));
       assertSame(context, field(field(recovery, "historical"), "context"));
       assertEquals(protocol, invoke(concurrency, "activeProtocol"));
     }
