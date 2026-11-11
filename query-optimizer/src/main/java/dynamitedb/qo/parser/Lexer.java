@@ -54,6 +54,27 @@ public class Lexer {
       }
 
       int start = cursor;
+      if (current == '-' && cursor + 1 < sql.length() && sql.charAt(cursor + 1) == '-') {
+        cursor += 2;
+        while (cursor < sql.length() && sql.charAt(cursor) != '\n') cursor++;
+        continue;
+      }
+
+      if (current == '/' && cursor + 1 < sql.length() && sql.charAt(cursor + 1) == '*') {
+        cursor += 2;
+        boolean closed = false;
+        while (cursor + 1 < sql.length()) {
+          if (sql.charAt(cursor) == '*' && sql.charAt(cursor + 1) == '/') {
+            cursor += 2;
+            closed = true;
+            break;
+          }
+          cursor++;
+        }
+        if (!closed) throw syntax("Unterminated block comment", start);
+        continue;
+      }
+
       if (Character.isLetter(current) || current == '_') {
         cursor++;
         while (cursor < sql.length()) {

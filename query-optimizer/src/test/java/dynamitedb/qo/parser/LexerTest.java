@@ -36,6 +36,40 @@ class LexerTest {
   }
 
   @Test
+  void ignoresLineAndBlockCommentsIncludingSemicolons() {
+    List<Token> commented =
+        lexer.tokenize(
+            "-- select one student;\n"
+                + "SELECT /* keep reading; */ student_id FROM student -- trailing comment\n"
+                + "WHERE student_id = 1;");
+    List<Token> plain =
+        lexer.tokenize("SELECT student_id FROM student WHERE student_id = 1;");
+
+    assertEquals(
+        plain.stream().map(Token::kind).toList(), commented.stream().map(Token::kind).toList());
+    assertEquals(
+        plain.stream().map(Token::lexeme).toList(),
+        commented.stream().map(Token::lexeme).toList());
+  }
+
+  @Test
+  void keepsCommentMarkersInsideTextLiterals() {
+    List<Token> tokens = lexer.tokenize("SELECT '-- not a comment', '/* neither */' FROM messages");
+
+    assertEquals("'-- not a comment'", tokens.get(1).lexeme());
+    assertEquals("'/* neither */'", tokens.get(3).lexeme());
+  }
+
+  @Test
+  void rejectsUnterminatedBlockCommentWithSyntaxOffset() {
+    DbmsException failure =
+        assertThrows(DbmsException.class, () -> lexer.tokenize("SELECT /* unfinished"));
+
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+    assertTrue(failure.getMessage().contains("offset 7"));
+  }
+
+  @Test
   void rejectsUnterminatedTextWithSyntaxOffset() {
     DbmsException failure =
         assertThrows(DbmsException.class, () -> lexer.tokenize("SELECT 'broken FROM t"));
