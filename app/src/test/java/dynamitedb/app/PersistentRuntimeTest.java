@@ -93,4 +93,38 @@ class PersistentRuntimeTest {
       }
     }
   }
+
+  @Test
+  void updateExpressionYieldingNullIsRejectedForNotNullColumn() throws Exception {
+    DbmsConfig config = new DbmsConfig(0, directory.resolve("db"), ProtocolType.STRICT_2PL);
+    try (PersistentRuntime runtime = new PersistentRuntime(config);
+        RemoteQueryClient client = connect(runtime, config)) {
+      var error =
+          assertThrows(
+              DbmsException.class,
+              () ->
+                  client.execute(
+                      "UPDATE student SET student_id = student_id + NULL WHERE student_id = 1;"));
+      assertEquals(ErrorCode.SQL_BIND, error.getCode());
+      assertTrue(error.getMessage().contains("student_id"), error.getMessage());
+      assertEquals(
+          1, client.execute("SELECT name FROM student WHERE student_id = 1;").rows().size());
+      // kolom nullable tetap boleh menerima hasil ekspresi NULL
+      client.execute("UPDATE student SET gpa = gpa + NULL WHERE student_id = 1;");
+      assertEquals(
+          NullValue.INSTANCE,
+          client
+              .execute("SELECT gpa FROM student WHERE student_id = 1;")
+              .rows()
+              .get(0)
+              .values()
+              .get(0));
+    }
+  }
+
+  private static RemoteQueryClient connect(PersistentRuntime runtime, DbmsConfig config)
+      throws Exception {
+    runtime.bootstrap().start(config);
+    return new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port());
+  }
 }
