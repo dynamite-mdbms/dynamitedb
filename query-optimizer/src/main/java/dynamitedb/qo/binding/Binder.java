@@ -238,6 +238,7 @@ public class Binder {
         switch (binary.operator()) {
           case ADD, SUB, MUL, DIV -> fits(left, NUMBER) && fits(right, NUMBER);
           case AND -> fits(left, BOOLEAN) && fits(right, BOOLEAN);
+          case IS, IS_NOT -> right.equals(NULL);
           case EQ, NEQ, LT, LTE, GT, GTE ->
               !left.equals(BOOLEAN)
                   && !right.equals(BOOLEAN)

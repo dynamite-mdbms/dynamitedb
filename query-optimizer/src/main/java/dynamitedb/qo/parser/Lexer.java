@@ -24,6 +24,8 @@ public class Lexer {
           "NATURAL",
           "AND",
           "NULL",
+          "IS",
+          "NOT",
           "INSERT",
           "INTO",
           "VALUES",

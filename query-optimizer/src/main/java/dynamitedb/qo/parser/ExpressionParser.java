@@ -35,6 +35,9 @@ public class ExpressionParser {
           Map.of("+", BinaryOp.ADD, "-", BinaryOp.SUB),
           Map.of("*", BinaryOp.MUL, "/", BinaryOp.DIV));
 
+  /** Indeks tingkat perbandingan di LEVELS; IS [NOT] NULL berada tepat di bawahnya. */
+  private static final int COMPARISON_LEVEL = 1;
+
   public Expression parseExpression(List<Token> tokens) {
     if (tokens == null || tokens.isEmpty()) throw syntax("Expected expression", null);
     int[] cursor = {0};
@@ -53,7 +56,28 @@ public class ExpressionParser {
       cursor[0]++;
       left = new BinaryExpression(left, operator, parseLevel(tokens, cursor, level + 1));
     }
-    return left;
+    return level == COMPARISON_LEVEL ? parseIsNull(tokens, cursor, left) : left;
+  }
+
+  /** Postfix {@code IS [NOT] NULL}; prioritasnya di bawah perbandingan seperti di PostgreSQL. */
+  private static Expression parseIsNull(List<Token> tokens, int[] cursor, Expression operand) {
+    if (!isKeyword(tokenAt(tokens, cursor[0]), "IS")) return operand;
+    cursor[0]++;
+    boolean negated = isKeyword(tokenAt(tokens, cursor[0]), "NOT");
+    if (negated) cursor[0]++;
+    Token nullToken = tokenAt(tokens, cursor[0]);
+    if (!isKeyword(nullToken, "NULL")) throw syntax("Expected NULL after IS", nullToken);
+    cursor[0]++;
+    return new BinaryExpression(
+        operand,
+        negated ? BinaryOp.IS_NOT : BinaryOp.IS,
+        new LiteralExpression(NullValue.INSTANCE));
+  }
+
+  private static boolean isKeyword(Token token, String keyword) {
+    return token != null
+        && token.kind() == TokenKind.KEYWORD
+        && token.lexeme().equalsIgnoreCase(keyword);
   }
 
   private static BinaryOp operatorAt(List<Token> tokens, int index, Map<String, BinaryOp> ops) {
