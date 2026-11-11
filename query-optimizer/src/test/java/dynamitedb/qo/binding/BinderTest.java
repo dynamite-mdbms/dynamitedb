@@ -3,6 +3,7 @@ package dynamitedb.qo.binding;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
@@ -201,8 +202,10 @@ class BinderTest {
         assertThrows(
             DbmsException.class, () -> bind("INSERT INTO student VALUES (NULL, 'Ann', 3.5);"));
     assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("Column sid does not accept NULL"));
     error = assertThrows(DbmsException.class, () -> bind("UPDATE student SET name = NULL;"));
     assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("Column name does not accept NULL"));
   }
 
   private Statement bind(String sql) {

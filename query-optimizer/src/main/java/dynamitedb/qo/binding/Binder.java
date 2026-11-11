@@ -253,6 +253,9 @@ public class Binder {
   }
 
   private static void checkValue(Column column, Value value) {
+    if (value instanceof NullValue && !column.nullable()) {
+      throw error("Column " + column.name() + " does not accept NULL");
+    }
     boolean fits =
         switch (value) {
           case NullValue n -> column.nullable();
