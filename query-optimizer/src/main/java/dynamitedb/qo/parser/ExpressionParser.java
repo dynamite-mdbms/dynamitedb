@@ -90,8 +90,11 @@ public class ExpressionParser {
         throw syntax("Unary minus is only supported before a numeric literal", token);
       }
       cursor[0] += 2;
-      return new LiteralExpression(
-          literalValue(new Token(TokenKind.LITERAL, "-" + number.lexeme(), token.offset())));
+      Value value =
+          literalValue(new Token(TokenKind.LITERAL, "-" + number.lexeme(), token.offset()));
+      // -0.0 dinormalisasi karena Double.compare menganggap -0.0 < 0.0 saat evaluasi.
+      if (value instanceof FloatValue f && f.value() == 0) value = new FloatValue(0.0);
+      return new LiteralExpression(value);
     }
 
     if (token.kind() == TokenKind.IDENTIFIER) {

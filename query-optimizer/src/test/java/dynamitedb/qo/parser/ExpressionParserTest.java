@@ -135,6 +135,12 @@ class ExpressionParserTest {
     assertEquals(bin(lit(-2), BinaryOp.SUB, lit(3)), parse("-2 - 3"));
   }
 
+  @Test
+  void foldsNegativeZeroToPlainZero() {
+    assertEquals(lit(0), parse("-0"));
+    assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("-0.0"));
+  }
+
   // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana.
   @ParameterizedTest
   @CsvSource(

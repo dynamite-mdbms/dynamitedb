@@ -67,4 +67,18 @@ class PersistentRuntimeTest {
       }
     }
   }
+
+  @Test
+  void negativeZeroMatchesStoredZero() throws Exception {
+    DbmsConfig config = new DbmsConfig(0, directory.resolve("db"), ProtocolType.STRICT_2PL);
+    try (PersistentRuntime runtime = new PersistentRuntime(config)) {
+      runtime.bootstrap().start(config);
+      try (RemoteQueryClient client =
+          new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port())) {
+        client.execute("INSERT INTO student VALUES (-8, 'Zero', 0.0, 'A');");
+        assertEquals(
+            1, client.execute("SELECT student_id FROM student WHERE gpa = -0.0;").rows().size());
+      }
+    }
+  }
 }
