@@ -136,6 +136,23 @@ class ExpressionParserTest {
   }
 
   @Test
+  void negativeLiteralsComposeWithArithmeticComparisonAndGrouping() {
+    Expression minusOne = lit(-1);
+    assertEquals(bin(minusOne, BinaryOp.ADD, lit(2)), parse("-1 + 2"));
+    assertEquals(bin(col("a"), BinaryOp.MUL, minusOne), parse("a * -1"));
+    assertEquals(minusOne, parse("(-1)"));
+    assertEquals(
+        bin(new LiteralExpression(new FloatValue(-2.5)), BinaryOp.MUL, lit(2)),
+        parse("(-2.5) * 2"));
+    assertEquals(bin(col("a"), BinaryOp.DIV, lit(-2)), parse("a / -2"));
+    assertEquals(
+        bin(bin(minusOne, BinaryOp.LT, col("a")), BinaryOp.AND, bin(col("a"), BinaryOp.LT, lit(1))),
+        parse("-1 < a AND a < 1"));
+    assertEquals(bin(col("a"), BinaryOp.NEQ, minusOne), parse("a <> -1"));
+    assertEquals(bin(col("a"), BinaryOp.GTE, minusOne), parse("a >= -1"));
+  }
+
+  @Test
   void foldsNegativeZeroToPlainZero() {
     assertEquals(lit(0), parse("-0"));
     assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("-0.0"));
@@ -161,6 +178,11 @@ class ExpressionParserTest {
           -a            | Unary minus is only supported before a numeric literal at offset 0 near '-'
           -(1)          | Unary minus is only supported before a numeric literal at offset 0 near '-'
           a - -         | Unary minus is only supported before a numeric literal at offset 4 near '-'
+          --1           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -'x'          | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          - a           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -             | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          1 - - a       | Unary minus is only supported before a numeric literal at offset 4 near '-'
           -2147483649   | Integer literal out of range at offset 0 near '-2147483649'
           2147483648    | Integer literal out of range at offset 0 near '2147483648'
           ORDER         | Expected expression at offset 0 near 'ORDER'
