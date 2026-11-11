@@ -71,6 +71,35 @@ class SqlParserTest {
   }
 
   @Test
+  void parsesMultipleSortKeys() {
+    SelectStatement select =
+        assertInstanceOf(
+            SelectStatement.class,
+            parser.parse(
+                lexer.tokenize(
+                    "SELECT student_id FROM student ORDER BY student_id DESC, name ASC")));
+
+    assertEquals(2, select.orderBy().size());
+    assertEquals("student_id", select.orderBy().get(0).column().column());
+    assertEquals(SortDirection.DESC, select.orderBy().get(0).direction());
+    assertEquals("name", select.orderBy().get(1).column().column());
+    assertEquals(SortDirection.ASC, select.orderBy().get(1).direction());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT student_id FROM student ORDER BY ,student_id",
+        "SELECT student_id FROM student ORDER BY student_id,,name"
+      })
+  void rejectsMalformedOrderByCommas(String sql) {
+    DbmsException failure =
+        assertThrows(DbmsException.class, () -> parser.parse(lexer.tokenize(sql)));
+
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+  }
+
+  @Test
   void rejectsMisspelledStatementWithPosition() {
     DbmsException failure =
         assertThrows(DbmsException.class, () -> parser.parse(lexer.tokenize("SELEC * FROM t")));
