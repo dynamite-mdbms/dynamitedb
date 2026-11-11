@@ -38,6 +38,9 @@ public class ExpressionEvaluator {
     if (expr.operator() == BinaryOp.AND) {
       return and(left, right);
     }
+    // IS [NOT] NULL selalu TRUE/FALSE, tidak ikut propagasi NULL
+    if (expr.operator() == BinaryOp.IS) return new BooleanValue(left instanceof NullValue);
+    if (expr.operator() == BinaryOp.IS_NOT) return new BooleanValue(!(left instanceof NullValue));
     if (left instanceof NullValue || right instanceof NullValue) {
       return NullValue.INSTANCE;
     }
