@@ -13,6 +13,7 @@ import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.TextValue;
 import java.util.Arrays;
 import java.util.List;
@@ -49,6 +50,15 @@ class ExpressionParserTest {
     assertEquals(new LiteralExpression(new TextValue("hello world")), parse("'hello world'"));
     assertEquals(new LiteralExpression(new TextValue("it's")), parse("'it''s'"));
     assertEquals(new LiteralExpression(new TextValue("say \"hi\"")), parse("\"say \"\"hi\"\"\""));
+  }
+
+  @Test
+  void parsesNullAsLiteralCaseInsensitively() {
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), parse("NULL"));
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), parse("null"));
+    assertEquals(
+        bin(col("gpa"), BinaryOp.EQ, new LiteralExpression(NullValue.INSTANCE)),
+        parse("gpa = Null"));
   }
 
   @Test

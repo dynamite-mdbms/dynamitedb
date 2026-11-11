@@ -10,6 +10,7 @@ import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.util.List;
@@ -79,6 +80,11 @@ public class ExpressionParser {
     if (token.kind() == TokenKind.LITERAL) {
       cursor[0]++;
       return new LiteralExpression(literalValue(token));
+    }
+
+    if (token.kind() == TokenKind.KEYWORD && token.lexeme().equalsIgnoreCase("NULL")) {
+      cursor[0]++;
+      return new LiteralExpression(NullValue.INSTANCE);
     }
 
     if (token.kind() == TokenKind.IDENTIFIER) {
