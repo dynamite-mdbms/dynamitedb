@@ -197,6 +197,8 @@ class BinderTest {
     assertEquals(new LiteralExpression(NullValue.INSTANCE), insert.values().get(2));
     bind("UPDATE student SET gpa = NULL WHERE sid = 1;");
     bind("SELECT sid FROM student WHERE gpa = NULL;");
+    bind("SELECT sid FROM student WHERE gpa IS NULL AND name IS NOT NULL;");
+    bind("DELETE FROM student WHERE gpa IS NULL;");
 
     var error =
         assertThrows(

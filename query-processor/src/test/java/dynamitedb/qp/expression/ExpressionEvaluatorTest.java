@@ -119,6 +119,16 @@ class ExpressionEvaluatorTest {
     assertEquals(NullValue.INSTANCE, eval(bin(num(1), BinaryOp.EQ, nul())));
   }
 
+  // IS [NOT] NULL tidak ikut propagasi NULL, hasilnya selalu boolean
+  @Test
+  void isNullIsAlwaysBoolean() {
+    assertEquals(new BooleanValue(true), eval(bin(nul(), BinaryOp.IS, nul())));
+    assertEquals(new BooleanValue(false), eval(bin(num(1), BinaryOp.IS, nul())));
+    assertEquals(new BooleanValue(false), eval(bin(nul(), BinaryOp.IS_NOT, nul())));
+    assertEquals(new BooleanValue(true), eval(bin(num(1), BinaryOp.IS_NOT, nul())));
+    assertTrue(evaluator.evaluatePredicate(bin(nul(), BinaryOp.IS, nul()), ROW));
+  }
+
   // FALSE menang lawan NULL, TRUE AND NULL tetap NULL
   @Test
   void andFollowsThreeValuedLogic() {

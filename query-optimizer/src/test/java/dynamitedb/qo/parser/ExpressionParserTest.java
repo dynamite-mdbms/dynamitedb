@@ -62,6 +62,23 @@ class ExpressionParserTest {
   }
 
   @Test
+  void parsesIsNullBelowComparisonAndAboveAnd() {
+    Expression nul = new LiteralExpression(NullValue.INSTANCE);
+    assertEquals(bin(col("gpa"), BinaryOp.IS, nul), parse("gpa IS NULL"));
+    assertEquals(bin(col("gpa"), BinaryOp.IS_NOT, nul), parse("gpa is not null"));
+    assertEquals(
+        bin(bin(col("gpa"), BinaryOp.IS, nul), BinaryOp.AND, bin(col("a"), BinaryOp.EQ, lit(1))),
+        parse("gpa IS NULL AND a = 1"));
+    assertEquals(
+        bin(bin(col("a"), BinaryOp.EQ, lit(1)), BinaryOp.IS_NOT, nul), parse("a = 1 IS NOT NULL"));
+
+    for (String bad : new String[] {"gpa IS 1", "gpa IS NOT", "gpa IS", "gpa NOT NULL"}) {
+      var failure = assertThrows(DbmsException.class, () -> parse(bad), bad);
+      assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode(), bad);
+    }
+  }
+
+  @Test
   void parsesColumns() {
     assertEquals(col("salary"), parse("salary"));
     assertEquals(
