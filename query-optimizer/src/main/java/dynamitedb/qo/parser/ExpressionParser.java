@@ -81,6 +81,19 @@ public class ExpressionParser {
       return new LiteralExpression(literalValue(token));
     }
 
+    // Minus unary hanya dilipat ke literal angka agar -2147483648 tetap muat di int.
+    if (token.kind() == TokenKind.SYMBOL && token.lexeme().equals("-")) {
+      Token number = tokenAt(tokens, cursor[0] + 1);
+      if (number == null
+          || number.kind() != TokenKind.LITERAL
+          || !Character.isDigit(number.lexeme().charAt(0))) {
+        throw syntax("Unary minus is only supported before a numeric literal", token);
+      }
+      cursor[0] += 2;
+      return new LiteralExpression(
+          literalValue(new Token(TokenKind.LITERAL, "-" + number.lexeme(), token.offset())));
+    }
+
     if (token.kind() == TokenKind.IDENTIFIER) {
       cursor[0]++;
       Token dot = tokenAt(tokens, cursor[0]);
