@@ -221,7 +221,9 @@ public class Binder {
       case BinaryExpression binary ->
           new BinaryExpression(
               qualify(binary.left(), scope), binary.operator(), qualify(binary.right(), scope));
-      case InSubqueryExpression in -> throw error("IN subqueries are not supported yet");
+      case InSubqueryExpression in ->
+          new InSubqueryExpression(
+              qualify(in.operand(), scope), bindSubquery(in.query()), in.plan(), in.negated());
     };
   }
 
@@ -230,8 +232,30 @@ public class Binder {
       case LiteralExpression literal -> kindOf(literal.value());
       case ColumnExpression column -> kindOf(resolve(column.column(), scope).dataType());
       case BinaryExpression binary -> binaryKind(binary, scope);
-      case InSubqueryExpression in -> throw error("IN subqueries are not supported yet");
+      case InSubqueryExpression in -> {
+        String operand = kind(in.operand(), scope);
+        String column = kindOf(outputSchema(in.query()).columns().get(0).dataType());
+        if (operand.equals(BOOLEAN) || !fits(operand, column)) {
+          throw error("IN cannot compare " + operand + " with a " + column + " subquery");
+        }
+        yield BOOLEAN;
+      }
     };
+  }
+
+  /** Subquery di-bind dengan scope sendiri; kolom query luar tidak terlihat (tanpa korelasi). */
+  private SelectStatement bindSubquery(SelectStatement query) {
+    SelectStatement bound;
+    try {
+      bound = bindSelect(query);
+    } catch (DbmsException e) {
+      if (!e.getMessage().startsWith("Unknown column")) throw e;
+      throw error(e.getMessage() + " (correlated subqueries are not supported)");
+    }
+    if (bound.projection().size() != 1) {
+      throw error("Subquery must select exactly one column, got " + bound.projection().size());
+    }
+    return bound;
   }
 
   private String binaryKind(BinaryExpression binary, Schema scope) {
