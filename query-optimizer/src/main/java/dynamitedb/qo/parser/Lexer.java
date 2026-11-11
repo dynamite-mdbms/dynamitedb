@@ -23,6 +23,8 @@ public class Lexer {
           "ON",
           "NATURAL",
           "AND",
+          "NOT",
+          "IN",
           "INSERT",
           "INTO",
           "VALUES",
