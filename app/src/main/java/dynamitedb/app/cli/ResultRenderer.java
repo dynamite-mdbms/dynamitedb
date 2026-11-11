@@ -17,8 +17,9 @@ public final class ResultRenderer {
     if (result.schema().columns().isEmpty()) {
       String message = result.message() == null ? "" : result.message();
       if (!message.isBlank()) out.println(message);
-      if (!List.of("BEGIN", "COMMIT", "ABORT").contains(message)) {
-        out.println(result.affectedRows() + " row(s) affected");
+      String affected = result.affectedRows() + " row(s) affected";
+      if (!List.of("BEGIN", "COMMIT", "ABORT").contains(message) && !message.equals(affected)) {
+        out.println(affected);
       }
       out.flush();
       return;

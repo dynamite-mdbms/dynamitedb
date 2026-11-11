@@ -1,9 +1,5 @@
 package dynamitedb.integration;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
@@ -17,6 +13,9 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
@@ -133,7 +132,7 @@ class CanonicalStructureTest {
   void fixtureHasCompleteCanonicalCoverageAndIndependentJavaTypeNames() throws Exception {
     var rows = fixtureRows();
     var canonicalTypes = rows.stream().filter(row -> row[0].equals("type")).toList();
-    assertEquals(218, canonicalTypes.size());
+    assertEquals(220, canonicalTypes.size());
     assertEquals(178, rows.stream().filter(row -> row[0].equals("component")).count());
     assertEquals(316, rows.stream().filter(row -> row[0].equals("method")).count());
     assertEquals(92, rows.stream().filter(row -> row[0].equals("provider")).count());
@@ -217,7 +216,7 @@ class CanonicalStructureTest {
             "StoredRow")) {
       assertThrowsClassAbsent("dynamitedb.contracts." + name);
     }
-    assertEquals(30, rows.stream().filter(row -> row[0].equals("helper")).count());
+    assertEquals(42, rows.stream().filter(row -> row[0].equals("helper")).count());
     assertEquals(5, rows.stream().filter(row -> row[0].equals("sealed")).count());
   }
 

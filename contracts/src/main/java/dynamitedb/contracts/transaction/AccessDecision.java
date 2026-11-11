@@ -3,10 +3,14 @@ package dynamitedb.contracts.transaction;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * The result of requesting access; a ticket is present exactly when the state is {@code WAITING}.
+ */
 public record AccessDecision(AccessState state, Optional<WaitToken> ticket, String reason) {
   public AccessDecision {
     Objects.requireNonNull(state, "state");
     Objects.requireNonNull(ticket, "ticket");
+    Objects.requireNonNull(reason, "reason");
     if ((state == AccessState.WAITING) != ticket.isPresent()) {
       throw new IllegalArgumentException("Ticket wajib ada tepat ketika state WAITING");
     }

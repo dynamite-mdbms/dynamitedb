@@ -1,27 +1,29 @@
 package dynamitedb.qp.operator;
 
+import dynamitedb.contracts.api.RowCursor;
 import dynamitedb.contracts.api.TupleReader;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.OperatorRow;
-import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.transaction.AccessMode;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.transaction.TransactionCoordinator;
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Versi Mock untuk ScanOperator (QP-05): Mengembalikan data dummy lokal. */
 public class ScanOperator implements Operator {
 
+  private final TupleReader source;
   private final String table;
   private final String alias;
-  private final TupleReader source;
   private final Schema schema;
   private final TransactionId tx;
   private final TransactionCoordinator coordinator;
-  private List<OperatorRow> mockRows;
-  private int currentIndex;
+
+  private RowCursor cursor;
+  private boolean isOpen = false;
 
   public ScanOperator(
       TupleReader source,
@@ -33,30 +35,42 @@ public class ScanOperator implements Operator {
     this.source = Objects.requireNonNull(source, "source");
     this.table = Objects.requireNonNull(table, "table");
     this.alias = Objects.requireNonNull(alias, "alias");
-    this.schema = Objects.requireNonNull(tableSchema, "tableSchema");
+    this.schema = OperatorRows.qualify(Objects.requireNonNull(tableSchema, "tableSchema"), alias);
     this.tx = Objects.requireNonNull(tx, "tx");
     this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
-
-    this.mockRows = List.of();
-    this.currentIndex = 0;
   }
 
   @Override
   public void open() {
-    this.currentIndex = 0;
-    this.mockRows = List.of(new OperatorRow(new Row(List.of()), schema, Map.of(alias, null)));
+    if (isOpen) {
+      close();
+    }
+    coordinator.authorizeTable(tx, table, AccessMode.READ);
+    this.cursor = source.openTableScan(table, tx);
+    this.isOpen = true;
   }
 
   @Override
   public Optional<OperatorRow> next() {
-    if (currentIndex < mockRows.size()) {
-      return Optional.of(mockRows.get(currentIndex++));
+    if (!isOpen) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "ScanOperator must be opened before calling next()");
     }
+
+    Optional<StoredRow> stored = cursor.next();
+    if (stored.isPresent()) {
+      return Optional.of(OperatorRows.fromStored(stored.get(), schema, alias));
+    }
+
     return Optional.empty();
   }
 
   @Override
   public void close() {
-    this.currentIndex = 0;
+    if (cursor != null) {
+      cursor.close();
+      cursor = null;
+    }
+    isOpen = false;
   }
 }

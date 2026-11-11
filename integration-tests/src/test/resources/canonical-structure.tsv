@@ -667,6 +667,12 @@ method	dynamitedb.frm.LogManager	scanFrom	java.util.Iterator<dynamitedb.frm.LogR
 method	dynamitedb.frm.LogManager	reverseByTx	java.util.Iterator<dynamitedb.frm.LogRecord>	dynamitedb.contracts.transaction.TransactionId
 method	dynamitedb.frm.LogManager	read	dynamitedb.contracts.recovery.LogView	dynamitedb.contracts.recovery.LogFilter
 type	dynamitedb.frm.WalService	class
+type	dynamitedb.frm.driver.FileRecoveryStorage	class
+type	dynamitedb.frm.driver.RealRecoveryDriver	class
+helper	dynamitedb.frm.driver.CrashChild
+helper	dynamitedb.frm.driver.DriverAssertions
+helper	dynamitedb.frm.driver.DriverScenarios
+helper	dynamitedb.frm.driver.RecoveryHarness
 method	dynamitedb.frm.WalService	begin	void	dynamitedb.contracts.transaction.TransactionId|long
 method	dynamitedb.frm.WalService	appendChange	dynamitedb.contracts.recovery.LogSequenceNumber	dynamitedb.contracts.recovery.ChangeRecord
 method	dynamitedb.frm.WalService	commitDurably	void	dynamitedb.contracts.transaction.TransactionId
@@ -700,6 +706,7 @@ method	dynamitedb.frm.UndoManager	rollbackCompletely	void	dynamitedb.contracts.t
 method	dynamitedb.frm.UndoManager	undoLosers	void	dynamitedb.frm.RecoveryState
 method	dynamitedb.frm.UndoManager	emitClr	dynamitedb.frm.CompensationLogRecord	dynamitedb.frm.ChangeLogRecord
 type	dynamitedb.frm.CrashRecoveryManager	class
+helper	dynamitedb.frm.CrashRecoveryManager$Analysis
 method	dynamitedb.frm.CrashRecoveryManager	recover	dynamitedb.contracts.recovery.RecoveryResult
 method	dynamitedb.frm.CrashRecoveryManager	analyze	dynamitedb.frm.RecoveryState	dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.frm.CrashRecoveryManager	redo	void	dynamitedb.frm.RecoveryState
@@ -717,6 +724,7 @@ type	dynamitedb.frm.HistoricalRecoveryManager	class
 method	dynamitedb.frm.HistoricalRecoveryManager	recoverTo	dynamitedb.contracts.recovery.RecoveryResult	dynamitedb.contracts.recovery.RecoveryTarget
 method	dynamitedb.frm.HistoricalRecoveryManager	resolveBoundary	dynamitedb.contracts.recovery.RecoveryBoundary	dynamitedb.contracts.recovery.RecoveryTarget
 type	dynamitedb.frm.HistoryCatalog	class
+helper	dynamitedb.frm.HistoryCatalog$RecoveryPlan
 method	dynamitedb.frm.HistoryCatalog	validateCoverage	void	dynamitedb.contracts.recovery.RecoveryTarget
 method	dynamitedb.frm.HistoryCatalog	getBaseSnapshot	dynamitedb.contracts.recovery.SnapshotMetadata	dynamitedb.contracts.recovery.RecoveryTarget
 method	dynamitedb.frm.HistoryCatalog	buildManifest	dynamitedb.contracts.recovery.GenerationManifest	dynamitedb.contracts.recovery.SealedGeneration|java.util.UUID|dynamitedb.contracts.recovery.RecoveryHighWater
@@ -836,17 +844,22 @@ helper	dynamitedb.app.mock.MockRuntime
 helper	dynamitedb.frm.mock.MockRecoveryContext
 helper	dynamitedb.frm.mock.MockRecoveryPorts
 helper	dynamitedb.frm.mock.MockRecoveryEnvironment
+helper	dynamitedb.frm.LogFile$Scan
+helper	dynamitedb.frm.LogManager$Prepared
+helper	dynamitedb.frm.LogManager$TxState
 helper	dynamitedb.qp.operator.OperatorRows
 helper	dynamitedb.app.client.RemoteQueryClient
 helper	dynamitedb.app.cli.ResultRenderer
 helper	dynamitedb.app.cli.SqlStatementReader
 helper	dynamitedb.app.protocol.WireProtocol
 helper	dynamitedb.app.StubRuntime
+helper	dynamitedb.app.PersistentRuntime
+helper	dynamitedb.app.FreshRecoveryMetadata
 helper	dynamitedb.app.cli.SqlStatementReader$State
 helper	dynamitedb.app.mock.MockRuntime$MockAccess
-helper	dynamitedb.app.mock.MockRuntime$MockCatalog
-helper	dynamitedb.app.mock.MockRuntime$MockCoordinator
 helper	dynamitedb.app.mock.MockRuntime$MockOptimizer
+helper	dynamitedb.app.mock.MockRuntime$MockStorage
+helper	dynamitedb.app.mock.MockRuntime$MockStorage$Mutation
 helper	dynamitedb.app.mock.MockRuntime$MockTransactions
 helper	dynamitedb.app.server.TcpServer$Connection
 helper	dynamitedb.frm.mock.MockRecoveryPorts$Coordinator
@@ -860,3 +873,4 @@ helper	dynamitedb.qo.join.PlanExpressions
 helper	dynamitedb.qo.verification.QueryOptimizerDriver$FakeTable
 helper	dynamitedb.qo.verification.QueryOptimizerDriver$Scenario
 helper	dynamitedb.qp.driver.QueryProcessorTestDriver$Scenario
+helper	dynamitedb.ccm.protocol.LockManager$TicketEntry
