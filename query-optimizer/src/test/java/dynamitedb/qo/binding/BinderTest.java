@@ -210,6 +210,35 @@ class BinderTest {
     assertTrue(error.getMessage().contains("Column name does not accept NULL"));
   }
 
+  @Test
+  void bindsIsNullOnEveryColumnTypeAndRejectsItAsAWrittenValue() {
+    bind("SELECT sid FROM student WHERE sid IS NULL AND name IS NOT NULL AND gpa IS NULL;");
+    bind("SELECT sid FROM student WHERE NULL IS NULL;");
+    bind("SELECT sid FROM tagged WHERE sid IS NOT NULL;");
+
+    // hasil IS NULL bertipe boolean, tidak cocok untuk kolom mana pun
+    var error =
+        assertThrows(DbmsException.class, () -> bind("UPDATE student SET gpa = gpa IS NULL;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    // IS hanya boleh diikuti NULL
+    error =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE gpa IS 3;"));
+    assertEquals(ErrorCode.SQL_SYNTAX, error.getCode());
+  }
+
+  @Test
+  void nullArithmeticInConditionsFollowsTheNumericRules() {
+    bind("SELECT sid FROM student WHERE NULL + 1 > 0;");
+    bind("SELECT sid FROM student WHERE gpa + NULL IS NULL;");
+    var error =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE NULL + 1;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    error =
+        assertThrows(
+            DbmsException.class, () -> bind("SELECT sid FROM student WHERE name + NULL > 1;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+  }
+
   private Statement bind(String sql) {
     return binder.bind(parse(sql));
   }
