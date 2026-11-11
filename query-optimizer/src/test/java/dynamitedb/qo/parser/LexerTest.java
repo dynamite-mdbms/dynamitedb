@@ -1,13 +1,14 @@
 package dynamitedb.qo.parser;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
-import java.util.List;
-import org.junit.jupiter.api.Test;
 
 class LexerTest {
 
@@ -84,5 +85,17 @@ class LexerTest {
 
     assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
     assertTrue(failure.getMessage().contains("offset 7"));
+  }
+
+  @Test
+  void rejectsUnsupportedUnicodeNumeralsAsSyntaxErrors() {
+    for (String numeral : List.of("١.٢", "１２")) {
+      String sql = "UPDATE student SET gpa = " + numeral + " WHERE student_id = 1";
+
+      DbmsException failure = assertThrows(DbmsException.class, () -> lexer.tokenize(sql));
+
+      assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+      assertTrue(failure.getMessage().contains("offset " + sql.indexOf(numeral)));
+    }
   }
 }

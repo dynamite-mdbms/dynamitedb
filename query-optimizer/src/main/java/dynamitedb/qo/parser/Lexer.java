@@ -91,15 +91,15 @@ public class Lexer {
         continue;
       }
 
-      if (Character.isDigit(current)) {
+      if (isAsciiDigit(current)) {
         cursor++;
-        while (cursor < sql.length() && Character.isDigit(sql.charAt(cursor))) cursor++;
+        while (cursor < sql.length() && isAsciiDigit(sql.charAt(cursor))) cursor++;
         if (cursor < sql.length() && sql.charAt(cursor) == '.') {
           int dot = cursor++;
-          if (cursor >= sql.length() || !Character.isDigit(sql.charAt(cursor))) {
+          if (cursor >= sql.length() || !isAsciiDigit(sql.charAt(cursor))) {
             throw syntax("Expected digits after decimal point", dot);
           }
-          while (cursor < sql.length() && Character.isDigit(sql.charAt(cursor))) cursor++;
+          while (cursor < sql.length() && isAsciiDigit(sql.charAt(cursor))) cursor++;
         }
         tokens.add(new Token(TokenKind.LITERAL, sql.substring(start, cursor), start));
         continue;
@@ -145,6 +145,10 @@ public class Lexer {
       throw syntax("Unexpected character '" + current + "'", start);
     }
     return List.copyOf(tokens);
+  }
+
+  private static boolean isAsciiDigit(char value) {
+    return value >= '0' && value <= '9';
   }
 
   private static DbmsException syntax(String message, int offset) {
