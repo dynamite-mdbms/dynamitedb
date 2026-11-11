@@ -38,9 +38,20 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
     this.context = Objects.requireNonNull(context, "context");
   }
 
+  /** Real manifest store used by the integrated runtime. */
+  public AtomicGenerationManifestStore(Path root, GenerationManifest initial) {
+    this.root = Objects.requireNonNull(root, "root");
+    this.active = Objects.requireNonNull(initial, "initial");
+    this.context = null;
+  }
+
+  public static boolean exists(Path root) {
+    return Files.isRegularFile(Objects.requireNonNull(root, "root").resolve(FILE_NAME));
+  }
+
   @Override
   public synchronized GenerationManifest readActive() {
-    context.invoked("AtomicGenerationManifestStore.readActive");
+    if (context != null) context.invoked("AtomicGenerationManifestStore.readActive");
     Path file = root.resolve(FILE_NAME);
     if (!Files.exists(file)) {
       return active;
@@ -59,7 +70,7 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
   @Override
   public synchronized void publishAtomically(GenerationManifest manifest) {
     Objects.requireNonNull(manifest, "manifest");
-    context.invoked("AtomicGenerationManifestStore.publishAtomically");
+    if (context != null) context.invoked("AtomicGenerationManifestStore.publishAtomically");
     Path temporary = null;
     try {
       Files.createDirectories(root);

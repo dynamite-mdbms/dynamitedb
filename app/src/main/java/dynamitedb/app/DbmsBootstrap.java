@@ -10,12 +10,19 @@ import java.util.Objects;
 public final class DbmsBootstrap {
   private final QueryProcessor processor;
   private final Runnable recoverAndInitialize;
+  private final Runnable shutdownAction;
   private TcpServer server;
 
   public DbmsBootstrap(QueryProcessor processor, Runnable recoverAndInitialize) {
+    this(processor, recoverAndInitialize, () -> {});
+  }
+
+  public DbmsBootstrap(
+      QueryProcessor processor, Runnable recoverAndInitialize, Runnable shutdownAction) {
     this.processor = Objects.requireNonNull(processor, "processor");
     this.recoverAndInitialize =
         Objects.requireNonNull(recoverAndInitialize, "recoverAndInitialize");
+    this.shutdownAction = Objects.requireNonNull(shutdownAction, "shutdownAction");
   }
 
   public void start(DbmsConfig config) throws IOException {
@@ -34,7 +41,11 @@ public final class DbmsBootstrap {
   }
 
   public void shutdown() {
-    if (server != null) server.stop();
+    if (server != null) {
+      server.stop();
+      server = null;
+    }
+    shutdownAction.run();
   }
 
   public int port() {

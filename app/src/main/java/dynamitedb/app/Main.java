@@ -32,6 +32,9 @@ public final class Main {
       output.println(
           "  stub runtime: module wiring is real; query, storage, recovery and concurrency"
               + " operations remain stubs/defaults");
+      output.println(
+          "server --integrated [--host 127.0.0.1] [--port 7777] [--data-dir data]");
+      output.println("  integrated runtime: persistent FRM WAL with SM and CCM recovery ports");
       output.println("server --mock [--host 127.0.0.1] [--port 7777] (legacy demo behavior)");
       output.println("cli [--host 127.0.0.1] [--port 7777]");
       output.println("driver [--suite | --file path] (standalone mock driver)");
@@ -40,11 +43,15 @@ public final class Main {
     Map<String, String> options = options(args);
     switch (args[0]) {
       case "server" -> {
-        requireOnly(options, "--mock", "--stub", "--host", "--port", "--data-dir");
+        requireOnly(
+            options, "--mock", "--stub", "--integrated", "--host", "--port", "--data-dir");
         boolean mock = options.containsKey("--mock");
         boolean stub = options.containsKey("--stub");
-        if (mock == stub)
-          throw new IllegalArgumentException("Choose exactly one of --stub or --mock");
+        boolean integrated = options.containsKey("--integrated");
+        if ((mock ? 1 : 0) + (stub ? 1 : 0) + (integrated ? 1 : 0) != 1) {
+          throw new IllegalArgumentException(
+              "Choose exactly one of --integrated, --stub, or --mock");
+        }
         String host = options.getOrDefault("--host", "127.0.0.1");
         if (host.isBlank()) throw new IllegalArgumentException("Host must not be blank");
         int port = Integer.parseInt(options.getOrDefault("--port", "7777"));
@@ -56,14 +63,18 @@ public final class Main {
                 defaults.protocol());
         DbmsBootstrap bootstrap;
         String mode;
-        if (stub) {
+        if (integrated) {
+          IntegratedRuntime runtime = new IntegratedRuntime(config);
+          bootstrap = runtime.bootstrap();
+          mode = "Integrated FRM/SM/CCM runtime";
+        } else if (stub) {
           StubRuntime runtime = new StubRuntime(config);
           bootstrap = runtime.bootstrap();
           mode = "Stub QP server (operations remain stubs/defaults)";
         } else {
-          if (options.containsKey("--data-dir")) {
-            throw new IllegalArgumentException("--data-dir is only valid with server --stub");
-          }
+          if (options.containsKey("--data-dir"))
+            throw new IllegalArgumentException(
+                "--data-dir is only valid with server --stub or --integrated");
           bootstrap = new DbmsBootstrap(new MockRuntime().processor(), () -> {});
           mode = "Mock QP server";
         }
@@ -112,7 +123,10 @@ public final class Main {
     Map<String, String> options = new HashMap<>();
     for (int index = 1; index < args.length; index++) {
       String key = args[index];
-      if (key.equals("--mock") || key.equals("--stub") || key.equals("--suite"))
+      if (key.equals("--mock")
+          || key.equals("--stub")
+          || key.equals("--integrated")
+          || key.equals("--suite"))
         options.put(key, "true");
       else if (java.util.Set.of("--host", "--port", "--file", "--data-dir").contains(key)
           && index + 1 < args.length) options.put(key, args[++index]);

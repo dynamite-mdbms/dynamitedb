@@ -2,6 +2,7 @@ package dynamitedb.ccm.lifecycle;
 
 import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.transaction.TransactionId;
+import dynamitedb.contracts.transaction.TransactionStatus;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -24,7 +25,10 @@ public class TransactionRegistry {
   }
 
   public int activeCount() {
-    return 0;
+    return (int)
+        transactions.values().stream()
+            .filter(transaction -> transaction.status() == TransactionStatus.ACTIVE)
+            .count();
   }
 
   public void restoreHighWater(RecoveryHighWater highWater) {

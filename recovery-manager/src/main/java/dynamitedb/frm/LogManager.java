@@ -123,6 +123,10 @@ public final class LogManager implements AutoCloseable {
     }
   }
 
+  public static long readWalFloor(Path root, UUID lineage) {
+    return LogFile.readHistoryFloor(root, lineage);
+  }
+
   public synchronized UUID activeLineage() {
     return lineage;
   }

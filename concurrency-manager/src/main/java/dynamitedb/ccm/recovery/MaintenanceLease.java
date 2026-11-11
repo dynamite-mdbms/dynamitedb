@@ -12,6 +12,9 @@ public class MaintenanceLease implements MaintenanceGuard {
 
   @Override
   public void close() {
-    closed = true;
+    if (!closed) {
+      closed = true;
+      controller.resumeAdmission();
+    }
   }
 }

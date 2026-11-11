@@ -29,8 +29,7 @@ public class TransactionCoordinator {
     if (session.activeTx().isPresent()) {
       throw new DbmsException(ErrorCode.INVALID_STATE, "Transaction is already active");
     }
-    // TODO: ambil id dari tx.begin()
-    TransactionId id = new TransactionId(1);
+    TransactionId id = tx.begin();
     session.setActiveTx(Optional.of(id));
     return id;
   }
@@ -44,18 +43,21 @@ public class TransactionCoordinator {
   }
 
   public void commit(SessionContext session) {
-    requireActiveTx(session);
+    TransactionId active = requireActiveTx(session);
+    tx.commit(active);
     session.setActiveTx(Optional.empty());
   }
 
   public void abort(SessionContext session) {
-    requireActiveTx(session);
+    TransactionId active = requireActiveTx(session);
+    tx.abort(active);
     session.setActiveTx(Optional.empty());
   }
 
-  private void requireActiveTx(SessionContext session) {
+  private TransactionId requireActiveTx(SessionContext session) {
     if (session.activeTx().isEmpty()) {
       throw new DbmsException(ErrorCode.INVALID_STATE, "No active transaction");
     }
+    return session.activeTx().orElseThrow();
   }
 }

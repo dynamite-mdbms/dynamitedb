@@ -11,6 +11,8 @@ import dynamitedb.contracts.api.MaintenanceGuard;
 import dynamitedb.contracts.api.ProtocolAdmin;
 import dynamitedb.contracts.api.RecoveryCoordinator;
 import dynamitedb.contracts.api.TransactionManager;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
 import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.storage.PreparedWrite;
@@ -57,22 +59,44 @@ public class ConcurrencyManagerImpl
 
   @Override
   public TransactionId begin() {
-    return registry.create().id();
+    Transaction transaction = maintenance.beginTransaction(registry::create);
+    try {
+      bridge.begin(transaction.id(), transaction.timestamp());
+      return transaction.id();
+    } catch (RuntimeException failure) {
+      transaction.transition(TransactionStatus.FAILED);
+      maintenance.transactionFinished();
+      throw failure;
+    }
   }
 
   @Override
   public void commit(TransactionId tx) {
     Transaction transaction = registry.get(tx);
-    if (transaction != null) {
-      transaction.transition(TransactionStatus.COMMITTED);
+    if (transaction == null || transaction.status() != TransactionStatus.ACTIVE) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "Transaction is not active: " + tx);
+    }
+    bridge.commit(tx);
+    transaction.transition(TransactionStatus.COMMITTED);
+    try {
+      protocol.onFinish(tx);
+    } finally {
+      maintenance.transactionFinished();
     }
   }
 
   @Override
   public void abort(TransactionId tx) {
     Transaction transaction = registry.get(tx);
-    if (transaction != null) {
-      transaction.transition(TransactionStatus.ABORTED);
+    if (transaction == null || transaction.status() != TransactionStatus.ACTIVE) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "Transaction is not active: " + tx);
+    }
+    bridge.rollback(tx);
+    transaction.transition(TransactionStatus.ABORTED);
+    try {
+      protocol.onFinish(tx);
+    } finally {
+      maintenance.transactionFinished();
     }
   }
 
@@ -106,6 +130,10 @@ public class ConcurrencyManagerImpl
   public long transactionTimestamp(TransactionId tx) {
     Transaction transaction = registry.get(tx);
     return transaction == null ? 0 : transaction.timestamp();
+  }
+
+  public int activeTransactionCount() {
+    return registry.activeCount();
   }
 
   @Override

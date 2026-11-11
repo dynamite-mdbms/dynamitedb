@@ -6,7 +6,7 @@ import dynamitedb.contracts.transaction.TransactionStatus;
 public class Transaction {
   private final TransactionId id;
   private final long timestamp;
-  private TransactionStatus status = TransactionStatus.ACTIVE;
+  private volatile TransactionStatus status = TransactionStatus.ACTIVE;
 
   public Transaction(TransactionId id, long timestamp) {
     this.id = id;

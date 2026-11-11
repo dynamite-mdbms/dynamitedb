@@ -62,7 +62,13 @@ public final class HistoryCatalog {
 
   public HistoryCatalog(
       GenerationManifestStore manifestStore, LogManager log, List<SnapshotMetadata> snapshots) {
-    this(manifestStore, log, snapshots, new MockRecoveryContext());
+    this(
+        firstSnapshot(snapshots),
+        Objects.requireNonNull(manifestStore, "manifestStore").readActive(),
+        null,
+        manifestStore,
+        Objects.requireNonNull(log, "log"),
+        snapshots);
   }
 
   public HistoryCatalog(
@@ -79,6 +85,17 @@ public final class HistoryCatalog {
         snapshots);
   }
 
+  /** Loads the retained snapshot catalog for an existing database. */
+  public HistoryCatalog(GenerationManifestStore manifestStore, LogManager log) {
+    this(
+        activeSnapshot(Objects.requireNonNull(manifestStore, "manifestStore").readActive()),
+        manifestStore.readActive(),
+        null,
+        manifestStore,
+        Objects.requireNonNull(log, "log"),
+        List.of());
+  }
+
   private HistoryCatalog(
       SnapshotMetadata baseSnapshot,
       GenerationManifest manifest,
@@ -88,7 +105,7 @@ public final class HistoryCatalog {
       List<SnapshotMetadata> snapshots) {
     this.baseSnapshot = Objects.requireNonNull(baseSnapshot, "baseSnapshot");
     this.manifest = Objects.requireNonNull(manifest, "manifest");
-    this.context = Objects.requireNonNull(context, "context");
+    this.context = context;
     this.manifestStore = manifestStore;
     this.log = log;
     this.snapshots = new CopyOnWriteArrayList<>();
@@ -113,7 +130,7 @@ public final class HistoryCatalog {
 
   public RecoveryBoundary resolveBoundary(RecoveryTarget target) {
     Objects.requireNonNull(target, "target");
-    context.invoked("HistoryCatalog.resolveBoundary");
+    if (context != null) context.invoked("HistoryCatalog.resolveBoundary");
     if (log == null) {
       return context.boundary();
     }
@@ -122,7 +139,7 @@ public final class HistoryCatalog {
 
   RecoveryPlan plan(RecoveryTarget target) {
     Objects.requireNonNull(target, "target");
-    context.invoked("HistoryCatalog.validateCoverage");
+    if (context != null) context.invoked("HistoryCatalog.validateCoverage");
     if (log == null) {
       return new RecoveryPlan(context.boundary(), baseSnapshot, List.of());
     }
@@ -170,7 +187,7 @@ public final class HistoryCatalog {
 
   public SnapshotMetadata getBaseSnapshot(RecoveryTarget target) {
     Objects.requireNonNull(target, "target");
-    context.invoked("HistoryCatalog.getBaseSnapshot");
+    if (context != null) context.invoked("HistoryCatalog.getBaseSnapshot");
     if (log == null) {
       return baseSnapshot;
     }
@@ -206,7 +223,7 @@ public final class HistoryCatalog {
     Objects.requireNonNull(generation, "generation");
     Objects.requireNonNull(walLineage, "walLineage");
     Objects.requireNonNull(highWater, "highWater");
-    context.invoked("HistoryCatalog.buildManifest");
+    if (context != null) context.invoked("HistoryCatalog.buildManifest");
     return new GenerationManifest(
         generation.id(), walLineage, generation.boundary().inclusiveLsn(), highWater);
   }
@@ -231,6 +248,20 @@ public final class HistoryCatalog {
 
   private GenerationManifest activeManifest() {
     return manifestStore == null ? manifest : manifestStore.readActive();
+  }
+
+  private static SnapshotMetadata firstSnapshot(List<SnapshotMetadata> snapshots) {
+    Objects.requireNonNull(snapshots, "snapshots");
+    if (snapshots.isEmpty()) throw new IllegalArgumentException("At least one snapshot is required");
+    return Objects.requireNonNull(snapshots.getFirst(), "snapshot");
+  }
+
+  private static SnapshotMetadata activeSnapshot(GenerationManifest manifest) {
+    return new SnapshotMetadata(
+        manifest.activeId(),
+        manifest.walLineage(),
+        manifest.boundaryLsn(),
+        manifest.highWater().maxCommitTime().orElse(Instant.EPOCH));
   }
 
   private List<LogRecord> history() {
