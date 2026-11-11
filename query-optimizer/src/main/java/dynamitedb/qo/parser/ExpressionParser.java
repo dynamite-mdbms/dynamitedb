@@ -107,7 +107,12 @@ public class ExpressionParser {
       String quote = String.valueOf(first);
       return new TextValue(lexeme.substring(1, lexeme.length() - 1).replace(quote + quote, quote));
     }
-    if (lexeme.contains(".")) return new FloatValue(Double.parseDouble(lexeme));
+    if (lexeme.contains(".")) {
+      // Double.parseDouble tidak gagal saat overflow, melainkan menghasilkan Infinity.
+      double value = Double.parseDouble(lexeme);
+      if (!Double.isFinite(value)) throw syntax("Float literal out of range", token);
+      return new FloatValue(value);
+    }
     try {
       return new IntValue(Integer.parseInt(lexeme));
     } catch (NumberFormatException e) {

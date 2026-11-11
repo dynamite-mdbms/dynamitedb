@@ -151,6 +151,15 @@ class ExpressionParserTest {
   }
 
   @Test
+  void rejectsFloatLiteralThatOverflowsToInfinity() {
+    String huge = "9".repeat(400) + ".0";
+    DbmsException failure = assertThrows(DbmsException.class, () -> parse(huge));
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+    assertEquals(
+        "Float literal out of range at offset 0 near '" + huge + "'", failure.getMessage());
+  }
+
+  @Test
   void rejectsEmptyInput() {
     for (List<Token> tokens : Arrays.asList(List.<Token>of(), null)) {
       DbmsException failure =
