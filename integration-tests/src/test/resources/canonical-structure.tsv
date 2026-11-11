@@ -215,6 +215,11 @@ type	dynamitedb.contracts.query.BinaryExpression	record
 component	dynamitedb.contracts.query.BinaryExpression	0	left	dynamitedb.contracts.query.Expression
 component	dynamitedb.contracts.query.BinaryExpression	1	operator	dynamitedb.contracts.query.BinaryOp
 component	dynamitedb.contracts.query.BinaryExpression	2	right	dynamitedb.contracts.query.Expression
+type	dynamitedb.contracts.query.InSubqueryExpression	record
+component	dynamitedb.contracts.query.InSubqueryExpression	0	operand	dynamitedb.contracts.query.Expression
+component	dynamitedb.contracts.query.InSubqueryExpression	1	query	dynamitedb.contracts.query.SelectStatement
+component	dynamitedb.contracts.query.InSubqueryExpression	2	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
+component	dynamitedb.contracts.query.InSubqueryExpression	3	negated	boolean
 type	dynamitedb.contracts.query.BinaryOp	enum
 enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND
 type	dynamitedb.contracts.query.PlanNode	interface
@@ -836,7 +841,7 @@ provider	dynamitedb.contracts.api.GenerationManifestStore	dynamitedb.frm.AtomicG
 sealed	dynamitedb.contracts.storage.Value	dynamitedb.contracts.storage.IntValue|dynamitedb.contracts.storage.FloatValue|dynamitedb.contracts.storage.TextValue|dynamitedb.contracts.storage.BooleanValue|dynamitedb.contracts.storage.NullValue
 sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.TransactionStatement
 sealed	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource|dynamitedb.contracts.query.JoinSource
-sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression
+sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression
 sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.TransactionCommandPlan
 helper	dynamitedb.app.Main
 helper	dynamitedb.app.driver.DriverCli

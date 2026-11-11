@@ -133,8 +133,8 @@ class CanonicalStructureTest {
   void fixtureHasCompleteCanonicalCoverageAndIndependentJavaTypeNames() throws Exception {
     var rows = fixtureRows();
     var canonicalTypes = rows.stream().filter(row -> row[0].equals("type")).toList();
-    assertEquals(220, canonicalTypes.size());
-    assertEquals(178, rows.stream().filter(row -> row[0].equals("component")).count());
+    assertEquals(221, canonicalTypes.size());
+    assertEquals(182, rows.stream().filter(row -> row[0].equals("component")).count());
     assertEquals(316, rows.stream().filter(row -> row[0].equals("method")).count());
     assertEquals(92, rows.stream().filter(row -> row[0].equals("provider")).count());
 

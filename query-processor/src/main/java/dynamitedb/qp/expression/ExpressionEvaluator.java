@@ -6,6 +6,7 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.storage.BooleanValue;
@@ -24,6 +25,8 @@ public class ExpressionEvaluator {
       case LiteralExpression literal -> literal.value();
       case ColumnExpression column -> row.getValue(column.column());
       case BinaryExpression binary -> evaluateBinary(binary, row);
+      case InSubqueryExpression in ->
+          throw new DbmsException(ErrorCode.INVALID_PLAN, "IN subqueries are not supported yet");
     };
   }
 

@@ -5,6 +5,7 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,6 +56,8 @@ final class PlanExpressions {
         collectColumns(binary.right(), result);
       }
       case LiteralExpression literal -> {}
+      // kolom di dalam subquery milik scope subquery, bukan query luar
+      case InSubqueryExpression in -> collectColumns(in.operand(), result);
     }
   }
 }

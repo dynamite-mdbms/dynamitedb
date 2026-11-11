@@ -10,6 +10,7 @@ import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FromSource;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
@@ -220,6 +221,7 @@ public class Binder {
       case BinaryExpression binary ->
           new BinaryExpression(
               qualify(binary.left(), scope), binary.operator(), qualify(binary.right(), scope));
+      case InSubqueryExpression in -> throw error("IN subqueries are not supported yet");
     };
   }
 
@@ -228,6 +230,7 @@ public class Binder {
       case LiteralExpression literal -> kindOf(literal.value());
       case ColumnExpression column -> kindOf(resolve(column.column(), scope).dataType());
       case BinaryExpression binary -> binaryKind(binary, scope);
+      case InSubqueryExpression in -> throw error("IN subqueries are not supported yet");
     };
   }
 
