@@ -2,10 +2,12 @@ package dynamitedb.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.app.client.RemoteQueryClient;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.transaction.ProtocolType;
 import java.nio.file.Path;
@@ -61,6 +63,17 @@ class PersistentRuntimeTest {
         // perbandingan dengan NULL tidak pernah bernilai true
         assertEquals(
             0, client.execute("SELECT student_id FROM student WHERE gpa = NULL;").rows().size());
+
+        // data contoh juga punya gpa NULL, jadi cek keanggotaan dan partisinya
+        var nullGpa = client.execute("SELECT student_id FROM student WHERE gpa IS NULL;").rows();
+        assertTrue(nullGpa.stream().anyMatch(r -> r.values().get(0).equals(new IntValue(9003))));
+        var notNullGpa =
+            client.execute("SELECT student_id FROM student WHERE gpa IS NOT NULL;").rows();
+        assertTrue(
+            notNullGpa.stream().noneMatch(r -> r.values().get(0).equals(new IntValue(9003))));
+        assertEquals(
+            client.execute("SELECT student_id FROM student;").rows().size(),
+            nullGpa.size() + notNullGpa.size());
 
         client.execute("UPDATE student SET grade = NULL WHERE student_id = 9003;");
         assertEquals(
