@@ -190,6 +190,21 @@ class BinderTest {
     assertEquals(ErrorCode.SQL_BIND, error.getCode());
   }
 
+  @Test
+  void bindsSqlNullLiteralsForNullableColumns() {
+    var insert = (InsertStatement) bind("INSERT INTO student VALUES (1, 'Ann', NULL);");
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), insert.values().get(2));
+    bind("UPDATE student SET gpa = NULL WHERE sid = 1;");
+    bind("SELECT sid FROM student WHERE gpa = NULL;");
+
+    var error =
+        assertThrows(
+            DbmsException.class, () -> bind("INSERT INTO student VALUES (NULL, 'Ann', 3.5);"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    error = assertThrows(DbmsException.class, () -> bind("UPDATE student SET name = NULL;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+  }
+
   private Statement bind(String sql) {
     return binder.bind(parse(sql));
   }
