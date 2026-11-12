@@ -1,9 +1,5 @@
 package dynamitedb.integration;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
@@ -17,6 +13,9 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
@@ -217,7 +216,7 @@ class CanonicalStructureTest {
             "StoredRow")) {
       assertThrowsClassAbsent("dynamitedb.contracts." + name);
     }
-    assertEquals(43, rows.stream().filter(row -> row[0].equals("helper")).count());
+    assertEquals(42, rows.stream().filter(row -> row[0].equals("helper")).count());
     assertEquals(5, rows.stream().filter(row -> row[0].equals("sealed")).count());
   }
 

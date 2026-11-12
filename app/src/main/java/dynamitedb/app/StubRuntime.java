@@ -155,7 +155,7 @@ public final class StubRuntime {
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
-                new JoinOrderOptimizer(catalogAccess),
+                new JoinOrderOptimizer(),
                 new BestPlanSelector(cost)),
             cost,
             new PlanVisualizer());

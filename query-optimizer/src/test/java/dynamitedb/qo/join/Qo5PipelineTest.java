@@ -63,7 +63,7 @@ class Qo5PipelineTest {
     OptimizerPipeline pipeline =
         new OptimizerPipeline(
             List.of(new JoinRewriter(), new AccessPathOptimizer(catalog)),
-            new JoinOrderOptimizer(catalog),
+            new JoinOrderOptimizer(),
             new BestPlanSelector(cost));
 
     PlanNode optimized = pipeline.optimize(plan);

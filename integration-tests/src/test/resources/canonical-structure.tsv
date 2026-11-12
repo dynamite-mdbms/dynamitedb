@@ -869,7 +869,6 @@ helper	dynamitedb.frm.mock.MockRecoveryPorts$Pages
 helper	dynamitedb.qo.join.AccessPathOptimizer$Comparison
 helper	dynamitedb.qo.join.AccessPathOptimizer$Match
 helper	dynamitedb.qo.join.JoinOrderOptimizer$Flat
-helper	dynamitedb.qo.join.JoinOrderOptimizer$Variant
 helper	dynamitedb.qo.join.PlanExpressions
 helper	dynamitedb.qo.verification.QueryOptimizerDriver$FakeTable
 helper	dynamitedb.qo.verification.QueryOptimizerDriver$Scenario
