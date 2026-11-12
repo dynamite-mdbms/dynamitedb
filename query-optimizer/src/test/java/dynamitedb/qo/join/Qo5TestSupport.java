@@ -52,17 +52,30 @@ final class Qo5TestSupport {
 
   static CatalogAccess catalog(
       Map<String, TableStatistics> statistics, List<IndexMetadata> indexes) {
-    return new TestCatalog(statistics, indexes);
+    return new TestCatalog(statistics, indexes, Map.of());
+  }
+
+  /**
+   * Like {@link #catalog(Map, List)}, but every table in {@code columns} has those INTEGER columns.
+   */
+  static CatalogAccess catalog(
+      Map<String, TableStatistics> statistics, Map<String, List<String>> columns) {
+    return new TestCatalog(statistics, List.of(), columns);
   }
 
   private static final class TestCatalog implements CatalogAccess {
 
     private final Map<String, TableStatistics> statistics;
     private final List<IndexMetadata> indexes;
+    private final Map<String, List<String>> columns;
 
-    private TestCatalog(Map<String, TableStatistics> statistics, List<IndexMetadata> indexes) {
+    private TestCatalog(
+        Map<String, TableStatistics> statistics,
+        List<IndexMetadata> indexes,
+        Map<String, List<String>> columns) {
       this.statistics = Map.copyOf(statistics);
       this.indexes = List.copyOf(indexes);
+      this.columns = Map.copyOf(columns);
     }
 
     @Override
@@ -77,7 +90,10 @@ final class Qo5TestSupport {
 
     @Override
     public Schema getSchema(String table) {
-      return new Schema(List.of(new Column(table, "id", DataType.INTEGER, 4, false)));
+      return new Schema(
+          columns.getOrDefault(table, List.of("id")).stream()
+              .map(name -> new Column(table, name, DataType.INTEGER, 4, false))
+              .toList());
     }
 
     @Override
