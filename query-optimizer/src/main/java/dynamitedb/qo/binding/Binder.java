@@ -31,9 +31,11 @@ import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -79,16 +81,25 @@ public class Binder {
 
   private SelectStatement bindSelect(SelectStatement select) {
     List<Column> columns = new ArrayList<>();
-    FromSource from = bindFrom(select.from(), new HashSet<>(), columns);
+    Map<String, Column> merged = new HashMap<>();
+    FromSource from = bindFrom(select.from(), new HashSet<>(), columns, merged);
     Schema scope = new Schema(columns);
     List<ColumnRef> projection =
-        select.projection().stream().flatMap(ref -> expand(ref, scope).stream()).toList();
+        select.projection().stream()
+            .flatMap(ref -> expand(rename(ref, merged), scope).stream())
+            .toList();
     List<SortKey> orderBy =
         select.orderBy().stream()
-            .map(key -> new SortKey(qualified(resolve(key.column(), scope)), key.direction()))
+            .map(
+                key ->
+                    new SortKey(
+                        qualified(resolve(rename(key.column(), merged), scope)), key.direction()))
             .toList();
     return new SelectStatement(
-        projection, from, select.predicate().map(p -> predicate(p, scope)), orderBy);
+        projection,
+        from,
+        select.predicate().map(p -> predicate(rename(p, merged), scope)),
+        orderBy);
   }
 
   private InsertStatement bindInsert(InsertStatement insert) {
@@ -143,7 +154,13 @@ public class Binder {
     return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
   }
 
-  private FromSource bindFrom(FromSource source, Set<String> aliases, List<Column> scope) {
+  /**
+   * Appends the visible columns of {@code source} to {@code scope}. A NATURAL JOIN drops the right
+   * copy of each common column, as QP does, and records it in {@code merged} so references to it
+   * resolve to the surviving left column.
+   */
+  private FromSource bindFrom(
+      FromSource source, Set<String> aliases, List<Column> scope, Map<String, Column> merged) {
     if (source instanceof TableSource table) {
       String name = tableName(table.table());
       String alias = table.alias().equals(table.table()) ? name : table.alias();
@@ -154,10 +171,10 @@ public class Binder {
       return new TableSource(name, alias);
     }
     JoinSource join = (JoinSource) source;
-    FromSource left = bindFrom(join.left(), aliases, scope);
+    FromSource left = bindFrom(join.left(), aliases, scope, merged);
     List<Column> leftColumns = List.copyOf(scope);
     List<Column> rightColumns = new ArrayList<>();
-    FromSource right = bindFrom(join.right(), aliases, rightColumns);
+    FromSource right = bindFrom(join.right(), aliases, rightColumns, merged);
     for (Column column : rightColumns) {
       Column common =
           join.kind() == JoinKind.NATURAL
@@ -170,11 +187,34 @@ public class Binder {
         scope.add(column);
       } else if (!kindOf(common.dataType()).equals(kindOf(column.dataType()))) {
         throw error("NATURAL JOIN column " + column.name() + " has incompatible types");
+      } else {
+        merged.put(key(column.relation(), column.name()), common);
       }
     }
     Schema joined = new Schema(scope);
     return new JoinSource(
-        left, right, join.kind(), join.condition().map(c -> predicate(c, joined)));
+        left, right, join.kind(), join.condition().map(c -> predicate(rename(c, merged), joined)));
+  }
+
+  private static Expression rename(Expression expression, Map<String, Column> merged) {
+    return switch (expression) {
+      case LiteralExpression literal -> literal;
+      case ColumnExpression column -> new ColumnExpression(rename(column.column(), merged));
+      case BinaryExpression binary ->
+          new BinaryExpression(
+              rename(binary.left(), merged), binary.operator(), rename(binary.right(), merged));
+    };
+  }
+
+  private static ColumnRef rename(ColumnRef ref, Map<String, Column> merged) {
+    return ref.relation()
+        .map(relation -> merged.get(key(relation, ref.column())))
+        .map(Binder::qualified)
+        .orElse(ref);
+  }
+
+  private static String key(String relation, String column) {
+    return (relation + "." + column).toLowerCase(Locale.ROOT);
   }
 
   private String tableName(String table) {

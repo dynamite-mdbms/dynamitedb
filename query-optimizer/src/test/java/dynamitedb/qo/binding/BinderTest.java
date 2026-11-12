@@ -86,6 +86,32 @@ class BinderTest {
   }
 
   @Test
+  void naturalJoinCommonColumnResolvesThroughEitherTable() {
+    for (String qualifier : List.of("student", "enroll")) {
+      var select =
+          (SelectStatement)
+              bind(
+                  "SELECT "
+                      + qualifier
+                      + ".sid FROM student NATURAL JOIN enroll WHERE "
+                      + qualifier
+                      + ".sid = 1 ORDER BY "
+                      + qualifier
+                      + ".sid");
+      assertEquals(List.of(ref("student", "sid")), select.projection(), qualifier);
+      assertEquals(
+          new BinaryExpression(column("student", "sid"), BinaryOp.EQ, number(1)),
+          select.predicate().orElseThrow(),
+          qualifier);
+      assertEquals(ref("student", "sid"), select.orderBy().get(0).column(), qualifier);
+    }
+
+    var aliased =
+        (SelectStatement) bind("SELECT E.Sid, e.cid FROM student AS s NATURAL JOIN enroll AS e");
+    assertEquals(List.of(ref("s", "sid"), ref("e", "cid")), aliased.projection());
+  }
+
+  @Test
   void derivesOutputSchemaFromBoundProjectionAndAliases() {
     Statement bound = bind("SELECT e.cid, s.name FROM student AS s, enroll AS e");
 
