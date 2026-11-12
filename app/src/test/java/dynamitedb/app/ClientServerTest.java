@@ -17,6 +17,7 @@ import dynamitedb.contracts.query.QueryResult;
 import dynamitedb.contracts.query.SessionId;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 import java.time.Duration;
@@ -117,6 +118,7 @@ class ClientServerTest {
     CountDownLatch released = new CountDownLatch(1);
     CountDownLatch closed = new CountDownLatch(1);
     AtomicBoolean interrupted = new AtomicBoolean();
+    AtomicInteger firstClientExecutions = new AtomicInteger();
     QueryProcessor processor =
         new ForwardingProcessor(new MockRuntime().processor()) {
           @Override
@@ -129,6 +131,7 @@ class ClientServerTest {
           @Override
           public QueryResult execute(SessionId session, String sql) {
             if (session.equals(first.get()) && sql.startsWith("SELECT")) {
+              firstClientExecutions.incrementAndGet();
               waiting.countDown();
               try {
                 released.await();
@@ -155,14 +158,59 @@ class ClientServerTest {
         try (RemoteQueryClient other = new RemoteQueryClient("127.0.0.1", server.port())) {
           assertEquals(3, other.execute("SELECT * FROM demo;").rows().size());
         }
+        for (int i = 0; i < 10; i++) client.send("SELECT * FROM demo;");
       }
       assertTrue(closed.await(3, TimeUnit.SECONDS));
+      assertEquals(1, firstClientExecutions.get());
       // The cleanup and request tasks finish independently after the socket is closed.
       assertTimeoutPreemptively(
           Duration.ofSeconds(3),
           () -> {
             while (!interrupted.get()) Thread.sleep(10);
           });
+    } finally {
+      released.countDown();
+    }
+  }
+
+  @Test
+  void pipelinedRequestsHaveBoundedWorkAndOrderedOverloadResponse() throws Exception {
+    AtomicInteger executions = new AtomicInteger();
+    CountDownLatch blocked = new CountDownLatch(1);
+    CountDownLatch released = new CountDownLatch(1);
+    QueryProcessor processor =
+        new ForwardingProcessor(new MockRuntime().processor()) {
+          @Override
+          public QueryResult execute(SessionId session, String sql) {
+            if (executions.incrementAndGet() == 1) {
+              blocked.countDown();
+              try {
+                released.await();
+              } catch (InterruptedException cancelled) {
+                Thread.currentThread().interrupt();
+                throw new DbmsException(ErrorCode.ACCESS_ABORTED, "request cancelled");
+              }
+            }
+            return super.execute(session, sql);
+          }
+        };
+
+    try (TcpServer server = start(processor);
+        RawClient client = new RawClient(server.port())) {
+      client.send("SELECT * FROM demo;");
+      assertTrue(blocked.await(3, TimeUnit.SECONDS));
+      for (int i = 1; i < 100; i++) client.send("SELECT * FROM demo;");
+      released.countDown();
+
+      for (int i = 0; i < 16; i++) {
+        assertEquals(WireProtocol.OK, client.input.readUnsignedByte());
+        assertEquals(3, WireProtocol.readResult(client.input).rows().size());
+      }
+      assertEquals(WireProtocol.ERROR, client.input.readUnsignedByte());
+      assertEquals(ErrorCode.INVALID_STATE.name(), WireProtocol.readString(client.input));
+      assertEquals("Too many pending requests", WireProtocol.readString(client.input));
+      assertThrows(EOFException.class, client.input::readUnsignedByte);
+      assertEquals(16, executions.get());
     } finally {
       released.countDown();
     }
