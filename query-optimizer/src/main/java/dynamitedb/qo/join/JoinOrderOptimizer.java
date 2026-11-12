@@ -1,5 +1,8 @@
 package dynamitedb.qo.join;
 
+import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.query.BinaryExpression;
+import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.Expression;
@@ -7,19 +10,25 @@ import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.UpdatePlan;
+import dynamitedb.qo.binding.CostEstimator;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 
 /** Membangkitkan kandidat urutan dan pengelompokan join (QO-12). */
 public class JoinOrderOptimizer {
@@ -27,33 +36,171 @@ public class JoinOrderOptimizer {
   private static final int MAX_LEAVES = 6;
   private static final int MAX_CANDIDATES = 64;
 
-  public List<PlanNode> enumerate(PlanNode plan) {
-    Objects.requireNonNull(plan, "plan");
-    return List.copyOf(variants(plan, MAX_CANDIDATES));
+  private final CatalogAccess catalog;
+
+  public JoinOrderOptimizer(CatalogAccess catalog) {
+    this.catalog = Objects.requireNonNull(catalog, "catalog");
   }
 
-  private List<PlanNode> variants(PlanNode plan, int limit) {
+  public List<PlanNode> enumerate(PlanNode plan) {
+    Objects.requireNonNull(plan, "plan");
+    return variants(plan, MAX_CANDIDATES).stream().map(Variant::plan).toList();
+  }
+
+  /**
+   * Each candidate subtree, paired with the column references it moved. Swapping a NATURAL JOIN
+   * makes the new left side emit the shared columns, so every reference above must follow them.
+   */
+  private List<Variant> variants(PlanNode plan, int limit) {
     return switch (plan) {
-      case JoinPlan join when reorderable(join.kind()) -> joinVariants(join, limit);
-      case JoinPlan join ->
-          cross(
-              join.left(),
-              join.right(),
-              limit,
-              (left, right) -> new JoinPlan(left, right, join.kind(), join.condition()));
+      case JoinPlan join when join.kind() == JoinKind.NATURAL -> naturalVariants(join, limit);
+      case JoinPlan join when reorderable(join.kind()) ->
+          joinVariants(join, limit).stream()
+              .map(candidate -> new Variant(candidate, Map.<ColumnRef, ColumnRef>of()))
+              .toList();
       case ProjectPlan project ->
-          map(project.child(), limit, child -> new ProjectPlan(child, project.columns()));
-      case SortPlan sort -> map(sort.child(), limit, child -> new SortPlan(child, sort.keys()));
+          map(
+              project.child(),
+              limit,
+              (child, renamed) ->
+                  new ProjectPlan(
+                      child, project.columns().stream().map(c -> rename(c, renamed)).toList()));
+      case SortPlan sort ->
+          map(
+              sort.child(),
+              limit,
+              (child, renamed) ->
+                  new SortPlan(
+                      child,
+                      sort.keys().stream()
+                          .map(k -> new SortKey(rename(k.column(), renamed), k.direction()))
+                          .toList()));
       case FilterPlan filter ->
-          map(filter.child(), limit, child -> new FilterPlan(child, filter.predicate()));
+          map(
+              filter.child(),
+              limit,
+              (child, renamed) -> new FilterPlan(child, rename(filter.predicate(), renamed)));
+      // UPDATE and DELETE read a single table, so no NATURAL JOIN below them can rename a column.
       case UpdatePlan update ->
           map(
               update.source(),
               limit,
-              source -> new UpdatePlan(source, update.table(), update.target(), update.value()));
+              (source, renamed) ->
+                  new UpdatePlan(source, update.table(), update.target(), update.value()));
       case DeletePlan delete ->
-          map(delete.source(), limit, source -> new DeletePlan(source, delete.table()));
-      default -> List.of(plan);
+          map(delete.source(), limit, (source, renamed) -> new DeletePlan(source, delete.table()));
+      default -> List.of(new Variant(plan, Map.of()));
+    };
+  }
+
+  /**
+   * Every child variant in both input orders. A NATURAL JOIN is kept whole (never flattened into a
+   * Cartesian product with explicit conditions), because its equalities come from column names.
+   */
+  private List<Variant> naturalVariants(JoinPlan join, int limit) {
+    boolean swappable = CostEstimator.scans(join).size() <= MAX_LEAVES;
+    List<Variant> result = new ArrayList<>();
+    for (Variant left : variants(join.left(), limit)) {
+      for (Variant right : variants(join.right(), limit)) {
+        Map<ColumnRef, ColumnRef> renamed = new HashMap<>(left.renamed());
+        renamed.putAll(right.renamed());
+        result.add(
+            new Variant(
+                new JoinPlan(left.plan(), right.plan(), JoinKind.NATURAL, join.condition()),
+                renamed));
+        if (result.size() >= limit) return result;
+
+        Optional<Map<ColumnRef, ColumnRef>> swap =
+            swappable ? swapRenames(left.plan(), right.plan()) : Optional.empty();
+        if (swap.isPresent()) {
+          result.add(
+              new Variant(
+                  new JoinPlan(right.plan(), left.plan(), JoinKind.NATURAL, join.condition()),
+                  then(renamed, swap.get())));
+          if (result.size() >= limit) return result;
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * QP emits each shared column once, from the left input. After a swap it comes from the other
+   * side, so the left reference maps to the right one; the inner join keeps them equal. Empty when
+   * a shared name repeats on one side: QP would then match a different set of columns.
+   */
+  private Optional<Map<ColumnRef, ColumnRef>> swapRenames(PlanNode left, PlanNode right) {
+    Map<String, List<ColumnRef>> rightByName = byName(outputs(right));
+    Map<ColumnRef, ColumnRef> renamed = new HashMap<>();
+    for (Map.Entry<String, List<ColumnRef>> shared : byName(outputs(left)).entrySet()) {
+      List<ColumnRef> other = rightByName.get(shared.getKey());
+      if (other == null) continue;
+      if (shared.getValue().size() > 1 || other.size() > 1) return Optional.empty();
+      renamed.put(shared.getValue().get(0), other.get(0));
+    }
+    return Optional.of(renamed);
+  }
+
+  /** The columns QP emits for {@code node}, in order. */
+  private List<ColumnRef> outputs(PlanNode node) {
+    return switch (node) {
+      case TableScanPlan scan -> tableColumns(scan.table(), scan.alias());
+      case IndexScanPlan scan -> tableColumns(scan.table(), scan.alias());
+      case FilterPlan filter -> outputs(filter.child());
+      case SortPlan sort -> outputs(sort.child());
+      case ProjectPlan project -> project.columns();
+      case JoinPlan join -> {
+        List<ColumnRef> columns = new ArrayList<>(outputs(join.left()));
+        Set<String> leftNames = byName(columns).keySet();
+        for (ColumnRef column : outputs(join.right())) {
+          if (join.kind() != JoinKind.NATURAL || !leftNames.contains(name(column))) {
+            columns.add(column);
+          }
+        }
+        yield columns;
+      }
+      default -> List.of();
+    };
+  }
+
+  private List<ColumnRef> tableColumns(String table, String alias) {
+    return catalog.getSchema(table).columns().stream()
+        .map(column -> new ColumnRef(Optional.of(alias), column.name()))
+        .toList();
+  }
+
+  // QP and Binder match NATURAL JOIN columns case-insensitively.
+  private static Map<String, List<ColumnRef>> byName(List<ColumnRef> columns) {
+    Map<String, List<ColumnRef>> byName = new LinkedHashMap<>();
+    for (ColumnRef column : columns) {
+      byName.computeIfAbsent(name(column), key -> new ArrayList<>()).add(column);
+    }
+    return byName;
+  }
+
+  private static String name(ColumnRef column) {
+    return column.column().toLowerCase(Locale.ROOT);
+  }
+
+  /** Applies {@code first}, then {@code second}. */
+  private static Map<ColumnRef, ColumnRef> then(
+      Map<ColumnRef, ColumnRef> first, Map<ColumnRef, ColumnRef> second) {
+    Map<ColumnRef, ColumnRef> composed = new HashMap<>(second);
+    first.forEach((from, to) -> composed.put(from, second.getOrDefault(to, to)));
+    return composed;
+  }
+
+  private static ColumnRef rename(ColumnRef column, Map<ColumnRef, ColumnRef> renamed) {
+    return renamed.getOrDefault(column, column);
+  }
+
+  private static Expression rename(Expression expression, Map<ColumnRef, ColumnRef> renamed) {
+    return switch (expression) {
+      case ColumnExpression column -> new ColumnExpression(rename(column.column(), renamed));
+      case BinaryExpression binary ->
+          new BinaryExpression(
+              rename(binary.left(), renamed), binary.operator(), rename(binary.right(), renamed));
+      case LiteralExpression literal -> literal;
     };
   }
 
@@ -146,24 +293,14 @@ public class JoinOrderOptimizer {
     return new Flat(leaves, conditions);
   }
 
-  private List<PlanNode> map(PlanNode plan, int limit, Function<PlanNode, PlanNode> mapper) {
-    List<PlanNode> mapped = new ArrayList<>();
-    for (PlanNode variant : variants(plan, limit)) mapped.add(mapper.apply(variant));
-    return mapped;
-  }
-
-  private List<PlanNode> cross(
-      PlanNode left, PlanNode right, int limit, BiFunction<PlanNode, PlanNode, PlanNode> combiner) {
-    List<PlanNode> leftVariants = variants(left, limit);
-    List<PlanNode> rightVariants = variants(right, limit);
-    List<PlanNode> combined = new ArrayList<>();
-    for (PlanNode leftVariant : leftVariants) {
-      for (PlanNode rightVariant : rightVariants) {
-        combined.add(combiner.apply(leftVariant, rightVariant));
-        if (combined.size() >= limit) return combined;
-      }
+  /** Rebuilds the parent over each child variant, passing the child's renames up. */
+  private List<Variant> map(
+      PlanNode plan, int limit, BiFunction<PlanNode, Map<ColumnRef, ColumnRef>, PlanNode> parent) {
+    List<Variant> mapped = new ArrayList<>();
+    for (Variant variant : variants(plan, limit)) {
+      mapped.add(new Variant(parent.apply(variant.plan(), variant.renamed()), variant.renamed()));
     }
-    return combined;
+    return mapped;
   }
 
   private static Set<String> relations(PlanNode node) {
@@ -226,4 +363,6 @@ public class JoinOrderOptimizer {
   }
 
   private record Flat(List<PlanNode> leaves, List<Expression> conditions) {}
+
+  private record Variant(PlanNode plan, Map<ColumnRef, ColumnRef> renamed) {}
 }
