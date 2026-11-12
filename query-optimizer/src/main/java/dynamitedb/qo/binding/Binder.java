@@ -129,7 +129,8 @@ public class Binder {
     Expression value = qualify(update.expression(), scope);
     if (value instanceof LiteralExpression literal) {
       checkValue(target, literal.value());
-    } else if (!kind(value, scope).equals(kindOf(target.dataType()))) {
+    } else if (!kind(value, scope).equals(kindOf(target.dataType()))
+        || (target.dataType() == DataType.INTEGER && isFloat(value, scope))) {
       throw error("SET value does not match the type of " + target.name());
     }
     return new UpdateStatement(
@@ -290,6 +291,16 @@ public class Binder {
     return switch (binary.operator()) {
       case ADD, SUB, MUL, DIV -> NUMBER;
       default -> BOOLEAN;
+    };
+  }
+
+  // Mirrors QP arithmetic: INTEGER op INTEGER stays INTEGER, any FLOAT operand yields FLOAT.
+  private boolean isFloat(Expression expression, Schema scope) {
+    return switch (expression) {
+      case LiteralExpression literal -> literal.value() instanceof FloatValue;
+      case ColumnExpression column -> resolve(column.column(), scope).dataType() == DataType.FLOAT;
+      case BinaryExpression binary ->
+          isFloat(binary.left(), scope) || isFloat(binary.right(), scope);
     };
   }
 

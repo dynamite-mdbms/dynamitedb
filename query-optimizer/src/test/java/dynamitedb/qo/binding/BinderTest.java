@@ -140,6 +140,8 @@ class BinderTest {
     bind("INSERT INTO student VALUES (1, 'Ann', 3.5)");
     bind("INSERT INTO student VALUES (1, 'Ann', 3)");
 
+    bind("UPDATE student SET sid = sid + 1");
+    bind("UPDATE student SET gpa = sid * 2");
     var update = (UpdateStatement) bind("UPDATE student SET gpa = gpa * 2 WHERE sid = 1");
     assertEquals(ref("student", "gpa"), update.target());
     assertEquals(
@@ -194,6 +196,8 @@ class BinderTest {
             "INSERT INTO student VALUES (1.5, 'Ann', 3.5)",
             "INSERT INTO student VALUES (1, 'Annabel', 3.5)",
             "UPDATE student SET gpa = 'high'",
+            "UPDATE student SET sid = sid * 1.5",
+            "UPDATE student SET sid = gpa",
             "UPDATE student SET name = sid + 1",
             "UPDATE student SET age = 1",
             "DELETE FROM student WHERE missing = 1",
