@@ -3,6 +3,7 @@ package dynamitedb.qo.binding;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
@@ -175,6 +176,18 @@ class BinderTest {
       var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
       assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
     }
+  }
+
+  @Test
+  void limitsTextByUtf8BytesLikeStorage() {
+    bind("INSERT INTO student VALUES (1, 'Annab', 3.5)");
+    bind("INSERT INTO student VALUES (1, 'éé', 3.5)");
+
+    var error =
+        assertThrows(DbmsException.class, () -> bind("INSERT INTO student VALUES (1, 'ééé', 3.5)"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("student.name"), error.getMessage());
+    assertThrows(DbmsException.class, () -> bind("UPDATE student SET name = 'ééé'"));
   }
 
   @Test

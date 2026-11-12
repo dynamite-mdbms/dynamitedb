@@ -29,6 +29,7 @@ import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -258,12 +259,21 @@ public class Binder {
           case NullValue n -> column.nullable();
           case IntValue i -> kindOf(column.dataType()).equals(NUMBER);
           case FloatValue f -> column.dataType() == DataType.FLOAT;
+          // Storage limits CHAR/VARCHAR by UTF-8 bytes, not Java chars.
           case TextValue t ->
-              kindOf(column.dataType()).equals(TEXT) && t.value().length() <= column.maxLength();
+              kindOf(column.dataType()).equals(TEXT)
+                  && t.value().getBytes(StandardCharsets.UTF_8).length <= column.maxLength();
           case BooleanValue b -> false;
         };
     if (!fits) {
-      throw error("Value does not fit column " + column.name() + " (" + column.dataType() + ")");
+      throw error(
+          "Value does not fit column "
+              + column.relation()
+              + "."
+              + column.name()
+              + " ("
+              + column.dataType()
+              + ")");
     }
   }
 
