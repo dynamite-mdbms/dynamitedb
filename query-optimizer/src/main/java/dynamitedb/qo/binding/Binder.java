@@ -205,6 +205,9 @@ public class Binder {
       case BinaryExpression binary ->
           new BinaryExpression(
               rename(binary.left(), merged), binary.operator(), rename(binary.right(), merged));
+      case InSubqueryExpression in ->
+          new InSubqueryExpression(
+              rename(in.operand(), merged), in.query(), in.plan(), in.negated());
     };
   }
 
@@ -329,6 +332,7 @@ public class Binder {
       case ColumnExpression column -> resolve(column.column(), scope).dataType() == DataType.FLOAT;
       case BinaryExpression binary ->
           isFloat(binary.left(), scope) || isFloat(binary.right(), scope);
+      case InSubqueryExpression in -> false;
     };
   }
 

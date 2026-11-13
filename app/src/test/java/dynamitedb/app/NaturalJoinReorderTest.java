@@ -66,7 +66,10 @@ class NaturalJoinReorderTest {
             + " WHERE student.student_id < enrollment.course_id ORDER BY student.student_id",
         "SELECT course.title, student.name, student.student_id, enrollment.course_id"
             + " FROM student NATURAL JOIN enrollment NATURAL JOIN course",
-        "SELECT * FROM enrollment NATURAL JOIN student NATURAL JOIN course"
+        "SELECT * FROM enrollment NATURAL JOIN student NATURAL JOIN course",
+        "SELECT enrollment.student_id FROM student NATURAL JOIN enrollment"
+            + " WHERE enrollment.student_id * enrollment.course_id"
+            + " IN (SELECT course_id FROM course)"
       })
   void everyCandidateMatchesInitialPlan(String sql) {
     Binder binder = new Binder(db);
