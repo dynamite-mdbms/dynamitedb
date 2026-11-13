@@ -1,7 +1,9 @@
 package dynamitedb.ccm.timestamp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.ccm.lifecycle.TransactionRegistry;
 import dynamitedb.contracts.error.DbmsException;
@@ -12,8 +14,10 @@ import dynamitedb.contracts.transaction.AccessRequest;
 import dynamitedb.contracts.transaction.AccessState;
 import dynamitedb.contracts.transaction.ResourceId;
 import dynamitedb.contracts.transaction.TransactionId;
+import dynamitedb.contracts.transaction.TransactionStatus;
 import dynamitedb.contracts.transaction.WaitToken;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class TimestampOrderingProtocolTest {
@@ -78,23 +82,68 @@ class TimestampOrderingProtocolTest {
   }
 
   @Test
-  void uncommittedWriteIntentBlocksAllOtherAccess() {
+  void uncommittedWriteIntentMakesYoungerAccessWait() {
     TransactionId older = begin();
     TransactionId newer = begin();
     assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
-    assertAborted(protocol.request(request(newer, 5, AccessMode.READ)));
-    assertAborted(protocol.request(request(newer, 5, AccessMode.WRITE)));
+    var readDecision = protocol.request(request(newer, 5, AccessMode.READ));
+    assertEquals(AccessState.WAITING, readDecision.state());
+    assertTrue(readDecision.ticket().isPresent());
+    var writeDecision = protocol.request(request(newer, 5, AccessMode.WRITE));
+    assertEquals(AccessState.WAITING, writeDecision.state());
+    assertTrue(writeDecision.ticket().isPresent());
     assertGranted(protocol.request(request(older, 5, AccessMode.READ)));
   }
 
   @Test
-  void finishReleasesIntentSoOthersMayWrite() {
+  void youngerAccessIsGrantedAfterOwnerCommit() throws Exception {
     TransactionId older = begin();
     TransactionId newer = begin();
     assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
-    assertAborted(protocol.request(request(newer, 5, AccessMode.WRITE)));
+    var ticket = protocol.request(request(newer, 5, AccessMode.READ)).ticket().orElseThrow();
+    var awaiter = newWaiterThread(ticket);
+    awaiter.start();
+    var owner = registry.find(older).orElseThrow();
+    owner.transition(TransactionStatus.PARTIALLY_COMMITTED);
+    owner.transition(TransactionStatus.COMMITTED);
     protocol.onFinish(older);
-    assertGranted(protocol.request(request(newer, 5, AccessMode.WRITE)));
+    awaiter.join(TimeUnit.SECONDS.toMillis(5));
+    assertFalse(awaiter.isAlive());
+    assertEquals(AccessState.GRANTED, awaiter.decision.state());
+  }
+
+  @Test
+  void youngerWaitingAccessIsAbortedWhenItsOwnTransactionFinishes() throws Exception {
+    TransactionId older = begin();
+    TransactionId newer = begin();
+    assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
+    var ticket = protocol.request(request(newer, 5, AccessMode.READ)).ticket().orElseThrow();
+    var awaiter = newWaiterThread(ticket);
+    awaiter.start();
+    var waiter = registry.find(newer).orElseThrow();
+    waiter.transition(TransactionStatus.FAILED);
+    waiter.transition(TransactionStatus.ABORTED);
+    protocol.onFinish(newer);
+    awaiter.join(TimeUnit.SECONDS.toMillis(5));
+    assertFalse(awaiter.isAlive());
+    assertEquals(AccessState.ABORTED, awaiter.decision.state());
+  }
+
+  @Test
+  void finishReleasesIntentSoOthersMayWrite() throws Exception {
+    TransactionId older = begin();
+    TransactionId newer = begin();
+    assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
+    var ticket = protocol.request(request(newer, 5, AccessMode.WRITE)).ticket().orElseThrow();
+    var awaiter = newWaiterThread(ticket);
+    awaiter.start();
+    var owner = registry.find(older).orElseThrow();
+    owner.transition(TransactionStatus.PARTIALLY_COMMITTED);
+    owner.transition(TransactionStatus.COMMITTED);
+    protocol.onFinish(older);
+    awaiter.join(TimeUnit.SECONDS.toMillis(5));
+    assertFalse(awaiter.isAlive());
+    assertEquals(AccessState.GRANTED, awaiter.decision.state());
   }
 
   @Test
@@ -121,6 +170,24 @@ class TimestampOrderingProtocolTest {
 
   private TransactionId begin() {
     return registry.create().id();
+  }
+
+  private final class WaiterThread extends Thread {
+    private final WaitToken ticket;
+    private AccessDecision decision;
+
+    private WaiterThread(WaitToken ticket) {
+      this.ticket = ticket;
+    }
+
+    @Override
+    public void run() {
+      decision = protocol.awaitAccess(ticket);
+    }
+  }
+
+  private WaiterThread newWaiterThread(WaitToken ticket) {
+    return new WaiterThread(ticket);
   }
 
   private AccessRequest request(TransactionId tx, long table, AccessMode mode) {
