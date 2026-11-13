@@ -216,7 +216,7 @@ component	dynamitedb.contracts.query.BinaryExpression	0	left	dynamitedb.contract
 component	dynamitedb.contracts.query.BinaryExpression	1	operator	dynamitedb.contracts.query.BinaryOp
 component	dynamitedb.contracts.query.BinaryExpression	2	right	dynamitedb.contracts.query.Expression
 type	dynamitedb.contracts.query.BinaryOp	enum
-enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND
+enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND|IS|IS_NOT
 type	dynamitedb.contracts.query.PlanNode	interface
 type	dynamitedb.contracts.query.TableScanPlan	record
 component	dynamitedb.contracts.query.TableScanPlan	0	table	java.lang.String
@@ -874,3 +874,5 @@ helper	dynamitedb.qo.verification.QueryOptimizerDriver$FakeTable
 helper	dynamitedb.qo.verification.QueryOptimizerDriver$Scenario
 helper	dynamitedb.qp.driver.QueryProcessorTestDriver$Scenario
 helper	dynamitedb.ccm.protocol.LockManager$TicketEntry
+helper	dynamitedb.ccm.lifecycle.TransactionRegistry$FinalRange
+helper	dynamitedb.ccm.timestamp.TimestampOrderingProtocol$Pending

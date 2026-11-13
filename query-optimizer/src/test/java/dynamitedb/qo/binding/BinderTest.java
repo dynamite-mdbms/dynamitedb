@@ -22,6 +22,7 @@ import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IntValue;
@@ -221,6 +222,28 @@ class BinderTest {
   }
 
   @Test
+  void bindsNegativeNumbersByColumnType() {
+    // INTEGER menerima int negatif; FLOAT menerima float maupun int negatif.
+    var insert = (InsertStatement) bind("INSERT INTO student VALUES (-1, 'Ann', -2.5)");
+    assertEquals(number(-1), insert.values().get(0));
+    assertEquals(new LiteralExpression(new FloatValue(-2.5)), insert.values().get(2));
+    bind("INSERT INTO student VALUES (-1, 'Ann', -3)");
+    bind("UPDATE student SET gpa = -1 WHERE sid = -1");
+    bind("UPDATE student SET gpa = gpa - -1.5 WHERE sid > -2");
+
+    for (String sql :
+        List.of(
+            "INSERT INTO student VALUES (-1.5, 'Ann', 3.5)",
+            "INSERT INTO student VALUES (1, -1, 3.5)",
+            "UPDATE student SET name = -1",
+            "UPDATE student SET sid = -2.5",
+            "SELECT name FROM student WHERE name = -1")) {
+      var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
+      assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
+    }
+  }
+
+  @Test
   void rejectsNullForNonNullableColumn() {
     var insert =
         new InsertStatement(
@@ -230,6 +253,54 @@ class BinderTest {
                 new LiteralExpression(new TextValue("Ann")),
                 new LiteralExpression(NullValue.INSTANCE)));
     var error = assertThrows(DbmsException.class, () -> binder.bind(insert));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+  }
+
+  @Test
+  void bindsSqlNullLiteralsForNullableColumns() {
+    var insert = (InsertStatement) bind("INSERT INTO student VALUES (1, 'Ann', NULL);");
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), insert.values().get(2));
+    bind("UPDATE student SET gpa = NULL WHERE sid = 1;");
+    bind("SELECT sid FROM student WHERE gpa = NULL;");
+    bind("SELECT sid FROM student WHERE gpa IS NULL AND name IS NOT NULL;");
+    bind("DELETE FROM student WHERE gpa IS NULL;");
+
+    var error =
+        assertThrows(
+            DbmsException.class, () -> bind("INSERT INTO student VALUES (NULL, 'Ann', 3.5);"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("Column sid does not accept NULL"));
+    error = assertThrows(DbmsException.class, () -> bind("UPDATE student SET name = NULL;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("Column name does not accept NULL"));
+  }
+
+  @Test
+  void bindsIsNullOnEveryColumnTypeAndRejectsItAsAWrittenValue() {
+    bind("SELECT sid FROM student WHERE sid IS NULL AND name IS NOT NULL AND gpa IS NULL;");
+    bind("SELECT sid FROM student WHERE NULL IS NULL;");
+    bind("SELECT sid FROM tagged WHERE sid IS NOT NULL;");
+
+    // hasil IS NULL bertipe boolean, tidak cocok untuk kolom mana pun
+    var error =
+        assertThrows(DbmsException.class, () -> bind("UPDATE student SET gpa = gpa IS NULL;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    // IS hanya boleh diikuti NULL
+    error =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE gpa IS 3;"));
+    assertEquals(ErrorCode.SQL_SYNTAX, error.getCode());
+  }
+
+  @Test
+  void nullArithmeticInConditionsFollowsTheNumericRules() {
+    bind("SELECT sid FROM student WHERE NULL + 1 > 0;");
+    bind("SELECT sid FROM student WHERE gpa + NULL IS NULL;");
+    var error =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE NULL + 1;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    error =
+        assertThrows(
+            DbmsException.class, () -> bind("SELECT sid FROM student WHERE name + NULL > 1;"));
     assertEquals(ErrorCode.SQL_BIND, error.getCode());
   }
 

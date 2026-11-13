@@ -13,7 +13,9 @@ import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.TextValue;
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +51,32 @@ class ExpressionParserTest {
     assertEquals(new LiteralExpression(new TextValue("hello world")), parse("'hello world'"));
     assertEquals(new LiteralExpression(new TextValue("it's")), parse("'it''s'"));
     assertEquals(new LiteralExpression(new TextValue("say \"hi\"")), parse("\"say \"\"hi\"\"\""));
+  }
+
+  @Test
+  void parsesNullAsLiteralCaseInsensitively() {
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), parse("NULL"));
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), parse("null"));
+    assertEquals(
+        bin(col("gpa"), BinaryOp.EQ, new LiteralExpression(NullValue.INSTANCE)),
+        parse("gpa = Null"));
+  }
+
+  @Test
+  void parsesIsNullBelowComparisonAndAboveAnd() {
+    Expression nul = new LiteralExpression(NullValue.INSTANCE);
+    assertEquals(bin(col("gpa"), BinaryOp.IS, nul), parse("gpa IS NULL"));
+    assertEquals(bin(col("gpa"), BinaryOp.IS_NOT, nul), parse("gpa is not null"));
+    assertEquals(
+        bin(bin(col("gpa"), BinaryOp.IS, nul), BinaryOp.AND, bin(col("a"), BinaryOp.EQ, lit(1))),
+        parse("gpa IS NULL AND a = 1"));
+    assertEquals(
+        bin(bin(col("a"), BinaryOp.EQ, lit(1)), BinaryOp.IS_NOT, nul), parse("a = 1 IS NOT NULL"));
+
+    for (String bad : new String[] {"gpa IS 1", "gpa IS NOT", "gpa IS", "gpa NOT NULL"}) {
+      var failure = assertThrows(DbmsException.class, () -> parse(bad), bad);
+      assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode(), bad);
+    }
   }
 
   @Test
@@ -123,6 +151,41 @@ class ExpressionParserTest {
         parse("a + 1 > b - 2"));
   }
 
+  @Test
+  void foldsUnaryMinusIntoNumericLiteral() {
+    assertEquals(lit(-1), parse("-1"));
+    assertEquals(lit(Integer.MIN_VALUE), parse("-2147483648"));
+    assertEquals(new LiteralExpression(new FloatValue(-2.5)), parse("- 2.5"));
+    assertEquals(bin(col("a"), BinaryOp.EQ, lit(-1)), parse("a = -1"));
+    assertEquals(bin(col("a"), BinaryOp.SUB, lit(-1)), parse("a - -1"));
+    assertEquals(bin(lit(1), BinaryOp.SUB, lit(1)), parse("1-1"));
+    assertEquals(bin(lit(2), BinaryOp.MUL, lit(-3)), parse("2 * -3"));
+    assertEquals(bin(lit(-2), BinaryOp.SUB, lit(3)), parse("-2 - 3"));
+  }
+
+  @Test
+  void negativeLiteralsComposeWithArithmeticComparisonAndGrouping() {
+    Expression minusOne = lit(-1);
+    assertEquals(bin(minusOne, BinaryOp.ADD, lit(2)), parse("-1 + 2"));
+    assertEquals(bin(col("a"), BinaryOp.MUL, minusOne), parse("a * -1"));
+    assertEquals(minusOne, parse("(-1)"));
+    assertEquals(
+        bin(new LiteralExpression(new FloatValue(-2.5)), BinaryOp.MUL, lit(2)),
+        parse("(-2.5) * 2"));
+    assertEquals(bin(col("a"), BinaryOp.DIV, lit(-2)), parse("a / -2"));
+    assertEquals(
+        bin(bin(minusOne, BinaryOp.LT, col("a")), BinaryOp.AND, bin(col("a"), BinaryOp.LT, lit(1))),
+        parse("-1 < a AND a < 1"));
+    assertEquals(bin(col("a"), BinaryOp.NEQ, minusOne), parse("a <> -1"));
+    assertEquals(bin(col("a"), BinaryOp.GTE, minusOne), parse("a >= -1"));
+  }
+
+  @Test
+  void foldsNegativeZeroToPlainZero() {
+    assertEquals(lit(0), parse("-0"));
+    assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("-0.0"));
+  }
+
   // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana.
   @ParameterizedTest
   @CsvSource(
@@ -140,7 +203,16 @@ class ExpressionParserTest {
           emp.          | Expected a column name after '.' at end of input
           emp.5         | Expected a column name after '.' at offset 4 near '5'
           a = 1;        | Unexpected token in expression at offset 5 near ';'
-          -5            | Expected expression at offset 0 near '-'
+          -a            | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -(1)          | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          a - -         | Unary minus is only supported before a numeric literal at offset 4 near '-'
+          --1           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -'x'          | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          - a           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -             | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          1 - - a       | Unary minus is only supported before a numeric literal at offset 4 near '-'
+          -2147483649   | Integer literal out of range at offset 0 near '-2147483649'
+          2147483648    | Integer literal out of range at offset 0 near '2147483648'
           ORDER         | Expected expression at offset 0 near 'ORDER'
           99999999999   | Integer literal out of range at offset 0 near '99999999999'
           """)
@@ -148,6 +220,68 @@ class ExpressionParserTest {
     DbmsException failure = assertThrows(DbmsException.class, () -> parse(text));
     assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
     assertEquals(message, failure.getMessage());
+  }
+
+  @Test
+  void rejectsFloatLiteralThatOverflowsToInfinity() {
+    String huge = "9".repeat(400) + ".0";
+    assertFloatOutOfRange(huge, 0, huge);
+    // Pangkat sepuluh terkecil yang melewati Double.MAX_VALUE (~1.8e308).
+    String smallestOver = "1" + "0".repeat(309) + ".0";
+    assertFloatOutOfRange(smallestOver, 0, smallestOver);
+  }
+
+  @Test
+  void rejectsOverflowInsideLargerExpressionAtLiteralOffset() {
+    String huge = "1" + "0".repeat(309) + ".0";
+    assertFloatOutOfRange("a = " + huge, 4, huge);
+    assertFloatOutOfRange("a + " + huge, 4, huge);
+    assertFloatOutOfRange("(" + huge + ")", 1, huge);
+  }
+
+  @Test
+  void acceptsDoubleMaxValueWrittenAsPlainDecimal() {
+    String max = new BigDecimal(Double.MAX_VALUE).toPlainString() + ".0";
+    assertEquals(new LiteralExpression(new FloatValue(Double.MAX_VALUE)), parse(max));
+  }
+
+  @Test
+  void roundsToNearestAtTheUpperBoundary() {
+    // Titik tengah MAX + ulp/2 dibulatkan ke genap (Infinity); tepat di bawahnya masih ke MAX.
+    BigDecimal tie =
+        new BigDecimal(Double.MAX_VALUE).add(new BigDecimal(Math.ulp(Double.MAX_VALUE) / 2));
+    String belowTie = tie.subtract(BigDecimal.ONE).toPlainString() + ".0";
+    assertEquals(new LiteralExpression(new FloatValue(Double.MAX_VALUE)), parse(belowTie));
+    String atTie = tie.toPlainString() + ".0";
+    assertFloatOutOfRange(atTie, 0, atTie);
+  }
+
+  @Test
+  void acceptsUnderflowingLiteralAsZeroInsteadOfRejecting() {
+    assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("0." + "0".repeat(400) + "1"));
+  }
+
+  @Test
+  void acceptsLongFractionAndLeadingZeros() {
+    assertEquals(new LiteralExpression(new FloatValue(14.0 / 9.0)), parse("1." + "5".repeat(400)));
+    assertEquals(new LiteralExpression(new FloatValue(1.5)), parse("000001.5"));
+  }
+
+  @Test
+  void keepsIntegerOutOfRangeMessageForLongIntegerLiterals() {
+    String digits = "9".repeat(400);
+    DbmsException failure = assertThrows(DbmsException.class, () -> parse(digits));
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+    assertEquals(
+        "Integer literal out of range at offset 0 near '" + digits + "'", failure.getMessage());
+  }
+
+  private void assertFloatOutOfRange(String text, int offset, String lexeme) {
+    DbmsException failure = assertThrows(DbmsException.class, () -> parse(text));
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+    assertEquals(
+        "Float literal out of range at offset " + offset + " near '" + lexeme + "'",
+        failure.getMessage());
   }
 
   @Test
