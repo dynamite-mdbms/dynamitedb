@@ -123,6 +123,41 @@ class ExpressionParserTest {
         parse("a + 1 > b - 2"));
   }
 
+  @Test
+  void foldsUnaryMinusIntoNumericLiteral() {
+    assertEquals(lit(-1), parse("-1"));
+    assertEquals(lit(Integer.MIN_VALUE), parse("-2147483648"));
+    assertEquals(new LiteralExpression(new FloatValue(-2.5)), parse("- 2.5"));
+    assertEquals(bin(col("a"), BinaryOp.EQ, lit(-1)), parse("a = -1"));
+    assertEquals(bin(col("a"), BinaryOp.SUB, lit(-1)), parse("a - -1"));
+    assertEquals(bin(lit(1), BinaryOp.SUB, lit(1)), parse("1-1"));
+    assertEquals(bin(lit(2), BinaryOp.MUL, lit(-3)), parse("2 * -3"));
+    assertEquals(bin(lit(-2), BinaryOp.SUB, lit(3)), parse("-2 - 3"));
+  }
+
+  @Test
+  void negativeLiteralsComposeWithArithmeticComparisonAndGrouping() {
+    Expression minusOne = lit(-1);
+    assertEquals(bin(minusOne, BinaryOp.ADD, lit(2)), parse("-1 + 2"));
+    assertEquals(bin(col("a"), BinaryOp.MUL, minusOne), parse("a * -1"));
+    assertEquals(minusOne, parse("(-1)"));
+    assertEquals(
+        bin(new LiteralExpression(new FloatValue(-2.5)), BinaryOp.MUL, lit(2)),
+        parse("(-2.5) * 2"));
+    assertEquals(bin(col("a"), BinaryOp.DIV, lit(-2)), parse("a / -2"));
+    assertEquals(
+        bin(bin(minusOne, BinaryOp.LT, col("a")), BinaryOp.AND, bin(col("a"), BinaryOp.LT, lit(1))),
+        parse("-1 < a AND a < 1"));
+    assertEquals(bin(col("a"), BinaryOp.NEQ, minusOne), parse("a <> -1"));
+    assertEquals(bin(col("a"), BinaryOp.GTE, minusOne), parse("a >= -1"));
+  }
+
+  @Test
+  void foldsNegativeZeroToPlainZero() {
+    assertEquals(lit(0), parse("-0"));
+    assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("-0.0"));
+  }
+
   // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana.
   @ParameterizedTest
   @CsvSource(
@@ -140,7 +175,16 @@ class ExpressionParserTest {
           emp.          | Expected a column name after '.' at end of input
           emp.5         | Expected a column name after '.' at offset 4 near '5'
           a = 1;        | Unexpected token in expression at offset 5 near ';'
-          -5            | Expected expression at offset 0 near '-'
+          -a            | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -(1)          | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          a - -         | Unary minus is only supported before a numeric literal at offset 4 near '-'
+          --1           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -'x'          | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          - a           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          -             | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          1 - - a       | Unary minus is only supported before a numeric literal at offset 4 near '-'
+          -2147483649   | Integer literal out of range at offset 0 near '-2147483649'
+          2147483648    | Integer literal out of range at offset 0 near '2147483648'
           ORDER         | Expected expression at offset 0 near 'ORDER'
           99999999999   | Integer literal out of range at offset 0 near '99999999999'
           """)
