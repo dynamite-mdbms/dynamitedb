@@ -5,10 +5,12 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.transaction.TransactionId;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,10 +18,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class TransactionRegistry {
+  static final int RETAINED_TRANSACTION_LIMIT = 1024;
+
   private final Map<TransactionId, Transaction> transactions = new ConcurrentHashMap<>();
   private final AtomicLong nextId = new AtomicLong(1);
   private final AtomicLong nextTimestamp = new AtomicLong(1);
   private final Set<TransactionId> active = new TreeSet<>();
+  private final Queue<TransactionId> finalizedOrder = new ArrayDeque<>();
   private int admissionHolds;
 
   public synchronized Transaction create() {
@@ -69,7 +74,19 @@ public class TransactionRegistry {
       if (active.remove(tx.id()) && active.isEmpty()) {
         notifyAll();
       }
+      finalizedOrder.add(tx.id());
+      while (transactions.size() > RETAINED_TRANSACTION_LIMIT) {
+        TransactionId oldest = finalizedOrder.poll();
+        if (oldest == null) {
+          break;
+        }
+        transactions.remove(oldest);
+      }
     }
+  }
+
+  public synchronized int size() {
+    return transactions.size();
   }
 
   public synchronized void holdAdmission() {
@@ -122,6 +139,7 @@ public class TransactionRegistry {
     }
     transactions.clear();
     active.clear();
+    finalizedOrder.clear();
     notifyAll();
     nextId.set(Math.max(nextId.get(), highWater.maxTx().value() + 1));
     nextTimestamp.set(Math.max(nextTimestamp.get(), highWater.maxTimestamp() + 1));

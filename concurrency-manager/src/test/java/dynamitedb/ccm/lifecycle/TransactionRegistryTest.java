@@ -132,6 +132,29 @@ class TransactionRegistryTest {
   }
 
   @Test
+  void sustainedAutocommitDoesNotRetainFinalizedTransactionsLinearly() {
+    var registry = new TransactionRegistry();
+    Transaction first = null;
+    Transaction latest = null;
+    for (int i = 0; i < 2 * TransactionRegistry.RETAINED_TRANSACTION_LIMIT; i++) {
+      Transaction tx = registry.create();
+      if (first == null) {
+        first = tx;
+      }
+      latest = tx;
+      tx.transition(TransactionStatus.PARTIALLY_COMMITTED);
+      tx.transition(TransactionStatus.COMMITTED);
+      registry.markFinished(tx);
+    }
+
+    assertEquals(0, registry.activeCount());
+    assertEquals(
+        TransactionRegistry.RETAINED_TRANSACTION_LIMIT, registry.size());
+    assertTrue(registry.find(first.id()).isEmpty());
+    assertEquals(latest, registry.get(latest.id()));
+  }
+
+  @Test
   void awaitNoActiveWakesWhenLastTransactionFinishes() throws Exception {
     var registry = new TransactionRegistry();
     Transaction tx = registry.create();
