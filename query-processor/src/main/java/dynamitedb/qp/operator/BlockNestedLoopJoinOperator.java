@@ -69,6 +69,8 @@ public class BlockNestedLoopJoinOperator implements Operator {
     position = 0;
     leftEmpty = false;
     leftJoinIdx = null;
+    rightJoinIdx = null;
+    isDuplicateRight = null;
     isOpen = true;
   }
 
