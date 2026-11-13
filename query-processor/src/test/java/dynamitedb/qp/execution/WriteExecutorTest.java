@@ -75,6 +75,15 @@ class WriteExecutorTest {
   }
 
   @Test
+  void insertPromotesIntegerForFloatColumn() {
+    WriteExecutor executor = executor(List.of());
+
+    executor.insert(new InsertPlan("t", new Row(List.of(new IntValue(1), new IntValue(3)))), TX);
+
+    assertEquals(List.of(new IntValue(1), new FloatValue(3)), fake.inserted.get(0).values());
+  }
+
+  @Test
   void updateCollectsAllRowsBeforeWriting() {
     WriteExecutor executor = executor(List.of(sourceRow(1, 10.0), sourceRow(2, 20.0)));
 
@@ -176,7 +185,8 @@ class WriteExecutorTest {
           }
         };
     DeleteExecutor delete = new DeleteExecutor(fake, writes, translator, evaluator, coordinator);
-    return new WriteExecutor(fake, writes, translator, evaluator, coordinator, fake, delete);
+    fake.schema = SCHEMA;
+    return new WriteExecutor(fake, writes, translator, evaluator, coordinator, fake, delete, fake);
   }
 
   private static UpdatePlan updateSalary() {

@@ -22,6 +22,7 @@ import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IntValue;
@@ -173,6 +174,28 @@ class BinderTest {
             "DELETE FROM student WHERE missing = 1",
             "CREATE INDEX idx_x ON student(age)",
             "CREATE INDEX idx_sid ON enroll(cid)")) {
+      var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
+      assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
+    }
+  }
+
+  @Test
+  void bindsNegativeNumbersByColumnType() {
+    // INTEGER menerima int negatif; FLOAT menerima float maupun int negatif.
+    var insert = (InsertStatement) bind("INSERT INTO student VALUES (-1, 'Ann', -2.5)");
+    assertEquals(number(-1), insert.values().get(0));
+    assertEquals(new LiteralExpression(new FloatValue(-2.5)), insert.values().get(2));
+    bind("INSERT INTO student VALUES (-1, 'Ann', -3)");
+    bind("UPDATE student SET gpa = -1 WHERE sid = -1");
+    bind("UPDATE student SET gpa = gpa - -1.5 WHERE sid > -2");
+
+    for (String sql :
+        List.of(
+            "INSERT INTO student VALUES (-1.5, 'Ann', 3.5)",
+            "INSERT INTO student VALUES (1, -1, 3.5)",
+            "UPDATE student SET name = -1",
+            "UPDATE student SET sid = -2.5",
+            "SELECT name FROM student WHERE name = -1")) {
       var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
       assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
     }

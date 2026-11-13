@@ -1,5 +1,9 @@
 package dynamitedb.qp.operator;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import dynamitedb.contracts.api.AccessController;
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.api.ChangeLogger;
@@ -12,6 +16,7 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.query.PlanNode;
@@ -48,483 +53,527 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Predicate;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
-/**
- * Tes QP3 (QP-05, QP-06, QP-07) tanpa framework pihak ketiga. Jalankan lewat main(); exit code 1
- * kalau ada tes yang gagal.
- */
-public final class OperatorsTest {
+/** Tes QP3 (QP-05, QP-06, QP-07) dengan JUnit 5. */
+final class OperatorsTest {
 
   private static final TransactionId TX = new TransactionId(7);
   private static final Expression ANY_PREDICATE = new LiteralExpression(new BooleanValue(true));
-  private static int passed = 0;
-  private static final List<String> failures = new ArrayList<>();
-
-  public static void main(String[] args) {
-    scanTests();
-    filterTests();
-    projectTests();
-    indexScanTests();
-    readExecutorTests();
-    deleteExecutorTests();
-
-    System.out.println(passed + " passed, " + failures.size() + " failed");
-    failures.forEach(f -> System.out.println("FAILED: " + f));
-    if (!failures.isEmpty()) {
-      System.exit(1);
-    }
-  }
 
   // ---------------------------------------------------------------- ScanOperator (QP-05)
 
-  private static void scanTests() {
-    test(
-        "Scan: semua baris keluar urut, dengan alias+RID di origins",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", students(3));
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          scan.open();
-          List<OperatorRow> rows = drain(scan);
-          scan.close();
-          eq(3, rows.size());
-          eq(new IntValue(1), rows.get(0).row().values().get(0));
-          eq(new IntValue(3), rows.get(2).row().values().get(0));
-          eq(rid(0), rows.get(0).origins().get("m"));
-        });
+  @Test
+  @DisplayName("Scan: semua baris keluar urut, dengan alias+RID di origins")
+  void scan01() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(3));
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    scan.open();
+    List<OperatorRow> rows = drain(scan);
+    scan.close();
+    assertEquals(3, rows.size());
+    assertEquals(new IntValue(1), rows.get(0).row().values().get(0));
+    assertEquals(new IntValue(3), rows.get(2).row().values().get(0));
+    assertEquals(rid(0), rows.get(0).origins().get("m"));
+  }
 
-    test(
-        "Scan: tabel kosong menghasilkan 0 baris, bukan error",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", List.of());
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          scan.open();
-          eq(0, drain(scan).size());
-          scan.close();
-        });
+  @Test
+  @DisplayName("Scan: tabel kosong menghasilkan 0 baris, bukan error")
+  void scan02() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", List.of());
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    scan.open();
+    assertEquals(0, drain(scan).size());
+    scan.close();
+  }
 
-    test(
-        "Scan: izin READ diminta SEBELUM kursor dibuka",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", students(1));
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          scan.open();
-          eq(List.of("authorize READ mahasiswa", "openTableScan mahasiswa"), f.events);
-          scan.close();
-        });
+  @Test
+  @DisplayName("Scan: izin READ diminta SEBELUM kursor dibuka")
+  void scan03() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(1));
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    scan.open();
+    assertEquals(List.of("authorize READ mahasiswa", "openTableScan mahasiswa"), f.events);
+    scan.close();
+  }
 
-    test(
-        "Scan: kalau izin ditolak, kursor TIDAK dibuka",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", students(1));
-          f.coordinator.failWith = new DbmsException(ErrorCode.ACCESS_ABORTED, "aborted oleh CCM");
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          expectError(ErrorCode.ACCESS_ABORTED, scan::open);
-          check(f.reader.cursors.isEmpty(), "kursor tidak boleh terbuka");
-        });
+  @Test
+  @DisplayName("Scan: kalau izin ditolak, kursor TIDAK dibuka")
+  void scan04() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(1));
+    f.coordinator.failWith = new DbmsException(ErrorCode.ACCESS_ABORTED, "aborted oleh CCM");
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    expectError(ErrorCode.ACCESS_ABORTED, scan::open);
+    assertTrue(f.reader.cursors.isEmpty(), "kursor tidak boleh terbuka");
+  }
 
-    test(
-        "Scan: dibaca bertahap (tidak memuat seluruh tabel sekaligus)",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("besar", students(10_000));
-          ScanOperator scan = f.scan("besar", "b");
-          scan.open();
-          scan.next();
-          eq(1, f.reader.cursors.get(0).pulled);
-          scan.close();
-        });
+  @Test
+  @DisplayName("Scan: dibaca bertahap (tidak memuat seluruh tabel sekaligus)")
+  void scan05() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("besar", students(10_000));
+    ScanOperator scan = f.scan("besar", "b");
+    scan.open();
+    scan.next();
+    assertEquals(1, f.reader.cursors.get(0).pulled);
+    scan.close();
+  }
 
-    test(
-        "Scan: tabel besar (10.000 baris) tampil lengkap",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("besar", students(10_000));
-          ScanOperator scan = f.scan("besar", "b");
-          scan.open();
-          eq(10_000, drain(scan).size());
-          scan.close();
-        });
+  @Test
+  @DisplayName("Scan: tabel besar (10.000 baris) tampil lengkap")
+  void scan06() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("besar", students(10_000));
+    ScanOperator scan = f.scan("besar", "b");
+    scan.open();
+    assertEquals(10_000, drain(scan).size());
+    scan.close();
+  }
 
-    test(
-        "Scan: close() dua kali aman dan kursor ditutup",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", students(2));
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          scan.open();
-          scan.close();
-          scan.close();
-          eq(1, f.reader.cursors.get(0).closed);
-        });
+  @Test
+  @DisplayName("Scan: close() dua kali aman dan kursor ditutup")
+  void scan07() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(2));
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    scan.open();
+    scan.close();
+    scan.close();
+    assertEquals(1, f.reader.cursors.get(0).closed);
+  }
 
-    test(
-        "Scan: next() sebelum open() -> INVALID_STATE",
-        () -> {
-          Fixture f = new Fixture();
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          expectError(ErrorCode.INVALID_STATE, scan::next);
-        });
+  @Test
+  @DisplayName("Scan: next() sebelum open() -> INVALID_STATE")
+  void scan08() {
+    Fixture f = new Fixture();
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    expectError(ErrorCode.INVALID_STATE, scan::next);
+  }
 
-    test(
-        "Scan: open() dua kali tidak membocorkan kursor lama",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", students(2));
-          ScanOperator scan = f.scan("mahasiswa", "m");
-          scan.open();
-          scan.open();
-          eq(2, f.reader.cursors.size());
-          eq(1, f.reader.cursors.get(0).closed);
-          scan.close();
-        });
+  @Test
+  @DisplayName("Scan: open() dua kali tidak membocorkan kursor lama")
+  void scan09() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(2));
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    scan.open();
+    scan.open();
+    assertEquals(2, f.reader.cursors.size());
+    assertEquals(1, f.reader.cursors.get(0).closed);
+    scan.close();
   }
 
   // --------------------------------------------------------------- FilterOperator (QP-06)
 
-  private static void filterTests() {
-    test(
-        "Filter: hanya baris yang predikatnya TRUE yang lolos",
-        () -> {
-          ListOperator child = ListOperator.of(studentRows(5));
-          FilterOperator filter =
-              new FilterOperator(child, ANY_PREDICATE, evaluator(r -> nim(r) % 2 == 1));
-          filter.open();
-          List<OperatorRow> rows = drain(filter);
-          eq(3, rows.size());
-          eq(1, nim(rows.get(0)));
-          eq(5, nim(rows.get(2)));
-        });
+  @Test
+  @DisplayName("Filter: hanya baris yang predikatnya TRUE yang lolos")
+  void filter01() {
+    ListOperator child = ListOperator.of(studentRows(5));
+    FilterOperator filter =
+        new FilterOperator(child, ANY_PREDICATE, evaluator(r -> nim(r) % 2 == 1));
+    filter.open();
+    List<OperatorRow> rows = drain(filter);
+    assertEquals(3, rows.size());
+    assertEquals(1, nim(rows.get(0)));
+    assertEquals(5, nim(rows.get(2)));
+  }
 
-    test(
-        "Filter: tidak ada yang lolos -> 0 baris, bukan error",
-        () -> {
-          FilterOperator filter =
-              new FilterOperator(
-                  ListOperator.of(studentRows(5)), ANY_PREDICATE, evaluator(r -> false));
-          filter.open();
-          eq(0, drain(filter).size());
-        });
+  @Test
+  @DisplayName("Filter: tidak ada yang lolos -> 0 baris, bukan error")
+  void filter02() {
+    FilterOperator filter =
+        new FilterOperator(ListOperator.of(studentRows(5)), ANY_PREDICATE, evaluator(r -> false));
+    filter.open();
+    assertEquals(0, drain(filter).size());
+  }
 
-    test(
-        "Filter: ratusan ribu baris berturut-turut ditolak tanpa StackOverflow",
-        () -> {
-          FilterOperator filter =
-              new FilterOperator(
-                  ListOperator.of(studentRows(200_000)), ANY_PREDICATE, evaluator(r -> false));
-          filter.open();
-          check(filter.next().isEmpty(), "harus kosong");
-        });
+  @Test
+  @DisplayName("Filter: ratusan ribu baris berturut-turut ditolak tanpa StackOverflow")
+  void filter03() {
+    FilterOperator filter =
+        new FilterOperator(
+            ListOperator.of(studentRows(200_000)), ANY_PREDICATE, evaluator(r -> false));
+    filter.open();
+    assertTrue(filter.next().isEmpty(), "harus kosong");
+  }
 
-    test(
-        "Filter: open/close diteruskan ke child",
-        () -> {
-          ListOperator child = ListOperator.of(studentRows(1));
-          FilterOperator filter = new FilterOperator(child, ANY_PREDICATE, evaluator(r -> true));
-          filter.open();
-          filter.close();
-          eq(1, child.opened);
-          eq(1, child.closed);
-        });
+  @Test
+  @DisplayName("Filter: open/close diteruskan ke child")
+  void filter04() {
+    ListOperator child = ListOperator.of(studentRows(1));
+    FilterOperator filter = new FilterOperator(child, ANY_PREDICATE, evaluator(r -> true));
+    filter.open();
+    filter.close();
+    assertEquals(1, child.opened);
+    assertEquals(1, child.closed);
   }
 
   // -------------------------------------------------------------- ProjectOperator (QP-05)
 
-  private static void projectTests() {
-    test(
-        "Project: kolom sesuai urutan penulisan, bukan urutan tabel",
-        () -> {
-          ProjectOperator project =
-              new ProjectOperator(
-                  ListOperator.of(studentRows(2)), List.of(ref(null, "nama"), ref(null, "nim")));
-          project.open();
-          OperatorRow first = project.next().orElseThrow();
-          eq(new TextValue("Mhs1"), first.row().values().get(0));
-          eq(new IntValue(1), first.row().values().get(1));
-          eq("nama", first.schema().columns().get(0).name());
-          eq("nim", first.schema().columns().get(1).name());
-        });
+  @Test
+  @DisplayName("Project: kolom sesuai urutan penulisan, bukan urutan tabel")
+  void project01() {
+    ProjectOperator project =
+        new ProjectOperator(
+            ListOperator.of(studentRows(2)), List.of(ref(null, "nama"), ref(null, "nim")));
+    project.open();
+    OperatorRow first = project.next().orElseThrow();
+    assertEquals(new TextValue("Mhs1"), first.row().values().get(0));
+    assertEquals(new IntValue(1), first.row().values().get(1));
+    assertEquals("nama", first.schema().columns().get(0).name());
+    assertEquals("nim", first.schema().columns().get(1).name());
+  }
 
-    test(
-        "Project: kolom dengan prefix tabel (m.nama)",
-        () -> {
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref("m", "nama")));
-          project.open();
-          eq(new TextValue("Mhs1"), project.next().orElseThrow().row().values().get(0));
-        });
+  @Test
+  @DisplayName("Project: kolom dengan prefix tabel (m.nama)")
+  void project02() {
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref("m", "nama")));
+    project.open();
+    assertEquals(new TextValue("Mhs1"), project.next().orElseThrow().row().values().get(0));
+  }
 
-    test(
-        "Project: kolom tidak ada -> SQL_BIND",
-        () -> {
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref(null, "alamat")));
-          project.open();
-          expectError(ErrorCode.SQL_BIND, project::next);
-        });
+  @Test
+  @DisplayName("Project: kolom tidak ada -> SQL_BIND")
+  void project03() {
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref(null, "alamat")));
+    project.open();
+    expectError(ErrorCode.SQL_BIND, project::next);
+  }
 
-    test(
-        "Project: prefix tabel salah -> SQL_BIND",
-        () -> {
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref("x", "nama")));
-          project.open();
-          expectError(ErrorCode.SQL_BIND, project::next);
-        });
+  @Test
+  @DisplayName("Project: prefix tabel salah -> SQL_BIND")
+  void project04() {
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref("x", "nama")));
+    project.open();
+    expectError(ErrorCode.SQL_BIND, project::next);
+  }
 
-    test(
-        "Project: kolom ambigu (dua relasi punya 'id') -> SQL_BIND",
-        () -> {
-          Schema joined =
-              new Schema(
-                  List.of(
-                      new Column("a", "id", DataType.INTEGER, 0, false),
-                      new Column("b", "id", DataType.INTEGER, 0, false)));
-          OperatorRow row =
-              new OperatorRow(new Row(List.of(new IntValue(1), new IntValue(2))), joined, Map.of());
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(List.of(row)), List.of(ref(null, "id")));
-          project.open();
-          expectError(ErrorCode.SQL_BIND, project::next);
-        });
+  @Test
+  @DisplayName("Project: kolom ambigu (dua relasi punya 'id') -> SQL_BIND")
+  void project05() {
+    Schema joined =
+        new Schema(
+            List.of(
+                new Column("a", "id", DataType.INTEGER, 0, false),
+                new Column("b", "id", DataType.INTEGER, 0, false)));
+    OperatorRow row =
+        new OperatorRow(new Row(List.of(new IntValue(1), new IntValue(2))), joined, Map.of());
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(List.of(row)), List.of(ref(null, "id")));
+    project.open();
+    expectError(ErrorCode.SQL_BIND, project::next);
+  }
 
-    test(
-        "Project: kolom dengan prefix tapi schema tanpa relation -> SQL_BIND (bukan NPE)",
-        () -> {
-          Schema noRelation =
-              new Schema(List.of(new Column(null, "nim", DataType.INTEGER, 0, false)));
-          OperatorRow row =
-              new OperatorRow(new Row(List.of(new IntValue(1))), noRelation, Map.of());
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(List.of(row)), List.of(ref("m", "nim")));
-          project.open();
-          expectError(ErrorCode.SQL_BIND, project::next);
-        });
+  @Test
+  @DisplayName("Project: kolom dengan prefix tapi schema tanpa relation -> SQL_BIND (bukan NPE)")
+  void project06() {
+    Schema noRelation = new Schema(List.of(new Column(null, "nim", DataType.INTEGER, 0, false)));
+    OperatorRow row = new OperatorRow(new Row(List.of(new IntValue(1))), noRelation, Map.of());
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(List.of(row)), List.of(ref("m", "nim")));
+    project.open();
+    expectError(ErrorCode.SQL_BIND, project::next);
+  }
 
-    test(
-        "Project: origins (RID) dipertahankan",
-        () -> {
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref(null, "nim")));
-          project.open();
-          eq(rid(0), project.next().orElseThrow().origins().get("m"));
-        });
+  @Test
+  @DisplayName("Project: origins (RID) dipertahankan")
+  void project07() {
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(studentRows(1)), List.of(ref(null, "nim")));
+    project.open();
+    assertEquals(rid(0), project.next().orElseThrow().origins().get("m"));
+  }
 
-    test(
-        "Project: child kosong -> kosong",
-        () -> {
-          ProjectOperator project =
-              new ProjectOperator(ListOperator.of(List.of()), List.of(ref(null, "nim")));
-          project.open();
-          check(project.next().isEmpty(), "harus kosong");
-        });
+  @Test
+  @DisplayName("Project: child kosong -> kosong")
+  void project08() {
+    ProjectOperator project =
+        new ProjectOperator(ListOperator.of(List.of()), List.of(ref(null, "nim")));
+    project.open();
+    assertTrue(project.next().isEmpty(), "harus kosong");
+  }
 
-    test(
-        "Project + Filter + Scan: SELECT nama FROM mahasiswa WHERE nim>1",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("mahasiswa", students(3));
-          Operator root =
-              new ProjectOperator(
-                  new FilterOperator(
-                      f.scan("mahasiswa", "m"), ANY_PREDICATE, evaluator(r -> nim(r) > 1)),
-                  List.of(ref("m", "nama")));
-          QueryResult result =
-              new ReadExecutor()
-                  .execute(root, new Schema(List.of(col("m", "nama", DataType.VARCHAR))));
-          eq(2, result.rows().size());
-          eq(new TextValue("Mhs2"), result.rows().get(0).values().get(0));
-        });
+  @Test
+  @DisplayName("Project + Filter + Scan: SELECT nama FROM mahasiswa WHERE nim>1")
+  void projectfilterscan01() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(3));
+    Operator root =
+        new ProjectOperator(
+            new FilterOperator(f.scan("mahasiswa", "m"), ANY_PREDICATE, evaluator(r -> nim(r) > 1)),
+            List.of(ref("m", "nama")));
+    QueryResult result =
+        new ReadExecutor().execute(root, new Schema(List.of(col("m", "nama", DataType.VARCHAR))));
+    assertEquals(2, result.rows().size());
+    assertEquals(new TextValue("Mhs2"), result.rows().get(0).values().get(0));
   }
 
   // ----------------------------------------------------------------- IndexScanOperator
 
-  private static void indexScanTests() {
-    test(
-        "IndexScan: izin READ + residual menyaring baris",
-        () -> {
-          Fixture f = new Fixture();
-          f.reader.tables.put("idx_nim", students(4));
-          IndexScanOperator scan =
-              new IndexScanOperator(
-                  f.reader,
-                  "idx_nim",
-                  new IndexPredicate(ComparisonOp.GTE, new IntValue(1)),
-                  "mahasiswa",
-                  "m",
-                  studentSchema("m"),
-                  TX,
-                  f.coordinator,
-                  Optional.of(ANY_PREDICATE),
-                  evaluator(r -> nim(r) % 2 == 0));
-          scan.open();
-          eq("authorize READ mahasiswa", f.events.get(0));
-          eq(2, drain(scan).size());
-          scan.close();
-        });
+  @Test
+  @DisplayName("IndexScan: izin READ + residual menyaring baris")
+  void indexscan01() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("idx_nim", students(4));
+    IndexScanOperator scan =
+        new IndexScanOperator(
+            f.reader,
+            "idx_nim",
+            new IndexPredicate(ComparisonOp.GTE, new IntValue(1)),
+            "mahasiswa",
+            "m",
+            studentSchema("m"),
+            TX,
+            f.coordinator,
+            Optional.of(ANY_PREDICATE),
+            evaluator(r -> nim(r) % 2 == 0));
+    scan.open();
+    assertEquals("authorize READ mahasiswa", f.events.get(0));
+    assertEquals(2, drain(scan).size());
+    scan.close();
+  }
 
-    test(
-        "IndexScan: next() sebelum open() -> INVALID_STATE",
-        () -> {
-          Fixture f = new Fixture();
-          IndexScanOperator scan =
-              new IndexScanOperator(
-                  f.reader,
-                  "idx",
-                  new IndexPredicate(ComparisonOp.EQ, new IntValue(1)),
-                  "mahasiswa",
-                  "m",
-                  studentSchema("m"),
-                  TX,
-                  f.coordinator,
-                  Optional.empty(),
-                  evaluator(r -> true));
-          expectError(ErrorCode.INVALID_STATE, scan::next);
-        });
+  @Test
+  @DisplayName("IndexScan: next() sebelum open() -> INVALID_STATE")
+  void indexscan02() {
+    Fixture f = new Fixture();
+    IndexScanOperator scan =
+        new IndexScanOperator(
+            f.reader,
+            "idx",
+            new IndexPredicate(ComparisonOp.EQ, new IntValue(1)),
+            "mahasiswa",
+            "m",
+            studentSchema("m"),
+            TX,
+            f.coordinator,
+            Optional.empty(),
+            evaluator(r -> true));
+    expectError(ErrorCode.INVALID_STATE, scan::next);
   }
 
   // ------------------------------------------------------------------------- ReadExecutor
 
-  private static void readExecutorTests() {
-    test(
-        "Read: header tetap ada untuk tabel kosong, 0 baris",
-        () -> {
-          Schema header = studentSchema("m");
-          QueryResult result = new ReadExecutor().execute(ListOperator.of(List.of()), header);
-          eq(0, result.rows().size());
-          eq(header, result.schema());
-        });
+  @Test
+  @DisplayName("Read: header tetap ada untuk tabel kosong, 0 baris")
+  void read01() {
+    Schema header = studentSchema("m");
+    QueryResult result = new ReadExecutor().execute(ListOperator.of(List.of()), header);
+    assertEquals(0, result.rows().size());
+    assertEquals(header, result.schema());
+  }
 
-    test(
-        "Read: seluruh baris tabel besar dikembalikan, tidak dipotong",
-        () -> {
-          QueryResult result =
-              new ReadExecutor().execute(ListOperator.of(studentRows(10_000)), studentSchema("m"));
-          eq(10_000, result.rows().size());
-        });
+  @Test
+  @DisplayName("Read: seluruh baris tabel besar dikembalikan, tidak dipotong")
+  void read02() {
+    QueryResult result =
+        new ReadExecutor().execute(ListOperator.of(studentRows(10_000)), studentSchema("m"));
+    assertEquals(10_000, result.rows().size());
+  }
 
-    test(
-        "Read: operator selalu di-close walau next() melempar exception",
-        () -> {
-          ListOperator root = ListOperator.of(studentRows(3));
-          root.failOnNext = 2;
-          expectError(
-              ErrorCode.STORAGE_FAILURE,
-              () -> new ReadExecutor().execute(root, studentSchema("m")));
-          eq(1, root.closed);
-        });
+  @Test
+  @DisplayName("Read: operator selalu di-close walau next() melempar exception")
+  void read03() {
+    ListOperator root = ListOperator.of(studentRows(3));
+    root.failOnNext = 2;
+    expectError(
+        ErrorCode.STORAGE_FAILURE, () -> new ReadExecutor().execute(root, studentSchema("m")));
+    assertEquals(1, root.closed);
   }
 
   // ----------------------------------------------------------------------- DeleteExecutor
 
-  private static void deleteExecutorTests() {
-    test(
-        "Delete: menghapus semua RID dari sumber, mengembalikan jumlah",
-        () -> {
-          DeleteFixture d = new DeleteFixture(studentRows(3, "mahasiswa"));
-          eq(3L, d.executor().execute(d.plan(), TX));
-          eq(List.of(rid(0), rid(1), rid(2)), d.store.deleted);
-          eq(3, d.writes.executed.size());
-        });
+  @Test
+  @DisplayName("Delete: menghapus semua RID dari sumber, mengembalikan jumlah")
+  void delete01() {
+    DeleteFixture d = new DeleteFixture(studentRows(3, "mahasiswa"));
+    assertEquals(3L, d.executor().execute(d.plan(), TX));
+    assertEquals(List.of(rid(0), rid(1), rid(2)), d.store.deleted);
+    assertEquals(3, d.writes.executed.size());
+  }
 
-    test(
-        "Delete: tabel kosong -> 0, bukan error",
-        () -> {
-          DeleteFixture d = new DeleteFixture(List.of());
-          eq(0L, d.executor().execute(d.plan(), TX));
-        });
+  @Test
+  @DisplayName("Delete: tabel kosong -> 0, bukan error")
+  void delete02() {
+    DeleteFixture d = new DeleteFixture(List.of());
+    assertEquals(0L, d.executor().execute(d.plan(), TX));
+  }
 
-    test(
-        "Delete: izin WRITE diminta SEBELUM sumber diterjemahkan/dibaca",
-        () -> {
-          DeleteFixture d = new DeleteFixture(studentRows(1, "mahasiswa"));
-          d.executor().execute(d.plan(), TX);
-          eq("authorize WRITE mahasiswa", d.events.get(0));
-          eq("translate", d.events.get(1));
-        });
+  @Test
+  @DisplayName("Delete: izin WRITE diminta SEBELUM sumber diterjemahkan/dibaca")
+  void delete03() {
+    DeleteFixture d = new DeleteFixture(studentRows(1, "mahasiswa"));
+    d.executor().execute(d.plan(), TX);
+    assertEquals("authorize WRITE mahasiswa", d.events.get(0));
+    assertEquals("translate", d.events.get(1));
+  }
 
-    test(
-        "Delete: izin ditolak -> tidak ada yang dihapus",
-        () -> {
-          DeleteFixture d = new DeleteFixture(studentRows(2, "mahasiswa"));
-          d.coordinator.failWith = new DbmsException(ErrorCode.ACCESS_ABORTED, "aborted");
-          expectError(ErrorCode.ACCESS_ABORTED, () -> d.executor().execute(d.plan(), TX));
-          check(d.store.deleted.isEmpty(), "tidak boleh ada penghapusan");
-        });
+  @Test
+  @DisplayName("Delete: izin ditolak -> tidak ada yang dihapus")
+  void delete04() {
+    DeleteFixture d = new DeleteFixture(studentRows(2, "mahasiswa"));
+    d.coordinator.failWith = new DbmsException(ErrorCode.ACCESS_ABORTED, "aborted");
+    expectError(ErrorCode.ACCESS_ABORTED, () -> d.executor().execute(d.plan(), TX));
+    assertTrue(d.store.deleted.isEmpty(), "tidak boleh ada penghapusan");
+  }
 
-    test(
-        "Delete: operator sumber di-close walau pembacaan gagal, belum ada penghapusan",
-        () -> {
-          DeleteFixture d = new DeleteFixture(studentRows(3, "mahasiswa"));
-          d.source.failOnNext = 2;
-          expectError(ErrorCode.STORAGE_FAILURE, () -> d.executor().execute(d.plan(), TX));
-          eq(1, d.source.closed);
-          check(d.store.deleted.isEmpty(), "tidak ada penghapusan sebelum pembacaan selesai");
-        });
+  @Test
+  @DisplayName("Delete: operator sumber di-close walau pembacaan gagal, belum ada penghapusan")
+  void delete05() {
+    DeleteFixture d = new DeleteFixture(studentRows(3, "mahasiswa"));
+    d.source.failOnNext = 2;
+    expectError(ErrorCode.STORAGE_FAILURE, () -> d.executor().execute(d.plan(), TX));
+    assertEquals(1, d.source.closed);
+    assertTrue(d.store.deleted.isEmpty(), "tidak ada penghapusan sebelum pembacaan selesai");
+  }
 
-    test(
-        "Delete: alias berbeda dari nama tabel -> tetap menghapus atau gagal keras, bukan diam-diam"
-            + " 0",
-        () -> {
-          // scan alias "m" untuk tabel "mahasiswa": origins berkunci "m", plan.table() =
-          // "mahasiswa"
-          DeleteFixture d = new DeleteFixture(studentRows(2, "m"));
-          long affected;
-          try {
-            affected = d.executor().execute(d.plan(), TX);
-          } catch (DbmsException e) {
-            return; // gagal keras juga diterima
-          }
-          eq(2L, affected);
-        });
+  @Test
+  @DisplayName(
+      "Delete: alias berbeda dari nama tabel -> menghapus atau gagal keras, bukan 0 diam-diam")
+  void delete06() {
+    // scan alias "m" untuk tabel "mahasiswa": origins berkunci "m", plan.table() = "mahasiswa"
+    DeleteFixture d = new DeleteFixture(studentRows(2, "m"));
+    long affected;
+    try {
+      affected = d.executor().execute(d.plan(), TX);
+    } catch (DbmsException e) {
+      return; // gagal keras juga diterima
+    }
+    assertEquals(2L, affected);
+  }
 
-    test(
-        "Delete: penulisan gagal di tengah -> exception diteruskan, penghapusan berikutnya"
-            + " dihentikan",
-        () -> {
-          DeleteFixture d = new DeleteFixture(studentRows(3, "mahasiswa"));
-          d.writes.failOnExecute = 2;
-          expectError(ErrorCode.WAL_FAILURE, () -> d.executor().execute(d.plan(), TX));
-          eq(2, d.store.deleted.size()); // rid ke-3 tidak sempat disiapkan
-        });
+  @Test
+  @DisplayName("Delete: penulisan gagal di tengah -> exception diteruskan, sisanya dihentikan")
+  void delete07() {
+    DeleteFixture d = new DeleteFixture(studentRows(3, "mahasiswa"));
+    d.writes.failOnExecute = 2;
+    expectError(ErrorCode.WAL_FAILURE, () -> d.executor().execute(d.plan(), TX));
+    assertEquals(2, d.store.deleted.size()); // rid ke-3 tidak sempat disiapkan
+  }
+
+  // ---------------------------------------------------------------- OperatorRows.qualify
+
+  @Test
+  @DisplayName("Qualify: relation kolom diganti dengan alias, kolom lain tidak berubah")
+  void qualify01() {
+    Schema table =
+        new Schema(
+            List.of(
+                new Column("mahasiswa", "id", DataType.INTEGER, 0, false),
+                new Column("mahasiswa", "nama", DataType.VARCHAR, 50, true)));
+    Schema q = OperatorRows.qualify(table, "m");
+    assertEquals(2, q.columns().size());
+    assertEquals("m", q.columns().get(0).relation());
+    assertEquals("m", q.columns().get(1).relation());
+    assertEquals("nama", q.columns().get(1).name());
+    assertEquals(DataType.VARCHAR, q.columns().get(1).dataType());
+    assertEquals(50, q.columns().get(1).maxLength());
+    assertEquals(true, q.columns().get(1).nullable());
+  }
+
+  @Test
+  @DisplayName("Qualify: schema asli tidak dimutasi (immutable)")
+  void qualify02() {
+    Schema table = new Schema(List.of(new Column("t", "x", DataType.INTEGER, 0, false)));
+    OperatorRows.qualify(table, "a");
+    assertEquals("t", table.columns().get(0).relation());
+  }
+
+  @Test
+  @DisplayName("Qualify: alias sama dengan nama tabel -> schema tidak berubah")
+  void qualify03() {
+    Schema table = studentSchema("mahasiswa");
+    assertEquals(table, OperatorRows.qualify(table, "mahasiswa"));
+  }
+
+  @Test
+  @DisplayName("Qualify: relation null diganti alias")
+  void qualify04() {
+    Schema table = new Schema(List.of(new Column(null, "nim", DataType.INTEGER, 0, false)));
+    assertEquals("s", OperatorRows.qualify(table, "s").columns().get(0).relation());
+  }
+
+  @Test
+  @DisplayName("Scan: kolom ber-prefix alias ditemukan, prefix nama tabel asli ditolak (SQL_BIND)")
+  void scan10() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(1));
+    ScanOperator scan = f.scan("mahasiswa", "m");
+    scan.open();
+    OperatorRow row = scan.next().orElseThrow();
+    scan.close();
+    row.findColumnIndex(new ColumnRef(Optional.of("m"), "nim"));
+    expectError(
+        ErrorCode.SQL_BIND,
+        () -> row.findColumnIndex(new ColumnRef(Optional.of("mahasiswa"), "nim")));
+  }
+
+  @Test
+  @DisplayName("Alias: ProjectOperator di atas scan beralias memakai s.kolom")
+  void alias01() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(2));
+    ProjectOperator project =
+        new ProjectOperator(f.scan("mahasiswa", "s"), List.of(ref("s", "nama")));
+    project.open();
+    List<OperatorRow> rows = drain(project);
+    project.close();
+    assertEquals(2, rows.size());
+    assertEquals(new TextValue("Mhs1"), rows.get(0).row().values().get(0));
+  }
+
+  @Test
+  @DisplayName("Alias: FilterOperator di atas scan beralias memakai s.kolom")
+  void alias02() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(3));
+    FilterOperator filter =
+        new FilterOperator(
+            f.scan("mahasiswa", "s"),
+            ANY_PREDICATE,
+            evaluator(r -> ((IntValue) r.getValue(ref("s", "nim"))).value() % 2 == 1));
+    filter.open();
+    List<OperatorRow> rows = drain(filter);
+    filter.close();
+    assertEquals(2, rows.size());
+  }
+
+  @Test
+  @DisplayName("Alias: self-join a dan b membedakan a.nim dan b.nim serta origins")
+  void alias03() {
+    Fixture f = new Fixture();
+    f.reader.tables.put("mahasiswa", students(2));
+    BlockNestedLoopJoinOperator join =
+        new BlockNestedLoopJoinOperator(
+            f.scan("mahasiswa", "a"),
+            f.scan("mahasiswa", "b"),
+            JoinKind.CARTESIAN,
+            Optional.empty(),
+            evaluator(r -> true));
+    join.open();
+    List<OperatorRow> rows = drain(join);
+    join.close();
+    assertEquals(4, rows.size());
+    OperatorRow first = rows.get(0);
+    assertEquals(0, first.findColumnIndex(ref("a", "nim")));
+    assertEquals(2, first.findColumnIndex(ref("b", "nim")));
+    assertTrue(first.origins().containsKey("a") && first.origins().containsKey("b"), "origins");
+    expectError(ErrorCode.SQL_BIND, () -> first.findColumnIndex(ref(null, "nim")));
   }
 
   // ------------------------------------------------------------------------ test helpers
 
-  private static void test(String name, Runnable body) {
-    try {
-      body.run();
-      passed++;
-      System.out.println("PASS  " + name);
-    } catch (Throwable t) {
-      failures.add(name + " -> " + t);
-      System.out.println("FAIL  " + name + " -> " + t);
-    }
-  }
-
-  private static void check(boolean condition, String message) {
-    if (!condition) {
-      throw new AssertionError(message);
-    }
-  }
-
-  private static void eq(Object expected, Object actual) {
-    if (!java.util.Objects.equals(expected, actual)) {
-      throw new AssertionError("expected <" + expected + "> but was <" + actual + ">");
-    }
-  }
-
   private static void expectError(ErrorCode code, Runnable action) {
-    try {
-      action.run();
-    } catch (DbmsException e) {
-      eq(code, e.getCode());
-      return;
-    }
-    throw new AssertionError("expected DbmsException " + code + " tapi tidak ada exception");
+    DbmsException e = assertThrows(DbmsException.class, action::run);
+    assertEquals(code, e.getCode());
   }
 
   private static List<OperatorRow> drain(Operator op) {
@@ -835,6 +884,4 @@ public final class OperatorsTest {
       return new DeletePlan(new TableScanPlan("mahasiswa", "m"), "mahasiswa");
     }
   }
-
-  private OperatorsTest() {}
 }

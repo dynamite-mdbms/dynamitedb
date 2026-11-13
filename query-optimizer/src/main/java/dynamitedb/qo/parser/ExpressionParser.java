@@ -111,6 +111,22 @@ public class ExpressionParser {
       return new LiteralExpression(NullValue.INSTANCE);
     }
 
+    // Minus unary hanya dilipat ke literal angka agar -2147483648 tetap muat di int.
+    if (token.kind() == TokenKind.SYMBOL && token.lexeme().equals("-")) {
+      Token number = tokenAt(tokens, cursor[0] + 1);
+      if (number == null
+          || number.kind() != TokenKind.LITERAL
+          || !Character.isDigit(number.lexeme().charAt(0))) {
+        throw syntax("Unary minus is only supported before a numeric literal", token);
+      }
+      cursor[0] += 2;
+      Value value =
+          literalValue(new Token(TokenKind.LITERAL, "-" + number.lexeme(), token.offset()));
+      // -0.0 dinormalisasi karena Double.compare menganggap -0.0 < 0.0 saat evaluasi.
+      if (value instanceof FloatValue f && f.value() == 0) value = new FloatValue(0.0);
+      return new LiteralExpression(value);
+    }
+
     if (token.kind() == TokenKind.IDENTIFIER) {
       cursor[0]++;
       Token dot = tokenAt(tokens, cursor[0]);
@@ -137,7 +153,12 @@ public class ExpressionParser {
       String quote = String.valueOf(first);
       return new TextValue(lexeme.substring(1, lexeme.length() - 1).replace(quote + quote, quote));
     }
-    if (lexeme.contains(".")) return new FloatValue(Double.parseDouble(lexeme));
+    if (lexeme.contains(".")) {
+      // Double.parseDouble tidak gagal saat overflow, melainkan menghasilkan Infinity.
+      double value = Double.parseDouble(lexeme);
+      if (!Double.isFinite(value)) throw syntax("Float literal out of range", token);
+      return new FloatValue(value);
+    }
     try {
       return new IntValue(Integer.parseInt(lexeme));
     } catch (NumberFormatException e) {
