@@ -206,7 +206,7 @@ class ExpressionParserTest {
           -a            | Unary minus is only supported before a numeric literal at offset 0 near '-'
           -(1)          | Unary minus is only supported before a numeric literal at offset 0 near '-'
           a - -         | Unary minus is only supported before a numeric literal at offset 4 near '-'
-          --1           | Unary minus is only supported before a numeric literal at offset 0 near '-'
+          - -1          | Unary minus is only supported before a numeric literal at offset 0 near '-'
           -'x'          | Unary minus is only supported before a numeric literal at offset 0 near '-'
           - a           | Unary minus is only supported before a numeric literal at offset 0 near '-'
           -             | Unary minus is only supported before a numeric literal at offset 0 near '-'
