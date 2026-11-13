@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 
 class TransactionRegistryTest {
@@ -104,17 +105,29 @@ class TransactionRegistryTest {
   }
 
   @Test
-  void heldAdmissionRejectsNewTransactionsUntilReleased() {
+  void heldAdmissionBlocksNewTransactionsUntilReleased() throws Exception {
     var registry = new TransactionRegistry();
     registry.holdAdmission();
     assertTrue(registry.isAdmissionHeld());
 
-    var error = assertThrows(DbmsException.class, registry::create);
-    assertEquals(ErrorCode.INVALID_STATE, error.getCode());
+    var started = new CountDownLatch(1);
+    var executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<Transaction> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return registry.create();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
 
-    registry.releaseAdmission();
-    assertFalse(registry.isAdmissionHeld());
-    assertEquals(1, registry.create().id().value());
+      registry.releaseAdmission();
+      assertFalse(registry.isAdmissionHeld());
+      assertEquals(1, pending.get(5, TimeUnit.SECONDS).id().value());
+    } finally {
+      executor.shutdownNow();
+    }
     assertThrows(DbmsException.class, registry::releaseAdmission);
   }
 

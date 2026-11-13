@@ -29,6 +29,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -172,16 +177,26 @@ class Pp3RecoveryTest {
   }
 
   @Test
-  void startupWaitsForRecoveryAndAllocatesBeyondRecoveredHighWater() {
-    assertEquals(ErrorCode.INVALID_STATE, assertThrows(DbmsException.class, ccm::begin).getCode());
-    assertTrue(events.isEmpty());
+  void startupWaitsForRecoveryAndAllocatesBeyondRecoveredHighWater() throws Exception {
+    var started = new CountDownLatch(1);
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      Future<TransactionId> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return ccm.begin();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
+      assertTrue(events.isEmpty());
 
-    ccm.initializeRecoveredState(highWater(80, 140));
-    TransactionId tx = ccm.begin();
+      ccm.initializeRecoveredState(highWater(80, 140));
+      TransactionId tx = pending.get(5, TimeUnit.SECONDS);
 
-    assertEquals(new TransactionId(81), tx);
-    assertEquals(141, ccm.transactionTimestamp(tx));
-    assertEquals(List.of("wal begin T81 ts 141"), events);
+      assertEquals(new TransactionId(81), tx);
+      assertEquals(141, ccm.transactionTimestamp(tx));
+      assertEquals(List.of("wal begin T81 ts 141"), events);
+    }
   }
 
   @Test
@@ -215,31 +230,49 @@ class Pp3RecoveryTest {
 
   @ParameterizedTest
   @ValueSource(longs = {-1, Long.MAX_VALUE})
-  void invalidHighWaterKeepsStartupClosedUntilRecoveryIsRetried(long invalid) {
+  void invalidHighWaterKeepsStartupClosedUntilRecoveryIsRetried(long invalid) throws Exception {
     assertThrows(DbmsException.class, () -> ccm.initializeRecoveredState(highWater(invalid, 1)));
-    assertThrows(DbmsException.class, ccm::begin);
-    assertThrows(DbmsException.class, () -> ccm.initializeRecoveredState(highWater(1, invalid)));
-    assertThrows(DbmsException.class, ccm::begin);
-    ready();
-    assertEquals(new TransactionId(1), ccm.begin());
+    var started = new CountDownLatch(1);
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      Future<TransactionId> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return ccm.begin();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
+      assertThrows(DbmsException.class, () -> ccm.initializeRecoveredState(highWater(1, invalid)));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
+
+      ready();
+      assertEquals(new TransactionId(1), pending.get(5, TimeUnit.SECONDS));
+    }
   }
 
   @Test
-  void runtimeReinitializationRequiresMaintenanceAndNeverMovesCountersBackward() {
+  void runtimeReinitializationRequiresMaintenanceAndNeverMovesCountersBackward() throws Exception {
     ready();
     TransactionId tx = ccm.begin();
     assertThrows(DbmsException.class, () -> ccm.initializeRecoveredState(highWater(0, 0)));
     assertEquals(TransactionStatus.ACTIVE, ccm.status(tx));
     ccm.commit(tx);
     var guard = ccm.acquireMaintenance();
-    try {
+    var started = new CountDownLatch(1);
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      Future<TransactionId> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return ccm.begin();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
       assertTrue(registry.isAdmissionHeld());
       ccm.initializeRecoveredState(highWater(0, 0));
-      assertThrows(DbmsException.class, ccm::begin);
-    } finally {
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
       guard.close();
+      assertFalse(registry.isAdmissionHeld());
+      assertEquals(tx.value() + 1, pending.get(5, TimeUnit.SECONDS).value());
     }
-    assertFalse(registry.isAdmissionHeld());
     TransactionId next = ccm.begin();
     assertTrue(next.value() > tx.value());
     assertTrue(ccm.transactionTimestamp(next) > 1);

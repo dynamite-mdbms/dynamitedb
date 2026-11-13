@@ -23,9 +23,14 @@ public class TransactionRegistry {
   private int admissionHolds;
 
   public synchronized Transaction create() {
-    if (admissionHolds > 0) {
-      throw new DbmsException(
-          ErrorCode.INVALID_STATE, "Transaksi baru sedang ditahan karena maintenance berjalan");
+    while (admissionHolds > 0) {
+      try {
+        wait();
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new DbmsException(
+            ErrorCode.RECOVERY_FAILURE, "Menunggu maintenance selesai terinterupsi", interrupted);
+      }
     }
     Transaction tx =
         new Transaction(
@@ -77,6 +82,7 @@ public class TransactionRegistry {
           ErrorCode.INVALID_STATE, "Tidak ada penahanan transaksi baru yang dapat dilepas");
     }
     admissionHolds--;
+    notifyAll();
   }
 
   public synchronized boolean isAdmissionHeld() {

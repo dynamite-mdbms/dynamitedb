@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dynamitedb.ccm.lifecycle.Transaction;
 import dynamitedb.ccm.lifecycle.TransactionRegistry;
 import dynamitedb.contracts.api.MaintenanceGuard;
 import dynamitedb.contracts.error.DbmsException;
@@ -13,14 +14,16 @@ import dynamitedb.contracts.transaction.TransactionStatus;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 @Timeout(10)
 class MaintenanceControllerTest {
   @Test
-  void failedRuntimeRecoveryRemainsClosedAfterLeaseCloseAndCanBeRetried() {
+  void failedRuntimeRecoveryRemainsClosedAfterLeaseCloseAndCanBeRetried() throws Exception {
     var registry = new TransactionRegistry();
     var maintenance = new MaintenanceController(registry);
     maintenance.initializeRecoveredState(() -> {});
@@ -28,44 +31,78 @@ class MaintenanceControllerTest {
     maintenance.beginRecovery();
     guard.close();
 
-    assertThrows(DbmsException.class, registry::create);
-    var retry = maintenance.acquire();
-    maintenance.beginRecovery();
-    maintenance.initializeRecoveredState(() -> {});
-    assertTrue(registry.isAdmissionHeld());
-    retry.close();
-    assertFalse(registry.isAdmissionHeld());
+    var started = new CountDownLatch(1);
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      Future<Transaction> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return registry.create();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
+
+      var retry = maintenance.acquire();
+      maintenance.beginRecovery();
+      maintenance.initializeRecoveredState(() -> {});
+      assertTrue(registry.isAdmissionHeld());
+      retry.close();
+      assertFalse(registry.isAdmissionHeld());
+      assertEquals(1, pending.get(5, TimeUnit.SECONDS).id().value());
+    }
   }
 
   @Test
-  void startupStaysClosedUntilSuccessfulInitialization() {
+  void startupStaysClosedUntilSuccessfulInitialization() throws Exception {
     var registry = new TransactionRegistry();
     var maintenance = new MaintenanceController(registry);
-    assertThrows(DbmsException.class, registry::create);
-    assertThrows(DbmsException.class, maintenance::resumeAdmission);
+    var started = new CountDownLatch(1);
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      Future<Transaction> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return registry.create();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
+      assertThrows(DbmsException.class, maintenance::resumeAdmission);
 
-    maintenance.initializeRecoveredState(() -> assertTrue(registry.isAdmissionHeld()));
+      maintenance.initializeRecoveredState(() -> assertTrue(registry.isAdmissionHeld()));
 
-    assertFalse(registry.isAdmissionHeld());
-    assertEquals(1, registry.create().id().value());
+      assertFalse(registry.isAdmissionHeld());
+      assertEquals(1, pending.get(5, TimeUnit.SECONDS).id().value());
+    }
   }
 
   @Test
-  void failedInitializationKeepsAdmissionClosedUntilRetry() {
+  void failedInitializationKeepsAdmissionClosedUntilRetry() throws Exception {
     var registry = new TransactionRegistry();
     var maintenance = new MaintenanceController(registry);
+    var started = new CountDownLatch(1);
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      Future<Transaction> pending =
+          executor.submit(
+              () -> {
+                started.countDown();
+                return registry.create();
+              });
+      assertTrue(started.await(5, TimeUnit.SECONDS));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
 
-    assertThrows(
-        IllegalStateException.class,
-        () ->
-            maintenance.initializeRecoveredState(
-                () -> {
-                  throw new IllegalStateException("recovery gagal");
-                }));
-    assertThrows(DbmsException.class, registry::create);
+      assertThrows(
+          IllegalStateException.class,
+          () ->
+              maintenance.initializeRecoveredState(
+                  () -> {
+                    throw new IllegalStateException("recovery gagal");
+                  }));
+      assertThrows(TimeoutException.class, () -> pending.get(100, TimeUnit.MILLISECONDS));
 
-    maintenance.initializeRecoveredState(() -> {});
-    assertFalse(registry.isAdmissionHeld());
+      maintenance.initializeRecoveredState(() -> {});
+      assertFalse(registry.isAdmissionHeld());
+      assertEquals(1, pending.get(5, TimeUnit.SECONDS).id().value());
+    }
   }
 
   @Test
@@ -85,7 +122,6 @@ class MaintenanceControllerTest {
     try (var executor = Executors.newSingleThreadExecutor()) {
       var pending = executor.submit(maintenance::acquire);
       assertTrue(drained.await(5, TimeUnit.SECONDS));
-      assertThrows(DbmsException.class, registry::create);
       assertFalse(pending.isDone());
 
       tx.transition(TransactionStatus.FAILED);
