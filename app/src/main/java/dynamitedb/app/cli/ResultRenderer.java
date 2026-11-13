@@ -10,6 +10,9 @@ import dynamitedb.contracts.storage.Value;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Full result rendering, retaining headers for empty SELECTs and every returned row. */
 public final class ResultRenderer {
@@ -24,7 +27,21 @@ public final class ResultRenderer {
       out.flush();
       return;
     }
-    List<String> header = result.schema().columns().stream().map(column -> column.name()).toList();
+    Map<String, Long> nameCounts =
+        result.schema().columns().stream()
+            .collect(
+                Collectors.groupingBy(
+                    column -> column.name().toLowerCase(Locale.ROOT), Collectors.counting()));
+    List<String> header =
+        result.schema().columns().stream()
+            .map(
+                column ->
+                    nameCounts.get(column.name().toLowerCase(Locale.ROOT)) > 1
+                            && column.relation() != null
+                            && !column.relation().isBlank()
+                        ? column.relation() + "." + column.name()
+                        : column.name())
+            .toList();
     List<List<String>> rows = new ArrayList<>();
     rows.add(header);
     result
