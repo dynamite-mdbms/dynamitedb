@@ -135,7 +135,13 @@ public class ConcurrencyManagerImpl
 
   @Override
   public void commit(TransactionId tx) {
-    Transaction transaction = registry.get(tx);
+    Transaction transaction = registry.find(tx).orElse(null);
+    if (transaction == null) {
+      TransactionStatus status = registry.status(tx);
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE,
+          "Transaksi " + tx + " tidak dapat melakukan commit karena berstatus " + status);
+    }
     synchronized (transaction) {
       if (transaction.status() != TransactionStatus.ACTIVE) {
         throw new DbmsException(
@@ -171,12 +177,19 @@ public class ConcurrencyManagerImpl
 
   @Override
   public void abort(TransactionId tx) {
-    abortFlow(registry.get(tx));
+    Transaction transaction = registry.find(tx).orElse(null);
+    if (transaction != null) {
+      abortFlow(transaction);
+    } else if (registry.status(tx) == TransactionStatus.COMMITTED) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE,
+          "Transaksi " + tx + " sudah commit sehingga tidak dapat dibatalkan");
+    }
   }
 
   @Override
   public TransactionStatus status(TransactionId tx) {
-    return registry.get(tx).status();
+    return registry.status(tx);
   }
 
   @Override
@@ -262,7 +275,11 @@ public class ConcurrencyManagerImpl
   private AccessDecision decide(TransactionId tx, Supplier<AccessDecision> protocolCall) {
     Optional<Transaction> found = registry.find(tx);
     if (found.isEmpty()) {
-      return AccessDecision.aborted("Transaksi " + tx + " tidak dikenal");
+      try {
+        return AccessDecision.aborted(inactiveReason(tx, registry.status(tx)));
+      } catch (DbmsException unknown) {
+        return AccessDecision.aborted("Transaksi " + tx + " tidak dikenal");
+      }
     }
     Transaction transaction = found.get();
     if (!transaction.isActive()) {
@@ -328,11 +345,15 @@ public class ConcurrencyManagerImpl
   }
 
   private static String inactiveReason(Transaction transaction) {
-    return switch (transaction.status()) {
-      case ABORTED, FAILED -> "Transaksi " + transaction.id() + " telah dibatalkan";
-      case COMMITTED -> "Transaksi " + transaction.id() + " sudah commit";
-      case PARTIALLY_COMMITTED -> "Transaksi " + transaction.id() + " sedang dalam proses commit";
-      case ACTIVE -> "Transaksi " + transaction.id() + " masih aktif";
+    return inactiveReason(transaction.id(), transaction.status());
+  }
+
+  private static String inactiveReason(TransactionId tx, TransactionStatus status) {
+    return switch (status) {
+      case ABORTED, FAILED -> "Transaksi " + tx + " telah dibatalkan";
+      case COMMITTED -> "Transaksi " + tx + " sudah commit";
+      case PARTIALLY_COMMITTED -> "Transaksi " + tx + " sedang dalam proses commit";
+      case ACTIVE -> "Transaksi " + tx + " masih aktif";
     };
   }
 
