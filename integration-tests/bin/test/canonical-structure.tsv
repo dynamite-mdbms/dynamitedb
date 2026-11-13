@@ -846,6 +846,8 @@ helper	dynamitedb.app.cli.ResultRenderer
 helper	dynamitedb.app.cli.SqlStatementReader
 helper	dynamitedb.app.protocol.WireProtocol
 helper	dynamitedb.app.StubRuntime
+helper	dynamitedb.app.PersistentRuntime
+helper	dynamitedb.app.FreshRecoveryMetadata
 helper	dynamitedb.app.cli.SqlStatementReader$State
 helper	dynamitedb.app.mock.MockRuntime$MockAccess
 helper	dynamitedb.app.mock.MockRuntime$MockCatalog

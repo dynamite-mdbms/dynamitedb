@@ -38,9 +38,15 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
     this.context = Objects.requireNonNull(context, "context");
   }
 
+  public AtomicGenerationManifestStore(Path root, GenerationManifest initial) {
+    this.root = Objects.requireNonNull(root, "root");
+    this.active = Objects.requireNonNull(initial, "initial");
+    this.context = null;
+  }
+
   @Override
   public synchronized GenerationManifest readActive() {
-    context.invoked("AtomicGenerationManifestStore.readActive");
+    if (context != null) context.invoked("AtomicGenerationManifestStore.readActive");
     Path file = root.resolve(FILE_NAME);
     if (!Files.exists(file)) {
       return active;
@@ -59,7 +65,7 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
   @Override
   public synchronized void publishAtomically(GenerationManifest manifest) {
     Objects.requireNonNull(manifest, "manifest");
-    context.invoked("AtomicGenerationManifestStore.publishAtomically");
+    if (context != null) context.invoked("AtomicGenerationManifestStore.publishAtomically");
     Path temporary = null;
     try {
       Files.createDirectories(root);

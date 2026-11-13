@@ -123,6 +123,22 @@ public final class LogManager implements AutoCloseable {
     }
   }
 
+  public static LogManager openExisting(Path root, GenerationManifest manifest) {
+    Objects.requireNonNull(manifest, "manifest");
+    long floor = LogFile.readHistoryFloor(root, manifest.walLineage());
+    RecoveryHighWater highWater = manifest.highWater();
+    if (highWater.lsn().value() < floor) {
+      throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Manifest precedes active WAL floor");
+    }
+    RecoveryHighWater seed =
+        new RecoveryHighWater(
+            new LogSequenceNumber(floor),
+            floor > 0 ? highWater.maxTx() : new TransactionId(0),
+            floor > 0 ? highWater.maxTimestamp() : 0,
+            floor > 0 ? highWater.maxCommitTime() : Optional.empty());
+    return openExisting(root, manifest.walLineage(), seed);
+  }
+
   public synchronized UUID activeLineage() {
     return lineage;
   }

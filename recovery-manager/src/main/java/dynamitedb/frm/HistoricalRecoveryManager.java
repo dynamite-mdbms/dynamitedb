@@ -58,7 +58,19 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
       GenerationManifestStore manifests,
       RecoveryCoordinator maintenance) {
     this(
-        storage, catalog, generations, log, wal, manifests, maintenance, new MockRecoveryContext());
+        new RecoveryResult(
+            RecoveryStatus.SUCCESS,
+            Objects.requireNonNull(log, "log").readHighWater(),
+            "Historical recovery service ready"),
+        new RecoveryBoundary(log.readHighWater().lsn(), log.readHighWater().maxCommitTime()),
+        null,
+        Objects.requireNonNull(storage, "storage"),
+        Objects.requireNonNull(catalog, "catalog"),
+        Objects.requireNonNull(generations, "generations"),
+        Objects.requireNonNull(log, "log"),
+        Objects.requireNonNull(wal, "wal"),
+        Objects.requireNonNull(manifests, "manifests"),
+        Objects.requireNonNull(maintenance, "maintenance"));
   }
 
   public HistoricalRecoveryManager(
@@ -96,7 +108,7 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
       RecoveryCoordinator maintenance) {
     this.result = Objects.requireNonNull(result, "result");
     this.boundary = Objects.requireNonNull(boundary, "boundary");
-    this.context = Objects.requireNonNull(context, "context");
+    this.context = context;
     this.storage = storage;
     this.catalog = catalog;
     this.generations = generations;
@@ -110,7 +122,7 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
   @SuppressWarnings("try")
   public RecoveryResult recoverTo(RecoveryTarget target) {
     Objects.requireNonNull(target, "target");
-    context.invoked("HistoricalRecoveryManager.recoverTo");
+    if (context != null) context.invoked("HistoricalRecoveryManager.recoverTo");
     if (storage == null) {
       return result;
     }
@@ -155,7 +167,7 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
 
   public RecoveryBoundary resolveBoundary(RecoveryTarget target) {
     Objects.requireNonNull(target, "target");
-    context.invoked("HistoricalRecoveryManager.resolveBoundary");
+    if (context != null) context.invoked("HistoricalRecoveryManager.resolveBoundary");
     return catalog == null ? boundary : catalog.resolveBoundary(target);
   }
 }
