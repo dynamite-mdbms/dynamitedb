@@ -15,6 +15,7 @@ import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
@@ -167,6 +168,11 @@ public class WriteExecutor {
 
   // INTEGER dinaikkan ke FLOAT untuk kolom FLOAT; FLOAT ke kolom INTEGER ditolak
   private Value fitColumn(Value value, Column column) {
+    // ekspresi seperti kolom + NULL baru ketahuan NULL saat dievaluasi, Binder hanya cek literal
+    if (value instanceof NullValue && !column.nullable()) {
+      throw new DbmsException(
+          ErrorCode.SQL_BIND, "Column " + column.name() + " does not accept NULL");
+    }
     if (column.dataType() == DataType.FLOAT && value instanceof IntValue integer) {
       return new FloatValue(integer.value());
     }

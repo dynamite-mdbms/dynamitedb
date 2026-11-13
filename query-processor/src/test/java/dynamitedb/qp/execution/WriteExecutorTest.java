@@ -21,6 +21,7 @@ import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
@@ -49,11 +50,15 @@ class WriteExecutorTest {
   private final TransactionCoordinator coordinator = new TransactionCoordinator(fake, fake, fake);
   private final WriteCoordinator writes = new WriteCoordinator(fake, fake);
 
+  // kalau diisi, evaluator mengembalikan nilai ini (mis. hasil ekspresi yang NULL)
+  private Value forcedValue;
+
   // salary baru = id * 100, supaya hasil INTEGER harus dinaikkan ke FLOAT
   private final ExpressionEvaluator evaluator =
       new ExpressionEvaluator() {
         @Override
         public Value evaluate(Expression expr, OperatorRow row) {
+          if (forcedValue != null) return forcedValue;
           return new IntValue(((IntValue) row.row().values().get(0)).value() * 100);
         }
       };
@@ -120,6 +125,34 @@ class WriteExecutorTest {
     DbmsException error = assertThrows(DbmsException.class, () -> executor.update(plan, TX));
     assertEquals(ErrorCode.INVALID_PLAN, error.getCode());
     assertTrue(fake.applied.isEmpty());
+  }
+
+  @Test
+  void updateRejectsNullExpressionResultForNotNullColumn() {
+    forcedValue = NullValue.INSTANCE;
+    WriteExecutor executor = executor(List.of(sourceRow(1, 10.0)));
+    UpdatePlan plan =
+        new UpdatePlan(
+            new TableScanPlan("t", "t"),
+            "t",
+            new ColumnRef(Optional.empty(), "id"),
+            new ColumnExpression(new ColumnRef(Optional.empty(), "id")));
+
+    DbmsException error = assertThrows(DbmsException.class, () -> executor.update(plan, TX));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertEquals("Column id does not accept NULL", error.getMessage());
+    assertTrue(fake.applied.isEmpty());
+  }
+
+  @Test
+  void updateWritesNullExpressionResultIntoNullableColumn() {
+    forcedValue = NullValue.INSTANCE;
+    WriteExecutor executor = executor(List.of(sourceRow(1, 10.0)));
+
+    assertEquals(1, executor.update(updateSalary(), TX));
+    assertTrue(
+        fake.events.contains("prepareUpdate 1 [IntValue[value=1], INSTANCE]"),
+        fake.events.toString());
   }
 
   @Test

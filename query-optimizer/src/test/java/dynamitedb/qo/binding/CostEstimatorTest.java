@@ -33,6 +33,7 @@ import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableStatistics;
@@ -66,6 +67,19 @@ class CostEstimatorTest {
                     BinaryOp.AND,
                     compare("s", "gpa", BinaryOp.LT, 4.0)))));
     assertEquals(100.0, cost.estimate(filter(compare("s", "sid", BinaryOp.EQ, 5))));
+  }
+
+  // NULL dihitung sebagai satu nilai distinct: IS = 1/distinct, IS_NOT = 1 - 1/distinct
+  @Test
+  void isNullSelectivityTreatsNullAsOneDistinctValue() {
+    Expression nul = new LiteralExpression(NullValue.INSTANCE);
+    assertEquals(
+        20, cost.estimateRows(filter(new BinaryExpression(column("s", "gpa"), BinaryOp.IS, nul))));
+    assertEquals(
+        980,
+        cost.estimateRows(filter(new BinaryExpression(column("s", "gpa"), BinaryOp.IS_NOT, nul))));
+    assertEquals(
+        2, cost.estimateRows(filter(new BinaryExpression(column("s", "name"), BinaryOp.IS, nul))));
   }
 
   @Test

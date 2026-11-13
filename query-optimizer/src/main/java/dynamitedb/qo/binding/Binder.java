@@ -238,6 +238,7 @@ public class Binder {
         switch (binary.operator()) {
           case ADD, SUB, MUL, DIV -> fits(left, NUMBER) && fits(right, NUMBER);
           case AND -> fits(left, BOOLEAN) && fits(right, BOOLEAN);
+          case IS, IS_NOT -> right.equals(NULL);
           case EQ, NEQ, LT, LTE, GT, GTE ->
               !left.equals(BOOLEAN)
                   && !right.equals(BOOLEAN)
@@ -253,6 +254,9 @@ public class Binder {
   }
 
   private static void checkValue(Column column, Value value) {
+    if (value instanceof NullValue && !column.nullable()) {
+      throw error("Column " + column.name() + " does not accept NULL");
+    }
     boolean fits =
         switch (value) {
           case NullValue n -> column.nullable();

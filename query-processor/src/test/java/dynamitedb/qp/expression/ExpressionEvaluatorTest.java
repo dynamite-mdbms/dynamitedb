@@ -45,7 +45,37 @@ class ExpressionEvaluatorTest {
                   new Column("d", "id", DataType.INTEGER, 0, false))),
           Map.of());
 
+  // baris yang sama tapi salary NULL
+  private static final OperatorRow NULL_SALARY_ROW =
+      new OperatorRow(
+          new Row(
+              List.of(new IntValue(7), NullValue.INSTANCE, new TextValue("Ali"), new IntValue(3))),
+          ROW.schema(),
+          Map.of());
+
   private final ExpressionEvaluator evaluator = new ExpressionEvaluator();
+
+  // IS [NOT] NULL membaca nilai kolom asli, termasuk hasil ekspresi yang jadi NULL
+  @Test
+  void isNullReadsColumnValuesFromRealRows() {
+    Expression salary = col("e", "salary");
+    Expression isNull = bin(salary, BinaryOp.IS, nul());
+    Expression isNotNull = bin(salary, BinaryOp.IS_NOT, nul());
+
+    assertTrue(evaluator.evaluatePredicate(isNull, NULL_SALARY_ROW));
+    assertFalse(evaluator.evaluatePredicate(isNull, ROW));
+    assertFalse(evaluator.evaluatePredicate(isNotNull, NULL_SALARY_ROW));
+    assertTrue(evaluator.evaluatePredicate(isNotNull, ROW));
+    assertTrue(
+        evaluator.evaluatePredicate(
+            bin(bin(salary, BinaryOp.ADD, num(1)), BinaryOp.IS, nul()), NULL_SALARY_ROW));
+    // perbandingan biasa dengan NULL tidak pernah lolos
+    assertFalse(evaluator.evaluatePredicate(bin(salary, BinaryOp.EQ, nul()), NULL_SALARY_ROW));
+    assertFalse(evaluator.evaluatePredicate(bin(salary, BinaryOp.NEQ, nul()), ROW));
+    assertTrue(
+        evaluator.evaluatePredicate(
+            bin(isNull, BinaryOp.AND, bin(col("e", "id"), BinaryOp.GT, num(5))), NULL_SALARY_ROW));
+  }
 
   // INT ketemu INT hasilnya tetap INT, 7 / 2 jadi 3 bukan 3.5
   @Test
@@ -135,6 +165,16 @@ class ExpressionEvaluatorTest {
   void nullPropagatesThroughArithmeticAndComparison() {
     assertEquals(NullValue.INSTANCE, eval(bin(nul(), BinaryOp.ADD, num(1))));
     assertEquals(NullValue.INSTANCE, eval(bin(num(1), BinaryOp.EQ, nul())));
+  }
+
+  // IS [NOT] NULL tidak ikut propagasi NULL, hasilnya selalu boolean
+  @Test
+  void isNullIsAlwaysBoolean() {
+    assertEquals(new BooleanValue(true), eval(bin(nul(), BinaryOp.IS, nul())));
+    assertEquals(new BooleanValue(false), eval(bin(num(1), BinaryOp.IS, nul())));
+    assertEquals(new BooleanValue(false), eval(bin(nul(), BinaryOp.IS_NOT, nul())));
+    assertEquals(new BooleanValue(true), eval(bin(num(1), BinaryOp.IS_NOT, nul())));
+    assertTrue(evaluator.evaluatePredicate(bin(nul(), BinaryOp.IS, nul()), ROW));
   }
 
   // FALSE menang lawan NULL, TRUE AND NULL tetap NULL

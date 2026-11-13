@@ -23,6 +23,7 @@ import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.TableStatistics;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,34 @@ class AccessPathOptimizerTest {
     assertEquals("s", indexScan.alias());
     assertEquals(new IndexPredicate(ComparisonOp.EQ, new IntValue(42)), indexScan.predicate());
     assertEquals(Optional.empty(), indexScan.residual());
+  }
+
+  // pencarian NULL tidak didukung index, jadi IS [NOT] NULL selalu lewat scan + filter
+  @Test
+  void neverUsesIndexForIsNullPredicates() {
+    for (String column : List.of("id", "age")) {
+      for (BinaryOp op : List.of(BinaryOp.IS, BinaryOp.IS_NOT)) {
+        PlanNode plan =
+            new FilterPlan(
+                scan("student", "s"),
+                compare(columnExpression("s", column), op, literal(NullValue.INSTANCE)));
+        assertEquals(plan, new AccessPathOptimizer(catalog).rewrite(plan));
+      }
+    }
+  }
+
+  @Test
+  void keepsIsNullAsResidualWhenAnotherConjunctUsesAnIndex() {
+    Expression isNull =
+        compare(columnExpression("s", "age"), BinaryOp.IS, literal(NullValue.INSTANCE));
+    Expression equality =
+        compare(columnExpression("s", "id"), BinaryOp.EQ, literal(new IntValue(42)));
+    PlanNode plan = new FilterPlan(scan("student", "s"), compare(isNull, BinaryOp.AND, equality));
+
+    IndexScanPlan indexScan =
+        assertInstanceOf(IndexScanPlan.class, new AccessPathOptimizer(catalog).rewrite(plan));
+    assertEquals("idx_student_id", indexScan.index());
+    assertEquals(Optional.of(isNull), indexScan.residual());
   }
 
   @Test

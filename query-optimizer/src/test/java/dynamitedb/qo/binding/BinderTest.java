@@ -3,6 +3,7 @@ package dynamitedb.qo.binding;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
@@ -210,6 +211,54 @@ class BinderTest {
                 new LiteralExpression(new TextValue("Ann")),
                 new LiteralExpression(NullValue.INSTANCE)));
     var error = assertThrows(DbmsException.class, () -> binder.bind(insert));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+  }
+
+  @Test
+  void bindsSqlNullLiteralsForNullableColumns() {
+    var insert = (InsertStatement) bind("INSERT INTO student VALUES (1, 'Ann', NULL);");
+    assertEquals(new LiteralExpression(NullValue.INSTANCE), insert.values().get(2));
+    bind("UPDATE student SET gpa = NULL WHERE sid = 1;");
+    bind("SELECT sid FROM student WHERE gpa = NULL;");
+    bind("SELECT sid FROM student WHERE gpa IS NULL AND name IS NOT NULL;");
+    bind("DELETE FROM student WHERE gpa IS NULL;");
+
+    var error =
+        assertThrows(
+            DbmsException.class, () -> bind("INSERT INTO student VALUES (NULL, 'Ann', 3.5);"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("Column sid does not accept NULL"));
+    error = assertThrows(DbmsException.class, () -> bind("UPDATE student SET name = NULL;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    assertTrue(error.getMessage().contains("Column name does not accept NULL"));
+  }
+
+  @Test
+  void bindsIsNullOnEveryColumnTypeAndRejectsItAsAWrittenValue() {
+    bind("SELECT sid FROM student WHERE sid IS NULL AND name IS NOT NULL AND gpa IS NULL;");
+    bind("SELECT sid FROM student WHERE NULL IS NULL;");
+    bind("SELECT sid FROM tagged WHERE sid IS NOT NULL;");
+
+    // hasil IS NULL bertipe boolean, tidak cocok untuk kolom mana pun
+    var error =
+        assertThrows(DbmsException.class, () -> bind("UPDATE student SET gpa = gpa IS NULL;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    // IS hanya boleh diikuti NULL
+    error =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE gpa IS 3;"));
+    assertEquals(ErrorCode.SQL_SYNTAX, error.getCode());
+  }
+
+  @Test
+  void nullArithmeticInConditionsFollowsTheNumericRules() {
+    bind("SELECT sid FROM student WHERE NULL + 1 > 0;");
+    bind("SELECT sid FROM student WHERE gpa + NULL IS NULL;");
+    var error =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE NULL + 1;"));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+    error =
+        assertThrows(
+            DbmsException.class, () -> bind("SELECT sid FROM student WHERE name + NULL > 1;"));
     assertEquals(ErrorCode.SQL_BIND, error.getCode());
   }
 
