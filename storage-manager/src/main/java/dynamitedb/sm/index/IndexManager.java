@@ -6,6 +6,7 @@ import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.PreparedWrite;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.RecordImage;
@@ -63,6 +64,10 @@ public final class IndexManager {
     EqualityIndex target = indexes.get(index);
     if (target == null) {
       throw new DbmsException(ErrorCode.SQL_BIND, "Index tidak dikenal: " + index);
+    }
+    // perbandingan SQL dengan NULL bernilai UNKNOWN, jadi sama seperti scan: tidak ada baris
+    if (predicate.value() instanceof NullValue) {
+      return List.of();
     }
     switch (predicate.operator()) {
       case EQ:
