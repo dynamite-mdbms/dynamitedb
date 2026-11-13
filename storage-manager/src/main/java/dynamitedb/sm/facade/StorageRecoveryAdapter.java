@@ -82,6 +82,11 @@ public final class StorageRecoveryAdapter
   }
 
   @Override
+  public void materializeSnapshot(SealedGeneration generation, SnapshotMetadata snapshot) {
+    generations.materializeSnapshot(generation, snapshot);
+  }
+
+  @Override
   public GenerationManifest readActiveManifest() {
     return generations.readActiveManifest();
   }

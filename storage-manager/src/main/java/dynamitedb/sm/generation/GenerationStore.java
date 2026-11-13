@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -176,6 +177,65 @@ public final class GenerationStore {
     return new SealedGeneration(id, boundary);
   }
 
+  /** Materialize a sealed branch generation as a durable snapshot before FRM registers it. */
+  public synchronized void materializeSnapshot(
+      SealedGeneration generation, SnapshotMetadata snapshot) {
+    Objects.requireNonNull(generation, "generation");
+    Objects.requireNonNull(snapshot, "snapshot");
+    if (!generation.id().equals(snapshot.id())
+        || snapshot.baseLsn().value() < generation.boundary().inclusiveLsn().value()) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "Snapshot metadata does not match its sealed generation");
+    }
+
+    Path source = generationDir(generation.id());
+    if (!Files.isDirectory(source)) {
+      throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Sealed generation not found: " + source);
+    }
+    Properties generationMetadata = readProperties(source.resolve(META));
+    if (!generation.id().toString().equals(generationMetadata.getProperty("id"))
+        || !Long.toString(generation.boundary().inclusiveLsn().value())
+            .equals(generationMetadata.getProperty("boundaryLsn"))
+        || !Objects.equals(
+            generation.boundary().commitTime().map(Instant::toString).orElse(null),
+            generationMetadata.getProperty("commitTime"))) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "Sealed generation metadata does not match its identity");
+    }
+
+    Path target = snapshotDir(snapshot.id());
+    if (Files.exists(target)) {
+      verifySnapshotMetadata(target, snapshot);
+      return;
+    }
+    Path temporary = target.resolveSibling(snapshot.id() + ".tmp");
+    try {
+      Files.createDirectories(target.getParent());
+      deleteTree(temporary);
+      copyStorageFiles(source, temporary);
+      var metadata = new Properties();
+      metadata.setProperty("id", snapshot.id().toString());
+      metadata.setProperty("walLineage", snapshot.walLineage().toString());
+      metadata.setProperty("baseLsn", Long.toString(snapshot.baseLsn().value()));
+      metadata.setProperty("createdAt", snapshot.createdAt().toString());
+      writeProperties(temporary.resolve(META), metadata);
+      try {
+        Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+      } catch (FileAlreadyExistsException raced) {
+        verifySnapshotMetadata(target, snapshot);
+      }
+    } catch (IOException failure) {
+      throw new DbmsException(
+          ErrorCode.STORAGE_FAILURE, "Gagal materialize snapshot " + snapshot.id(), failure);
+    } finally {
+      try {
+        deleteTree(temporary);
+      } catch (IOException ignored) {
+        // An incomplete temporary directory is never treated as a materialized snapshot.
+      }
+    }
+  }
+
   /** Read active manifest dari GenerationManifestStore milik FRM. */
   public synchronized GenerationManifest readActiveManifest() {
     return manifests.readActive();
@@ -248,6 +308,17 @@ public final class GenerationStore {
 
   private Path generationDir(UUID id) {
     return root.resolve("generations").resolve(id.toString());
+  }
+
+  private static void verifySnapshotMetadata(Path directory, SnapshotMetadata snapshot) {
+    Properties metadata = readProperties(directory.resolve(META));
+    if (!snapshot.id().toString().equals(metadata.getProperty("id"))
+        || !snapshot.walLineage().toString().equals(metadata.getProperty("walLineage"))
+        || !Long.toString(snapshot.baseLsn().value()).equals(metadata.getProperty("baseLsn"))
+        || !snapshot.createdAt().toString().equals(metadata.getProperty("createdAt"))) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "Snapshot ID already exists with different metadata");
+    }
   }
 
   /** Copy storage files secara atomic; file yang tidak ada di source dihapus. */
