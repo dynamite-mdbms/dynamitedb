@@ -32,9 +32,9 @@ public final class Main {
       output.println(
           "  stub runtime: module wiring is real; query, storage, recovery and concurrency"
               + " operations remain stubs/defaults");
+      output.println("server --real [--host 127.0.0.1] [--port 7777] [--data-dir data]");
       output.println(
-          "server --integrated [--host 127.0.0.1] [--port 7777] [--data-dir data]");
-      output.println("  integrated runtime: persistent FRM WAL with SM and CCM recovery ports");
+          "  real runtime: persistent storage, WAL recovery, sample database and SQL server");
       output.println("server --mock [--host 127.0.0.1] [--port 7777] (legacy demo behavior)");
       output.println("cli [--host 127.0.0.1] [--port 7777]");
       output.println("driver [--suite | --file path] (standalone mock driver)");
@@ -43,15 +43,12 @@ public final class Main {
     Map<String, String> options = options(args);
     switch (args[0]) {
       case "server" -> {
-        requireOnly(
-            options, "--mock", "--stub", "--integrated", "--host", "--port", "--data-dir");
+        requireOnly(options, "--mock", "--stub", "--real", "--host", "--port", "--data-dir");
         boolean mock = options.containsKey("--mock");
         boolean stub = options.containsKey("--stub");
-        boolean integrated = options.containsKey("--integrated");
-        if ((mock ? 1 : 0) + (stub ? 1 : 0) + (integrated ? 1 : 0) != 1) {
-          throw new IllegalArgumentException(
-              "Choose exactly one of --integrated, --stub, or --mock");
-        }
+        boolean real = options.containsKey("--real");
+        if ((mock ? 1 : 0) + (stub ? 1 : 0) + (real ? 1 : 0) != 1)
+          throw new IllegalArgumentException("Choose exactly one of --real, --stub or --mock");
         String host = options.getOrDefault("--host", "127.0.0.1");
         if (host.isBlank()) throw new IllegalArgumentException("Host must not be blank");
         int port = Integer.parseInt(options.getOrDefault("--port", "7777"));
@@ -62,19 +59,20 @@ public final class Main {
                 Path.of(options.getOrDefault("--data-dir", defaults.dataDirectory().toString())),
                 defaults.protocol());
         DbmsBootstrap bootstrap;
+        PersistentRuntime runtime = null;
         String mode;
-        if (integrated) {
-          IntegratedRuntime runtime = new IntegratedRuntime(config);
+        if (real) {
+          runtime = new PersistentRuntime(config);
           bootstrap = runtime.bootstrap();
-          mode = "Integrated FRM/SM/CCM runtime";
+          mode = "Persistent DynamiteDB runtime";
         } else if (stub) {
-          StubRuntime runtime = new StubRuntime(config);
-          bootstrap = runtime.bootstrap();
+          StubRuntime stubRuntime = new StubRuntime(config);
+          bootstrap = stubRuntime.bootstrap();
           mode = "Stub QP server (operations remain stubs/defaults)";
         } else {
-          if (options.containsKey("--data-dir"))
-            throw new IllegalArgumentException(
-                "--data-dir is only valid with server --stub or --integrated");
+          if (options.containsKey("--data-dir")) {
+            throw new IllegalArgumentException("--data-dir is only valid with server --stub");
+          }
           bootstrap = new DbmsBootstrap(new MockRuntime().processor(), () -> {});
           mode = "Mock QP server";
         }
@@ -93,7 +91,8 @@ public final class Main {
             }
           }
         } finally {
-          bootstrap.shutdown();
+          if (runtime == null) bootstrap.shutdown();
+          else runtime.close();
         }
       }
       case "cli" -> {
@@ -125,9 +124,8 @@ public final class Main {
       String key = args[index];
       if (key.equals("--mock")
           || key.equals("--stub")
-          || key.equals("--integrated")
-          || key.equals("--suite"))
-        options.put(key, "true");
+          || key.equals("--real")
+          || key.equals("--suite")) options.put(key, "true");
       else if (java.util.Set.of("--host", "--port", "--file", "--data-dir").contains(key)
           && index + 1 < args.length) options.put(key, args[++index]);
       else throw new IllegalArgumentException("Unknown or incomplete option: " + key);

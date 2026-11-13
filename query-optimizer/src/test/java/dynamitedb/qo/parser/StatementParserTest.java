@@ -61,6 +61,21 @@ class StatementParserTest {
   }
 
   @Test
+  void parsesNegativeNumbersInInsertAndUpdate() {
+    Expression negativeFloat = new LiteralExpression(new FloatValue(-2.5));
+    assertEquals(
+        new InsertStatement("student", List.of(lit(-1), negativeFloat)),
+        parse("INSERT INTO student VALUES (-1, -2.5);"));
+    assertEquals(
+        new UpdateStatement(
+            "student",
+            new ColumnRef(Optional.empty(), "gpa"),
+            negativeFloat,
+            Optional.of(new BinaryExpression(col("student_id"), BinaryOp.EQ, lit(-1)))),
+        parse("UPDATE student SET gpa = -2.5 WHERE student_id = -1;"));
+  }
+
+  @Test
   void parsesUpdateWithAndWithoutWhere() {
     Expression raise =
         new BinaryExpression(

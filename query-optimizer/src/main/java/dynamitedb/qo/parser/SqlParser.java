@@ -128,8 +128,7 @@ public class SqlParser {
 
   private static List<SortKey> parseSortKeys(List<Token> tokens, int[] cursor) {
     List<SortKey> keys = new ArrayList<>();
-    do {
-      if (peek(tokens, cursor, ",")) cursor[0]++;
+    while (true) {
       ColumnRef column = parseColumn(tokens, cursor);
       SortDirection direction = SortDirection.ASC;
       if (peek(tokens, cursor, "ASC")) {
@@ -139,7 +138,9 @@ public class SqlParser {
         cursor[0]++;
       }
       keys.add(new SortKey(column, direction));
-    } while (peek(tokens, cursor, ","));
+      if (!peek(tokens, cursor, ",")) break;
+      cursor[0]++;
+    }
     return List.copyOf(keys);
   }
 

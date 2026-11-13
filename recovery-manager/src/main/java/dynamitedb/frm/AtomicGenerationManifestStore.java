@@ -38,15 +38,10 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
     this.context = Objects.requireNonNull(context, "context");
   }
 
-  /** Real manifest store used by the integrated runtime. */
   public AtomicGenerationManifestStore(Path root, GenerationManifest initial) {
     this.root = Objects.requireNonNull(root, "root");
     this.active = Objects.requireNonNull(initial, "initial");
     this.context = null;
-  }
-
-  public static boolean exists(Path root) {
-    return Files.isRegularFile(Objects.requireNonNull(root, "root").resolve(FILE_NAME));
   }
 
   @Override

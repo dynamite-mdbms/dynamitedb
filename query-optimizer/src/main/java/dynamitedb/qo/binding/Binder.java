@@ -10,6 +10,7 @@ import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FromSource;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
@@ -29,10 +30,13 @@ import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -78,16 +82,25 @@ public class Binder {
 
   private SelectStatement bindSelect(SelectStatement select) {
     List<Column> columns = new ArrayList<>();
-    FromSource from = bindFrom(select.from(), new HashSet<>(), columns);
+    Map<String, Column> merged = new HashMap<>();
+    FromSource from = bindFrom(select.from(), new HashSet<>(), columns, merged);
     Schema scope = new Schema(columns);
     List<ColumnRef> projection =
-        select.projection().stream().flatMap(ref -> expand(ref, scope).stream()).toList();
+        select.projection().stream()
+            .flatMap(ref -> expand(rename(ref, merged), scope).stream())
+            .toList();
     List<SortKey> orderBy =
         select.orderBy().stream()
-            .map(key -> new SortKey(qualified(resolve(key.column(), scope)), key.direction()))
+            .map(
+                key ->
+                    new SortKey(
+                        qualified(resolve(rename(key.column(), merged), scope)), key.direction()))
             .toList();
     return new SelectStatement(
-        projection, from, select.predicate().map(p -> predicate(p, scope)), orderBy);
+        projection,
+        from,
+        select.predicate().map(p -> predicate(rename(p, merged), scope)),
+        orderBy);
   }
 
   private InsertStatement bindInsert(InsertStatement insert) {
@@ -117,7 +130,8 @@ public class Binder {
     Expression value = qualify(update.expression(), scope);
     if (value instanceof LiteralExpression literal) {
       checkValue(target, literal.value());
-    } else if (!kind(value, scope).equals(kindOf(target.dataType()))) {
+    } else if (!kind(value, scope).equals(kindOf(target.dataType()))
+        || (target.dataType() == DataType.INTEGER && isFloat(value, scope))) {
       throw error("SET value does not match the type of " + target.name());
     }
     return new UpdateStatement(
@@ -142,7 +156,13 @@ public class Binder {
     return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
   }
 
-  private FromSource bindFrom(FromSource source, Set<String> aliases, List<Column> scope) {
+  /**
+   * Appends the visible columns of {@code source} to {@code scope}. A NATURAL JOIN drops the right
+   * copy of each common column, as QP does, and records it in {@code merged} so references to it
+   * resolve to the surviving left column.
+   */
+  private FromSource bindFrom(
+      FromSource source, Set<String> aliases, List<Column> scope, Map<String, Column> merged) {
     if (source instanceof TableSource table) {
       String name = tableName(table.table());
       String alias = table.alias().equals(table.table()) ? name : table.alias();
@@ -153,10 +173,10 @@ public class Binder {
       return new TableSource(name, alias);
     }
     JoinSource join = (JoinSource) source;
-    FromSource left = bindFrom(join.left(), aliases, scope);
+    FromSource left = bindFrom(join.left(), aliases, scope, merged);
     List<Column> leftColumns = List.copyOf(scope);
     List<Column> rightColumns = new ArrayList<>();
-    FromSource right = bindFrom(join.right(), aliases, rightColumns);
+    FromSource right = bindFrom(join.right(), aliases, rightColumns, merged);
     for (Column column : rightColumns) {
       Column common =
           join.kind() == JoinKind.NATURAL
@@ -169,11 +189,37 @@ public class Binder {
         scope.add(column);
       } else if (!kindOf(common.dataType()).equals(kindOf(column.dataType()))) {
         throw error("NATURAL JOIN column " + column.name() + " has incompatible types");
+      } else {
+        merged.put(key(column.relation(), column.name()), common);
       }
     }
     Schema joined = new Schema(scope);
     return new JoinSource(
-        left, right, join.kind(), join.condition().map(c -> predicate(c, joined)));
+        left, right, join.kind(), join.condition().map(c -> predicate(rename(c, merged), joined)));
+  }
+
+  private static Expression rename(Expression expression, Map<String, Column> merged) {
+    return switch (expression) {
+      case LiteralExpression literal -> literal;
+      case ColumnExpression column -> new ColumnExpression(rename(column.column(), merged));
+      case BinaryExpression binary ->
+          new BinaryExpression(
+              rename(binary.left(), merged), binary.operator(), rename(binary.right(), merged));
+      case InSubqueryExpression in ->
+          new InSubqueryExpression(
+              rename(in.operand(), merged), in.query(), in.plan(), in.negated());
+    };
+  }
+
+  private static ColumnRef rename(ColumnRef ref, Map<String, Column> merged) {
+    return ref.relation()
+        .map(relation -> merged.get(key(relation, ref.column())))
+        .map(Binder::qualified)
+        .orElse(ref);
+  }
+
+  private static String key(String relation, String column) {
+    return (relation + "." + column).toLowerCase(Locale.ROOT);
   }
 
   private String tableName(String table) {
@@ -220,6 +266,9 @@ public class Binder {
       case BinaryExpression binary ->
           new BinaryExpression(
               qualify(binary.left(), scope), binary.operator(), qualify(binary.right(), scope));
+      case InSubqueryExpression in ->
+          new InSubqueryExpression(
+              qualify(in.operand(), scope), bindSubquery(in.query()), in.plan(), in.negated());
     };
   }
 
@@ -228,7 +277,30 @@ public class Binder {
       case LiteralExpression literal -> kindOf(literal.value());
       case ColumnExpression column -> kindOf(resolve(column.column(), scope).dataType());
       case BinaryExpression binary -> binaryKind(binary, scope);
+      case InSubqueryExpression in -> {
+        String operand = kind(in.operand(), scope);
+        String column = kindOf(outputSchema(in.query()).columns().get(0).dataType());
+        if (operand.equals(BOOLEAN) || !fits(operand, column)) {
+          throw error("IN cannot compare " + operand + " with a " + column + " subquery");
+        }
+        yield BOOLEAN;
+      }
     };
+  }
+
+  /** Subquery di-bind dengan scope sendiri; kolom query luar tidak terlihat (tanpa korelasi). */
+  private SelectStatement bindSubquery(SelectStatement query) {
+    SelectStatement bound;
+    try {
+      bound = bindSelect(query);
+    } catch (DbmsException e) {
+      if (!e.getMessage().startsWith("Unknown column")) throw e;
+      throw error(e.getMessage() + " (correlated subqueries are not supported)");
+    }
+    if (bound.projection().size() != 1) {
+      throw error("Subquery must select exactly one column, got " + bound.projection().size());
+    }
+    return bound;
   }
 
   private String binaryKind(BinaryExpression binary, Schema scope) {
@@ -238,6 +310,7 @@ public class Binder {
         switch (binary.operator()) {
           case ADD, SUB, MUL, DIV -> fits(left, NUMBER) && fits(right, NUMBER);
           case AND -> fits(left, BOOLEAN) && fits(right, BOOLEAN);
+          case IS, IS_NOT -> right.equals(NULL);
           case EQ, NEQ, LT, LTE, GT, GTE ->
               !left.equals(BOOLEAN)
                   && !right.equals(BOOLEAN)
@@ -252,18 +325,41 @@ public class Binder {
     };
   }
 
+  // Mirrors QP arithmetic: INTEGER op INTEGER stays INTEGER, any FLOAT operand yields FLOAT.
+  private boolean isFloat(Expression expression, Schema scope) {
+    return switch (expression) {
+      case LiteralExpression literal -> literal.value() instanceof FloatValue;
+      case ColumnExpression column -> resolve(column.column(), scope).dataType() == DataType.FLOAT;
+      case BinaryExpression binary ->
+          isFloat(binary.left(), scope) || isFloat(binary.right(), scope);
+      case InSubqueryExpression in -> false;
+    };
+  }
+
   private static void checkValue(Column column, Value value) {
+    if (value instanceof NullValue && !column.nullable()) {
+      throw error("Column " + column.name() + " does not accept NULL");
+    }
     boolean fits =
         switch (value) {
           case NullValue n -> column.nullable();
           case IntValue i -> kindOf(column.dataType()).equals(NUMBER);
           case FloatValue f -> column.dataType() == DataType.FLOAT;
+          // Storage limits CHAR/VARCHAR by UTF-8 bytes, not Java chars.
           case TextValue t ->
-              kindOf(column.dataType()).equals(TEXT) && t.value().length() <= column.maxLength();
+              kindOf(column.dataType()).equals(TEXT)
+                  && t.value().getBytes(StandardCharsets.UTF_8).length <= column.maxLength();
           case BooleanValue b -> false;
         };
     if (!fits) {
-      throw error("Value does not fit column " + column.name() + " (" + column.dataType() + ")");
+      throw error(
+          "Value does not fit column "
+              + column.relation()
+              + "."
+              + column.name()
+              + " ("
+              + column.dataType()
+              + ")");
     }
   }
 

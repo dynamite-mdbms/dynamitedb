@@ -9,9 +9,10 @@ import dynamitedb.ccm.recovery.TransactionRecoveryBridge;
 import dynamitedb.ccm.timestamp.StrictWriteIntentTable;
 import dynamitedb.ccm.timestamp.TimestampOrderingProtocol;
 import dynamitedb.ccm.timestamp.TimestampRegistry;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.recovery.GenerationManifest;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
-import dynamitedb.contracts.recovery.RecoveryBoundary;
 import dynamitedb.contracts.recovery.RecoveryHighWater;
 import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.contracts.transaction.ProtocolType;
@@ -22,6 +23,7 @@ import dynamitedb.frm.CommitClock;
 import dynamitedb.frm.CrashRecoveryManager;
 import dynamitedb.frm.HistoricalRecoveryManager;
 import dynamitedb.frm.HistoryCatalog;
+import dynamitedb.frm.LogFile;
 import dynamitedb.frm.LogManager;
 import dynamitedb.frm.RecoveryInitializer;
 import dynamitedb.frm.RecoveryManagerImpl;
@@ -58,6 +60,7 @@ import dynamitedb.qp.transaction.TransactionCoordinator;
 import dynamitedb.sm.buffer.BufferPool;
 import dynamitedb.sm.buffer.DiskManager;
 import dynamitedb.sm.catalog.CatalogManager;
+import dynamitedb.sm.catalog.SampleDatabaseLoader;
 import dynamitedb.sm.catalog.StorageCatalogAdapter;
 import dynamitedb.sm.facade.StorageManagerImpl;
 import dynamitedb.sm.facade.StorageRecoveryAdapter;
@@ -66,73 +69,63 @@ import dynamitedb.sm.heap.HeapFile;
 import dynamitedb.sm.heap.RecordStore;
 import dynamitedb.sm.index.IndexManager;
 import dynamitedb.sm.serialization.RecordSerializer;
-import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Runtime with persistent FRM WAL and live SM/CCM recovery ports. */
-public final class IntegratedRuntime {
-  private final QueryOptimizerImpl optimizer;
-  private final StorageManagerImpl storage;
-  private final StorageRecoveryAdapter storageRecovery;
-  private final CatalogManager catalog;
-  private final ConcurrencyManagerImpl concurrency;
-  private final RecoveryManagerImpl recovery;
-  private final QueryProcessorImpl processor;
-  private final DbmsBootstrap bootstrap;
-  private final RecoveryInitializer initializer;
-  private final SnapshotMetadata initialSnapshot;
-  private final boolean fresh;
+public final class PersistentRuntime implements AutoCloseable {
+  private static final TransactionId ZERO_TX = new TransactionId(0);
+  private static final LogSequenceNumber ZERO_LSN = new LogSequenceNumber(0);
+
   private final LogManager log;
+  private final DbmsBootstrap bootstrap;
 
-  public IntegratedRuntime(DbmsConfig config) {
+  public PersistentRuntime(DbmsConfig config) {
     Objects.requireNonNull(config, "config");
-    var root = config.dataDirectory().toAbsolutePath().normalize();
-    fresh = !AtomicGenerationManifestStore.exists(root);
-    if (fresh && containsFiles(root)) {
-      throw new IllegalStateException(
-          "Database files exist without an active recovery manifest: " + root);
+    Path data = config.dataDirectory().toAbsolutePath().normalize();
+    Path manifestPath = data.resolve("active-generation.properties");
+    boolean fresh = Files.notExists(manifestPath);
+    UUID initialId = identity("active:", data);
+    UUID initialLineage = identity("lineage:", data);
+    RecoveryHighWater zero = new RecoveryHighWater(ZERO_LSN, ZERO_TX, 0, Optional.empty());
+    GenerationManifest initial = new GenerationManifest(initialId, initialLineage, ZERO_LSN, zero);
+    var manifests = new AtomicGenerationManifestStore(data, initial);
+    GenerationManifest active = manifests.readActive();
+    Path walPath = LogFile.path(data, active.walLineage());
+    if (fresh && Files.exists(walPath)) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "WAL exists without an active generation manifest");
     }
+    if (!fresh && Files.notExists(walPath)) {
+      throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Active generation manifest has no WAL");
+    }
+    log =
+        fresh
+            ? LogManager.createNew(data, active.walLineage(), active.highWater())
+            : LogManager.openExisting(data, active);
 
-    var zero =
-        new RecoveryHighWater(new LogSequenceNumber(0), new TransactionId(0), 0, Optional.empty());
-    var initialLineage = UUID.randomUUID();
-    var initialManifest =
-        new GenerationManifest(UUID.randomUUID(), initialLineage, new LogSequenceNumber(0), zero);
-    var manifests = new AtomicGenerationManifestStore(root, initialManifest);
-    GenerationManifest active = fresh ? initialManifest : manifests.readActive();
-    if (fresh) {
-      log = LogManager.createNew(root, active.walLineage(), zero);
-    } else {
-      long floor = LogManager.readWalFloor(root, active.walLineage());
-      RecoveryHighWater seed =
-          floor > 0 || active.highWater().lsn().value() == floor
-              ? new RecoveryHighWater(
-                  new LogSequenceNumber(floor),
-                  active.highWater().maxTx(),
-                  active.highWater().maxTimestamp(),
-                  active.highWater().maxCommitTime())
-              : zero;
-      log = LogManager.openExisting(root, active.walLineage(), seed);
-    }
     var wal = new WalService(new CommitClock(), log);
-
-    var disk = new DiskManager(root);
+    var disk = new DiskManager(data);
     var buffer = new BufferPool(disk, wal);
-    catalog = new CatalogManager(root);
+    SnapshotMetadata baseSnapshot =
+        new SnapshotMetadata(initialId, initialLineage, ZERO_LSN, Instant.EPOCH);
+    var catalog =
+        new CatalogManager(
+            data, null, FreshRecoveryMetadata.predicate(manifestPath, walPath, baseSnapshot));
     var catalogAccess = new StorageCatalogAdapter(catalog);
     var serializer = new RecordSerializer();
-    var heap = new HeapFile(root, buffer, serializer, catalog);
+    var heap = new HeapFile(data, buffer, serializer, catalog);
     var indexes = new IndexManager(heap, serializer);
     var records = new RecordStore(heap, buffer, serializer, indexes, catalog);
-    var generations = new GenerationStore(root, manifests, buffer, catalog, indexes, records);
-    storage = new StorageManagerImpl(records, catalog, indexes);
-    storageRecovery = new StorageRecoveryAdapter(records, generations, indexes, buffer);
-
+    var generations = new GenerationStore(data, manifests, buffer, catalog, indexes, records);
+    var storage = new StorageManagerImpl(records, catalog, indexes);
+    var storageRecovery = new StorageRecoveryAdapter(records, generations, indexes, buffer);
     var undo = new UndoManager(log, storageRecovery);
+
     var registry = new TransactionRegistry();
     var maintenance = new MaintenanceController(registry);
     var bridge = new TransactionRecoveryBridge(wal, undo);
@@ -140,7 +133,7 @@ public final class IntegratedRuntime {
     var timestampProtocol =
         new TimestampOrderingProtocol(
             new TimestampRegistry(), new StrictWriteIntentTable(), registry);
-    concurrency =
+    var concurrency =
         new ConcurrencyManagerImpl(
             registry,
             config.protocol() == ProtocolType.STRICT_2PL ? strictProtocol : timestampProtocol,
@@ -148,33 +141,18 @@ public final class IntegratedRuntime {
             maintenance);
     concurrency.setProtocol(config.protocol());
 
+    var crash =
+        new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
     var checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
-    if (fresh) {
-      initialSnapshot =
-          generations.captureSnapshot(
-              new RecoveryBoundary(new LogSequenceNumber(0), Optional.empty()));
-      var history = new HistoryCatalog(manifests, log, List.of(initialSnapshot));
-      var historical =
-          new HistoricalRecoveryManager(
-              storageRecovery, history, storageRecovery, log, wal, manifests, concurrency);
-      var crash =
-          new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
-      recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
-      initializer = new RecoveryInitializer(manifests, crash, concurrency);
-    } else {
-      initialSnapshot = null;
-      var history = new HistoryCatalog(manifests, log);
-      var historical =
-          new HistoricalRecoveryManager(
-              storageRecovery, history, storageRecovery, log, wal, manifests, concurrency);
-      var crash =
-          new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
-      recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
-      initializer = new RecoveryInitializer(manifests, crash, concurrency);
-    }
+    var history = new HistoryCatalog(manifests, log, baseSnapshot);
+    var historical =
+        new HistoricalRecoveryManager(
+            storageRecovery, history, storageRecovery, log, wal, manifests, concurrency);
+    var recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
+    var initializer = new RecoveryInitializer(manifests, recovery, concurrency);
 
     var cost = new CostEstimator(catalogAccess);
-    optimizer =
+    var optimizer =
         new QueryOptimizerImpl(
             new Lexer(),
             new SqlParser(new StatementParser(), new ExpressionParser()),
@@ -186,69 +164,56 @@ public final class IntegratedRuntime {
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
-                new JoinOrderOptimizer(),
+                new JoinOrderOptimizer(catalogAccess),
                 new BestPlanSelector(cost)),
             cost,
             new PlanVisualizer());
+
     var coordinator = new TransactionCoordinator(concurrency, concurrency, catalogAccess);
     var evaluator = new ExpressionEvaluator();
     var translator = new PlanTranslator(evaluator, storage, catalogAccess, coordinator);
     var writes = new WriteCoordinator(storage, concurrency);
     var delete = new DeleteExecutor(storage, writes, translator, evaluator, coordinator);
     var writer =
-        new WriteExecutor(storage, writes, translator, evaluator, coordinator, storage, delete);
-    var commands = new TransactionCommandExecutor(coordinator);
-    var engine = new ExecutionEngine(translator, new ReadExecutor(), writer, commands);
-    processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
+        new WriteExecutor(
+            storage, writes, translator, evaluator, coordinator, storage, delete, catalogAccess);
+    var engine =
+        new ExecutionEngine(
+            translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));
+    var processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
+
     bootstrap =
         new DbmsBootstrap(
             processor,
             () -> {
-              if (fresh) initializer.createNew(initialSnapshot);
-              else initializer.openExisting();
-              storageRecovery.rebuildIndexes();
-            },
-            log::close);
-  }
-
-  public QueryProcessorImpl processor() {
-    return processor;
+              var guard = concurrency.acquireMaintenance();
+              try {
+                maintenance.beginRecovery();
+                if (fresh) {
+                  SnapshotMetadata seed = generations.captureSnapshot(baseSnapshot);
+                  initializer.createNew(seed);
+                } else {
+                  initializer.openExisting();
+                }
+              } finally {
+                guard.close();
+              }
+              new SampleDatabaseLoader(storage, concurrency, concurrency).loadIfAbsent(catalog);
+            });
   }
 
   public DbmsBootstrap bootstrap() {
     return bootstrap;
   }
 
-  public QueryOptimizerImpl optimizer() {
-    return optimizer;
+  @Override
+  public void close() {
+    bootstrap.shutdown();
+    log.close();
   }
 
-  public CatalogManager catalog() {
-    return catalog;
-  }
-
-  public StorageRecoveryAdapter storageRecovery() {
-    return storageRecovery;
-  }
-
-  public StorageManagerImpl storage() {
-    return storage;
-  }
-
-  public ConcurrencyManagerImpl concurrency() {
-    return concurrency;
-  }
-
-  public RecoveryManagerImpl recovery() {
-    return recovery;
-  }
-
-  private static boolean containsFiles(java.nio.file.Path root) {
-    if (!Files.exists(root)) return false;
-    try (var entries = Files.list(root)) {
-      return entries.findAny().isPresent();
-    } catch (IOException failure) {
-      throw new IllegalStateException("Cannot inspect database directory: " + root, failure);
-    }
+  private static UUID identity(String prefix, Path data) {
+    return UUID.nameUUIDFromBytes(
+        (prefix + data).getBytes(java.nio.charset.StandardCharsets.UTF_8));
   }
 }

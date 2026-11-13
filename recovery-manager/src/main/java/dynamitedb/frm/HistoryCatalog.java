@@ -62,13 +62,7 @@ public final class HistoryCatalog {
 
   public HistoryCatalog(
       GenerationManifestStore manifestStore, LogManager log, List<SnapshotMetadata> snapshots) {
-    this(
-        firstSnapshot(snapshots),
-        Objects.requireNonNull(manifestStore, "manifestStore").readActive(),
-        null,
-        manifestStore,
-        Objects.requireNonNull(log, "log"),
-        snapshots);
+    this(manifestStore, log, snapshots, new MockRecoveryContext());
   }
 
   public HistoryCatalog(
@@ -83,17 +77,6 @@ public final class HistoryCatalog {
         Objects.requireNonNull(manifestStore, "manifestStore"),
         Objects.requireNonNull(log, "log"),
         snapshots);
-  }
-
-  /** Loads the retained snapshot catalog for an existing database. */
-  public HistoryCatalog(GenerationManifestStore manifestStore, LogManager log) {
-    this(
-        activeSnapshot(Objects.requireNonNull(manifestStore, "manifestStore").readActive()),
-        manifestStore.readActive(),
-        null,
-        manifestStore,
-        Objects.requireNonNull(log, "log"),
-        List.of());
   }
 
   private HistoryCatalog(
@@ -121,6 +104,17 @@ public final class HistoryCatalog {
       for (SnapshotMetadata snapshot : this.snapshots) log.registerHistory(snapshot.walLineage());
       persistSnapshotCatalog(log.rootDirectory(), this.snapshots);
     }
+  }
+
+  public HistoryCatalog(
+      GenerationManifestStore manifestStore, LogManager log, SnapshotMetadata activeSnapshot) {
+    this(
+        Objects.requireNonNull(activeSnapshot, "activeSnapshot"),
+        Objects.requireNonNull(manifestStore, "manifestStore").readActive(),
+        null,
+        manifestStore,
+        Objects.requireNonNull(log, "log"),
+        List.of(activeSnapshot));
   }
 
   public void validateCoverage(RecoveryTarget target) {
@@ -248,20 +242,6 @@ public final class HistoryCatalog {
 
   private GenerationManifest activeManifest() {
     return manifestStore == null ? manifest : manifestStore.readActive();
-  }
-
-  private static SnapshotMetadata firstSnapshot(List<SnapshotMetadata> snapshots) {
-    Objects.requireNonNull(snapshots, "snapshots");
-    if (snapshots.isEmpty()) throw new IllegalArgumentException("At least one snapshot is required");
-    return Objects.requireNonNull(snapshots.getFirst(), "snapshot");
-  }
-
-  private static SnapshotMetadata activeSnapshot(GenerationManifest manifest) {
-    return new SnapshotMetadata(
-        manifest.activeId(),
-        manifest.walLineage(),
-        manifest.boundaryLsn(),
-        manifest.highWater().maxCommitTime().orElse(Instant.EPOCH));
   }
 
   private List<LogRecord> history() {

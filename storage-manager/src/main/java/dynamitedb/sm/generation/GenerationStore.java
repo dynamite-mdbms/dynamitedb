@@ -74,13 +74,21 @@ public final class GenerationStore {
   /** Flush dirty pages lalu copy active generation jadi snapshot (saat maintenance). */
   public synchronized SnapshotMetadata captureSnapshot(RecoveryBoundary boundary) {
     Objects.requireNonNull(boundary, "boundary");
-    buffer.flushDirtyThrough(EVERYTHING);
     var snapshot =
         new SnapshotMetadata(
             UUID.randomUUID(),
             manifests.readActive().walLineage(),
             boundary.inclusiveLsn(),
             Instant.now());
+    return captureSnapshot(snapshot);
+  }
+
+  public synchronized SnapshotMetadata captureSnapshot(SnapshotMetadata snapshot) {
+    Objects.requireNonNull(snapshot, "snapshot");
+    buffer.flushDirtyThrough(EVERYTHING);
+    if (!snapshot.walLineage().equals(manifests.readActive().walLineage())) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "Snapshot WAL lineage is not active");
+    }
     Path target = snapshotDir(snapshot.id());
     Path temp = target.resolveSibling(snapshot.id() + ".tmp");
     try {

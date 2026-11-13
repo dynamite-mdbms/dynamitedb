@@ -58,7 +58,10 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
       GenerationManifestStore manifests,
       RecoveryCoordinator maintenance) {
     this(
-        new RecoveryResult(RecoveryStatus.SUCCESS, log.readHighWater(), "ready"),
+        new RecoveryResult(
+            RecoveryStatus.SUCCESS,
+            Objects.requireNonNull(log, "log").readHighWater(),
+            "Historical recovery service ready"),
         new RecoveryBoundary(log.readHighWater().lsn(), log.readHighWater().maxCommitTime()),
         null,
         Objects.requireNonNull(storage, "storage"),

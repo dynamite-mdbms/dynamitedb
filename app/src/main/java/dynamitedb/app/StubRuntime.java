@@ -9,6 +9,9 @@ import dynamitedb.ccm.recovery.TransactionRecoveryBridge;
 import dynamitedb.ccm.timestamp.StrictWriteIntentTable;
 import dynamitedb.ccm.timestamp.TimestampOrderingProtocol;
 import dynamitedb.ccm.timestamp.TimestampRegistry;
+import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.RecoveryStatus;
 import dynamitedb.contracts.transaction.ProtocolType;
 import dynamitedb.frm.AtomicGenerationManifestStore;
 import dynamitedb.frm.CheckpointManager;
@@ -152,7 +155,7 @@ public final class StubRuntime {
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
-                new JoinOrderOptimizer(),
+                new JoinOrderOptimizer(catalogAccess),
                 new BestPlanSelector(cost)),
             cost,
             new PlanVisualizer());
@@ -163,7 +166,8 @@ public final class StubRuntime {
     var writes = new WriteCoordinator(storage, concurrency);
     var delete = new DeleteExecutor(storage, writes, translator, evaluator, coordinator);
     var writer =
-        new WriteExecutor(storage, writes, translator, evaluator, coordinator, storage, delete);
+        new WriteExecutor(
+            storage, writes, translator, evaluator, coordinator, storage, delete, catalogAccess);
     var commands = new TransactionCommandExecutor(coordinator);
     var engine = new ExecutionEngine(translator, new ReadExecutor(), writer, commands);
     processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
@@ -171,8 +175,18 @@ public final class StubRuntime {
         new DbmsBootstrap(
             processor,
             () -> {
-              initializer.openExisting();
-              storageRecovery.rebuildIndexes();
+              var guard = concurrency.acquireMaintenance();
+              try {
+                maintenance.beginRecovery();
+                var result = initializer.openExisting();
+                if (result.status() != RecoveryStatus.SUCCESS) {
+                  throw new DbmsException(ErrorCode.RECOVERY_FAILURE, result.message());
+                }
+                storageRecovery.rebuildIndexes();
+                concurrency.initializeRecoveredState(result.highWater());
+              } finally {
+                guard.close();
+              }
             });
   }
 

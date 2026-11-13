@@ -7,6 +7,7 @@ import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
@@ -36,6 +37,12 @@ public class PlanVisualizer {
 
   private static void renderNode(PlanNode plan, int depth, StringBuilder output) {
     output.append("  ".repeat(depth)).append(label(plan)).append(System.lineSeparator());
+    if (plan instanceof FilterPlan filter) renderSubqueries(filter.predicate(), depth + 1, output);
+    else if (plan instanceof JoinPlan join) {
+      join.condition().ifPresent(c -> renderSubqueries(c, depth + 1, output));
+    } else if (plan instanceof IndexScanPlan scan) {
+      scan.residual().ifPresent(r -> renderSubqueries(r, depth + 1, output));
+    }
     if (plan instanceof FilterPlan filter) renderNode(filter.child(), depth + 1, output);
     else if (plan instanceof ProjectPlan project) renderNode(project.child(), depth + 1, output);
     else if (plan instanceof SortPlan sort) renderNode(sort.child(), depth + 1, output);
@@ -44,6 +51,16 @@ public class PlanVisualizer {
       renderNode(join.right(), depth + 1, output);
     } else if (plan instanceof UpdatePlan update) renderNode(update.source(), depth + 1, output);
     else if (plan instanceof DeletePlan delete) renderNode(delete.source(), depth + 1, output);
+  }
+
+  private static void renderSubqueries(Expression expression, int depth, StringBuilder output) {
+    if (expression instanceof BinaryExpression binary) {
+      renderSubqueries(binary.left(), depth, output);
+      renderSubqueries(binary.right(), depth, output);
+    } else if (expression instanceof InSubqueryExpression in && in.plan().isPresent()) {
+      output.append("  ".repeat(depth)).append("Subquery").append(System.lineSeparator());
+      renderNode(in.plan().get(), depth + 1, output);
+    }
   }
 
   private static String label(PlanNode plan) {
@@ -130,6 +147,9 @@ public class PlanVisualizer {
           + " "
           + expression(binary.right())
           + ")";
+    }
+    if (expression instanceof InSubqueryExpression in) {
+      return "(" + expression(in.operand()) + (in.negated() ? " NOT IN" : " IN") + " subquery)";
     }
     return expression.toString();
   }
