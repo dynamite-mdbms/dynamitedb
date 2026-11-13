@@ -33,6 +33,9 @@ public class SortOperator implements Operator {
 
   @Override
   public void open() {
+    if (isOpen) {
+      close();
+    }
     child.open();
     sorted = null;
     position = 0;
@@ -60,7 +63,9 @@ public class SortOperator implements Operator {
 
   @Override
   public void close() {
-    child.close();
+    if (isOpen) {
+      child.close();
+    }
     sorted = null;
     isOpen = false;
   }
