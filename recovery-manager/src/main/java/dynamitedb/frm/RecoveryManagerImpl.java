@@ -17,7 +17,7 @@ import dynamitedb.contracts.recovery.RecoveryTarget;
 import dynamitedb.contracts.transaction.TransactionId;
 import java.util.Objects;
 
-/** Composite Milestone 1 facade; all operations share the injected mock services. */
+/** Composite FRM facade; injected services may use persistent implementations or M1 test mocks. */
 public final class RecoveryManagerImpl
     implements TransactionWal,
         RollbackService,
