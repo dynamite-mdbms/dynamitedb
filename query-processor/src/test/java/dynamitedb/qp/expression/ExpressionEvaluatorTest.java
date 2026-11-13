@@ -69,6 +69,24 @@ class ExpressionEvaluatorTest {
     assertCode(ErrorCode.INVALID_STATE, bin(lit(new FloatValue(1.0)), BinaryOp.DIV, num(0)));
   }
 
+  @Test
+  void integerOverflowIsRejected() {
+    int max = Integer.MAX_VALUE;
+    int min = Integer.MIN_VALUE;
+    assertCode(ErrorCode.INVALID_STATE, bin(num(max), BinaryOp.ADD, num(1)));
+    assertCode(ErrorCode.INVALID_STATE, bin(num(min), BinaryOp.SUB, num(1)));
+    assertCode(ErrorCode.INVALID_STATE, bin(num(max), BinaryOp.MUL, num(2)));
+    assertCode(ErrorCode.INVALID_STATE, bin(num(min), BinaryOp.DIV, num(-1)));
+  }
+
+  @Test
+  void integerAtBoundaryIsKept() {
+    int max = Integer.MAX_VALUE;
+    int min = Integer.MIN_VALUE;
+    assertEquals(new IntValue(max), eval(bin(num(max - 1), BinaryOp.ADD, num(1))));
+    assertEquals(new IntValue(min), eval(bin(num(min + 1), BinaryOp.SUB, num(1))));
+  }
+
   // ambil nilai kolom pakai nama tabel (e.salary) atau tanpa (NAME), huruf besar kecil bebas
   @Test
   void readsQualifiedAndUnqualifiedColumns() {
