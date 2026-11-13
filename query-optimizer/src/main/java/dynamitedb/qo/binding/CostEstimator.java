@@ -110,6 +110,9 @@ public class CostEstimator {
       case AND -> selectivity(binary.left(), scope) * selectivity(binary.right(), scope);
       case EQ -> equal;
       case NEQ -> 1.0 - equal;
+      // NULL dihitung sebagai satu nilai distinct
+      case IS -> equal;
+      case IS_NOT -> 1.0 - equal;
       case LT, LTE, GT, GTE -> RANGE_SELECTIVITY;
       case ADD, SUB, MUL, DIV -> 1.0;
     };

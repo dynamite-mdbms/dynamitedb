@@ -95,7 +95,8 @@ public final class MockRuntime {
         new WriteCoordinator(storage, (tx, write) -> new LogSequenceNumber(lsn.incrementAndGet()));
     DeleteExecutor delete = new DeleteExecutor(storage, writes, translator, evaluator, coordinator);
     WriteExecutor writer =
-        new WriteExecutor(storage, writes, translator, evaluator, coordinator, storage, delete);
+        new WriteExecutor(
+            storage, writes, translator, evaluator, coordinator, storage, delete, storage);
     ExecutionEngine engine =
         new ExecutionEngine(
             translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));

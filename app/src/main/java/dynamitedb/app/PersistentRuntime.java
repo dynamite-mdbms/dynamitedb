@@ -164,7 +164,7 @@ public final class PersistentRuntime implements AutoCloseable {
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
-                new JoinOrderOptimizer(),
+                new JoinOrderOptimizer(catalogAccess),
                 new BestPlanSelector(cost)),
             cost,
             new PlanVisualizer());
@@ -175,7 +175,8 @@ public final class PersistentRuntime implements AutoCloseable {
     var writes = new WriteCoordinator(storage, concurrency);
     var delete = new DeleteExecutor(storage, writes, translator, evaluator, coordinator);
     var writer =
-        new WriteExecutor(storage, writes, translator, evaluator, coordinator, storage, delete);
+        new WriteExecutor(
+            storage, writes, translator, evaluator, coordinator, storage, delete, catalogAccess);
     var engine =
         new ExecutionEngine(
             translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));

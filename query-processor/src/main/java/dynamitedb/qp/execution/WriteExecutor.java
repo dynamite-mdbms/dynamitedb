@@ -1,5 +1,6 @@
 package dynamitedb.qp.execution;
 
+import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.api.IndexAdmin;
 import dynamitedb.contracts.api.WriteStore;
 import dynamitedb.contracts.error.DbmsException;
@@ -14,8 +15,10 @@ import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.contracts.transaction.AccessMode;
 import dynamitedb.contracts.transaction.TransactionId;
@@ -39,6 +42,7 @@ public class WriteExecutor {
   private final TransactionCoordinator coordinator;
   private final IndexAdmin indexAdmin;
   private final DeleteExecutor delete;
+  private final CatalogAccess catalog;
 
   public WriteExecutor(
       WriteStore store,
@@ -47,7 +51,8 @@ public class WriteExecutor {
       ExpressionEvaluator evaluator,
       TransactionCoordinator coordinator,
       IndexAdmin indexAdmin,
-      DeleteExecutor delete) {
+      DeleteExecutor delete,
+      CatalogAccess catalog) {
     this.store = Objects.requireNonNull(store, "store");
     this.writes = Objects.requireNonNull(writes, "writes");
     this.translator = Objects.requireNonNull(translator, "translator");
@@ -55,11 +60,13 @@ public class WriteExecutor {
     this.coordinator = Objects.requireNonNull(coordinator, "coordinator");
     this.indexAdmin = Objects.requireNonNull(indexAdmin, "indexAdmin");
     this.delete = Objects.requireNonNull(delete, "delete");
+    this.catalog = Objects.requireNonNull(catalog, "catalog");
   }
 
   public long insert(InsertPlan plan, TransactionId tx) {
     coordinator.authorizeTable(tx, plan.table(), AccessMode.WRITE);
-    writes.execute(store.prepareInsert(tx, plan.table(), plan.row()));
+    Row row = fitRow(plan.row(), catalog.getSchema(plan.table()));
+    writes.execute(store.prepareInsert(tx, plan.table(), row));
     return 1;
   }
 
@@ -149,8 +156,23 @@ public class WriteExecutor {
     return found;
   }
 
+  // jumlah nilai yang tidak cocok dengan schema dibiarkan, sudah divalidasi binder QO dan SM
+  private Row fitRow(Row row, Schema schema) {
+    List<Column> columns = schema.columns();
+    List<Value> values = new ArrayList<>(row.values());
+    for (int i = 0; i < Math.min(values.size(), columns.size()); i++) {
+      values.set(i, fitColumn(values.get(i), columns.get(i)));
+    }
+    return new Row(values);
+  }
+
   // INTEGER dinaikkan ke FLOAT untuk kolom FLOAT; FLOAT ke kolom INTEGER ditolak
   private Value fitColumn(Value value, Column column) {
+    // ekspresi seperti kolom + NULL baru ketahuan NULL saat dievaluasi, Binder hanya cek literal
+    if (value instanceof NullValue && !column.nullable()) {
+      throw new DbmsException(
+          ErrorCode.SQL_BIND, "Column " + column.name() + " does not accept NULL");
+    }
     if (column.dataType() == DataType.FLOAT && value instanceof IntValue integer) {
       return new FloatValue(integer.value());
     }

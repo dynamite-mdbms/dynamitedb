@@ -71,6 +71,35 @@ class SqlParserTest {
   }
 
   @Test
+  void parsesMultipleSortKeys() {
+    SelectStatement select =
+        assertInstanceOf(
+            SelectStatement.class,
+            parser.parse(
+                lexer.tokenize(
+                    "SELECT student_id FROM student ORDER BY student_id DESC, name ASC")));
+
+    assertEquals(2, select.orderBy().size());
+    assertEquals("student_id", select.orderBy().get(0).column().column());
+    assertEquals(SortDirection.DESC, select.orderBy().get(0).direction());
+    assertEquals("name", select.orderBy().get(1).column().column());
+    assertEquals(SortDirection.ASC, select.orderBy().get(1).direction());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT student_id FROM student ORDER BY ,student_id",
+        "SELECT student_id FROM student ORDER BY student_id,,name"
+      })
+  void rejectsMalformedOrderByCommas(String sql) {
+    DbmsException failure =
+        assertThrows(DbmsException.class, () -> parser.parse(lexer.tokenize(sql)));
+
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+  }
+
+  @Test
   void rejectsMisspelledStatementWithPosition() {
     DbmsException failure =
         assertThrows(DbmsException.class, () -> parser.parse(lexer.tokenize("SELEC * FROM t")));
@@ -113,5 +142,28 @@ class SqlParserTest {
         assertThrows(DbmsException.class, () -> parser.parse(lexer.tokenize(sql)));
 
     assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+  }
+
+  // HUGE diganti literal float yang overflow ke Infinity.
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "INSERT INTO student VALUES (1, 'Ann', HUGE, 'A');",
+        "UPDATE student SET gpa = HUGE WHERE student_id = 1;",
+        "UPDATE student SET gpa = 3.0 WHERE gpa = HUGE;",
+        "DELETE FROM student WHERE gpa = HUGE;",
+        "SELECT * FROM student WHERE gpa > HUGE;",
+      })
+  void rejectsOverflowingFloatLiteralInEveryStatementKind(String template) {
+    String huge = "1" + "0".repeat(309) + ".0";
+    DbmsException failure =
+        assertThrows(
+            DbmsException.class,
+            () -> parser.parse(lexer.tokenize(template.replace("HUGE", huge))));
+
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+    assertEquals(
+        "Float literal out of range at offset " + template.indexOf("HUGE") + " near '" + huge + "'",
+        failure.getMessage());
   }
 }

@@ -12,6 +12,7 @@ import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.util.List;
@@ -36,6 +37,9 @@ public class ExpressionParser {
           Map.of("+", BinaryOp.ADD, "-", BinaryOp.SUB),
           Map.of("*", BinaryOp.MUL, "/", BinaryOp.DIV));
 
+  /** Indeks tingkat perbandingan di LEVELS; IS [NOT] NULL berada tepat di bawahnya. */
+  private static final int COMPARISON_LEVEL = 1;
+
   public Expression parseExpression(List<Token> tokens) {
     if (tokens == null || tokens.isEmpty()) throw syntax("Expected expression", null);
     int[] cursor = {0};
@@ -55,7 +59,28 @@ public class ExpressionParser {
       cursor[0]++;
       left = new BinaryExpression(left, operator, parseLevel(tokens, cursor, level + 1));
     }
-    return left;
+    return level == COMPARISON_LEVEL ? parseIsNull(tokens, cursor, left) : left;
+  }
+
+  /** Postfix {@code IS [NOT] NULL}; prioritasnya di bawah perbandingan seperti di PostgreSQL. */
+  private static Expression parseIsNull(List<Token> tokens, int[] cursor, Expression operand) {
+    if (!isKeyword(tokenAt(tokens, cursor[0]), "IS")) return operand;
+    cursor[0]++;
+    boolean negated = isKeyword(tokenAt(tokens, cursor[0]), "NOT");
+    if (negated) cursor[0]++;
+    Token nullToken = tokenAt(tokens, cursor[0]);
+    if (!isKeyword(nullToken, "NULL")) throw syntax("Expected NULL after IS", nullToken);
+    cursor[0]++;
+    return new BinaryExpression(
+        operand,
+        negated ? BinaryOp.IS_NOT : BinaryOp.IS,
+        new LiteralExpression(NullValue.INSTANCE));
+  }
+
+  private static boolean isKeyword(Token token, String keyword) {
+    return token != null
+        && token.kind() == TokenKind.KEYWORD
+        && token.lexeme().equalsIgnoreCase(keyword);
   }
 
   /** {@code operand [NOT] IN (SELECT ...)} setara prioritas perbandingan. */
@@ -132,6 +157,27 @@ public class ExpressionParser {
       return new LiteralExpression(literalValue(token));
     }
 
+    if (token.kind() == TokenKind.KEYWORD && token.lexeme().equalsIgnoreCase("NULL")) {
+      cursor[0]++;
+      return new LiteralExpression(NullValue.INSTANCE);
+    }
+
+    // Minus unary hanya dilipat ke literal angka agar -2147483648 tetap muat di int.
+    if (token.kind() == TokenKind.SYMBOL && token.lexeme().equals("-")) {
+      Token number = tokenAt(tokens, cursor[0] + 1);
+      if (number == null
+          || number.kind() != TokenKind.LITERAL
+          || !Character.isDigit(number.lexeme().charAt(0))) {
+        throw syntax("Unary minus is only supported before a numeric literal", token);
+      }
+      cursor[0] += 2;
+      Value value =
+          literalValue(new Token(TokenKind.LITERAL, "-" + number.lexeme(), token.offset()));
+      // -0.0 dinormalisasi karena Double.compare menganggap -0.0 < 0.0 saat evaluasi.
+      if (value instanceof FloatValue f && f.value() == 0) value = new FloatValue(0.0);
+      return new LiteralExpression(value);
+    }
+
     if (token.kind() == TokenKind.IDENTIFIER) {
       cursor[0]++;
       Token dot = tokenAt(tokens, cursor[0]);
@@ -158,7 +204,12 @@ public class ExpressionParser {
       String quote = String.valueOf(first);
       return new TextValue(lexeme.substring(1, lexeme.length() - 1).replace(quote + quote, quote));
     }
-    if (lexeme.contains(".")) return new FloatValue(Double.parseDouble(lexeme));
+    if (lexeme.contains(".")) {
+      // Double.parseDouble tidak gagal saat overflow, melainkan menghasilkan Infinity.
+      double value = Double.parseDouble(lexeme);
+      if (!Double.isFinite(value)) throw syntax("Float literal out of range", token);
+      return new FloatValue(value);
+    }
     try {
       return new IntValue(Integer.parseInt(lexeme));
     } catch (NumberFormatException e) {

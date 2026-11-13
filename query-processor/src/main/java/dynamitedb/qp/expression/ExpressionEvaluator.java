@@ -59,6 +59,9 @@ public class ExpressionEvaluator {
     if (expr.operator() == BinaryOp.AND) {
       return and(left, right);
     }
+    // IS [NOT] NULL selalu TRUE/FALSE, tidak ikut propagasi NULL
+    if (expr.operator() == BinaryOp.IS) return new BooleanValue(left instanceof NullValue);
+    if (expr.operator() == BinaryOp.IS_NOT) return new BooleanValue(!(left instanceof NullValue));
     if (left instanceof NullValue || right instanceof NullValue) {
       return NullValue.INSTANCE;
     }
@@ -121,13 +124,18 @@ public class ExpressionEvaluator {
   // INT op INT tetap INT, kalau ada FLOAT naik ke FLOAT
   private static Value arithmetic(BinaryOp op, Value left, Value right) {
     if (left instanceof IntValue a && right instanceof IntValue b) {
-      return new IntValue(
-          switch (op) {
-            case ADD -> a.value() + b.value();
-            case SUB -> a.value() - b.value();
-            case MUL -> a.value() * b.value();
-            default -> a.value() / nonZero(b.value());
-          });
+      // tolak hasil INTEGER yang kelewat batas
+      try {
+        return new IntValue(
+            switch (op) {
+              case ADD -> Math.addExact(a.value(), b.value());
+              case SUB -> Math.subtractExact(a.value(), b.value());
+              case MUL -> Math.multiplyExact(a.value(), b.value());
+              default -> Math.divideExact(a.value(), nonZero(b.value()));
+            });
+      } catch (ArithmeticException e) {
+        throw new DbmsException(ErrorCode.INVALID_STATE, "Integer overflow");
+      }
     }
     double a = number(left);
     double b = number(right);

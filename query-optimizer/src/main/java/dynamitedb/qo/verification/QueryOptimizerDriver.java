@@ -223,7 +223,7 @@ public class QueryOptimizerDriver {
                 new ProjectionPushdown(catalog),
                 new JoinRewriter(),
                 new AccessPathOptimizer(catalog)),
-            new JoinOrderOptimizer(),
+            new JoinOrderOptimizer(catalog),
             new BestPlanSelector(cost)),
         cost,
         new PlanVisualizer());

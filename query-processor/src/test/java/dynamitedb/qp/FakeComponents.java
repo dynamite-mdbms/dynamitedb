@@ -45,12 +45,15 @@ public class FakeComponents
   public final Map<TransactionId, TransactionStatus> statuses = new HashMap<>();
   public RuntimeException logFailure;
   public RuntimeException commitFailure;
+  public Schema schema = new Schema(List.of());
+  public final List<Row> inserted = new ArrayList<>();
   private long nextTx = 10;
   private long nextLsn = 1;
 
   @Override
   public PreparedWrite prepareInsert(TransactionId tx, String table, Row row) {
     events.add("prepareInsert " + table);
+    inserted.add(row);
     return prepared(tx, table, new RecordId(1, 1, 0, 0));
   }
 
@@ -144,7 +147,7 @@ public class FakeComponents
 
   @Override
   public Schema getSchema(String table) {
-    return new Schema(List.of());
+    return schema;
   }
 
   @Override

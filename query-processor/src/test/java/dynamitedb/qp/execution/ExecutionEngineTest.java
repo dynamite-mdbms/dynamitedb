@@ -137,7 +137,7 @@ class ExecutionEngineTest {
         };
     DeleteExecutor delete = new DeleteExecutor(fake, writes, translator, evaluator, coordinator);
     WriteExecutor writer =
-        new WriteExecutor(fake, writes, translator, evaluator, coordinator, fake, delete) {
+        new WriteExecutor(fake, writes, translator, evaluator, coordinator, fake, delete, fake) {
           @Override
           public long insert(InsertPlan plan, TransactionId tx) {
             calls.add("insert");

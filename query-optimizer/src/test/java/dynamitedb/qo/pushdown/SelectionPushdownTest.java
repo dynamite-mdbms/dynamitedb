@@ -16,6 +16,7 @@ import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,18 @@ class SelectionPushdownTest {
     PlanNode plan = new FilterPlan(cartesian(cartesian(S, E), C), and(link, title));
 
     PlanNode expected = cartesian(new FilterPlan(cartesian(S, E), link), new FilterPlan(C, title));
+    assertEquals(expected, pushdown.rewrite(plan));
+  }
+
+  @Test
+  void pushesIsNullPredicateBelowTheJoinToItsTable() {
+    Expression gpaIsNull =
+        new BinaryExpression(
+            col("s", "gpa"), BinaryOp.IS, new LiteralExpression(NullValue.INSTANCE));
+    Expression link = compare("s", "sid", BinaryOp.EQ, col("e", "sid"));
+    PlanNode plan = project(new FilterPlan(cartesian(S, E), and(gpaIsNull, link)));
+
+    PlanNode expected = project(new FilterPlan(cartesian(new FilterPlan(S, gpaIsNull), E), link));
     assertEquals(expected, pushdown.rewrite(plan));
   }
 

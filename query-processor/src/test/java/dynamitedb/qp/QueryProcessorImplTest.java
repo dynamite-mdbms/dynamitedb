@@ -163,7 +163,7 @@ class QueryProcessorImplTest {
     var writes = new WriteCoordinator(ports, ports);
     var delete = new DeleteExecutor(ports, writes, translator, evaluator, coordinator);
     var writer =
-        new WriteExecutor(ports, writes, translator, evaluator, coordinator, ports, delete);
+        new WriteExecutor(ports, writes, translator, evaluator, coordinator, ports, delete, ports);
     var engine =
         new ExecutionEngine(
             translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));
