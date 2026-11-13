@@ -114,6 +114,12 @@ public final class RecordSerializer {
             throw new DbmsException(
                 ErrorCode.STORAGE_FAILURE, "TextValue for column '" + column.name() + "' is null");
           }
+          // CHAR dipadding byte 0x00 dan decode berhenti di 0x00 pertama, jadi NUL ditolak
+          if (s.indexOf('\0') >= 0) {
+            throw new DbmsException(
+                ErrorCode.STORAGE_FAILURE,
+                "CHAR value for column '" + column.name() + "' contains a NUL character");
+          }
           byte[] textBytes = s.getBytes(StandardCharsets.UTF_8);
           int maxLen = column.maxLength();
           if (maxLen < 0) {
