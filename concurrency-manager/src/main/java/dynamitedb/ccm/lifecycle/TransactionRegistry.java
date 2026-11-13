@@ -25,11 +25,25 @@ public class TransactionRegistry {
   private final AtomicLong nextTimestamp = new AtomicLong(1);
   private final Set<TransactionId> active = new TreeSet<>();
   private int admissionHolds;
+  private int maintenanceHolds;
 
   public synchronized Transaction create() {
+    while (maintenanceHolds > 0) {
+      if (admissionHolds > 0) {
+        throw new DbmsException(
+            ErrorCode.INVALID_STATE, "Transaksi baru sedang ditahan karena recovery berjalan");
+      }
+      try {
+        wait();
+      } catch (InterruptedException failure) {
+        Thread.currentThread().interrupt();
+        throw new DbmsException(
+            ErrorCode.INVALID_STATE, "Menunggu transaksi baru terinterupsi", failure);
+      }
+    }
     if (admissionHolds > 0) {
       throw new DbmsException(
-          ErrorCode.INVALID_STATE, "Transaksi baru sedang ditahan karena maintenance berjalan");
+          ErrorCode.INVALID_STATE, "Transaksi baru sedang ditahan karena recovery berjalan");
     }
     Transaction tx =
         new Transaction(
@@ -113,10 +127,23 @@ public class TransactionRegistry {
           ErrorCode.INVALID_STATE, "Tidak ada penahanan transaksi baru yang dapat dilepas");
     }
     admissionHolds--;
+    notifyAll();
+  }
+
+  public synchronized void holdMaintenanceAdmission() {
+    maintenanceHolds++;
+  }
+
+  public synchronized void releaseMaintenanceAdmission() {
+    if (maintenanceHolds == 0) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "Tidak ada maintenance yang dapat dilepas");
+    }
+    maintenanceHolds--;
+    notifyAll();
   }
 
   public synchronized boolean isAdmissionHeld() {
-    return admissionHolds > 0;
+    return admissionHolds > 0 || maintenanceHolds > 0;
   }
 
   public synchronized boolean awaitNoActive(Duration timeout) throws InterruptedException {

@@ -875,3 +875,4 @@ helper	dynamitedb.qo.verification.QueryOptimizerDriver$Scenario
 helper	dynamitedb.qp.driver.QueryProcessorTestDriver$Scenario
 helper	dynamitedb.ccm.protocol.LockManager$TicketEntry
 helper	dynamitedb.ccm.lifecycle.TransactionRegistry$FinalRange
+helper	dynamitedb.ccm.timestamp.TimestampOrderingProtocol$Pending
