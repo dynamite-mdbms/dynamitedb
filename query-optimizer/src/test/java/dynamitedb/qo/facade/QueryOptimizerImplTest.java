@@ -89,7 +89,8 @@ class QueryOptimizerImplTest {
         new SqlParser(new StatementParser(), new ExpressionParser()),
         new Binder(catalog),
         new PlanBuilder(),
-        new OptimizerPipeline(List.of(), new JoinOrderOptimizer(), new BestPlanSelector(cost)),
+        new OptimizerPipeline(
+            List.of(), new JoinOrderOptimizer(catalog), new BestPlanSelector(cost)),
         cost,
         new PlanVisualizer());
   }
