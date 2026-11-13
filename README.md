@@ -25,12 +25,14 @@ macOS/Linux:
 ./gradlew clean build
 ```
 
-The modules contain Milestone 1 contracts, skeletons, and existing mock fixtures.
-A successful build checks their declarations and wiring, not SQL correctness,
-transaction isolation, storage durability, or recovery. Operational stubs and
-their default returns are intentional; this is not a working database engine.
+The real server runtime composes the query processor, optimizer, storage manager,
+concurrency manager, and recovery manager with persistent storage and WAL-backed
+recovery. It seeds the sample database on first startup. A successful build or a
+single end-to-end query does not establish that every SQL, isolation, storage, or
+recovery requirement in the component specifications is complete; use the
+component drivers and tests to verify those behaviors.
 
-## Shared contracts and stub integration
+## Shared contracts and runtime modes
 
 Shared values have one definition under `dynamitedb.contracts`:
 
@@ -50,16 +52,29 @@ reference into production. Module-local interfaces such as `Operator`,
 Independent declaration fixtures and structural tests live in `integration-tests`;
 the attached architecture sources remain local and uncommitted.
 
-The explicit stub server connects actual classes from all five component modules:
+The persistent server connects the actual component implementations and recovers
+the data directory before it accepts clients:
+
+```sh
+./gradlew :app:run --args='server --real --host 127.0.0.1 --port 7777 --data-dir data'
+```
+
+Connect from a second terminal:
+
+```sh
+./gradlew :app:run --args='cli --host 127.0.0.1 --port 7777'
+```
+
+The explicit stub server remains available to inspect application composition
+without relying on operational behavior:
 
 ```sh
 ./gradlew :app:run --args='server --stub --host 127.0.0.1 --port 7777'
 ```
 
-This mode checks application composition with stub/default operations. It does not
-parse or execute SQL, perform recovery, or persist data. The existing `server
---mock` mode and `driver --suite` remain separate mock demonstrations, not evidence
-of database behavior.
+Stub mode uses fixed default operations and does not establish query correctness,
+durability, or recovery. The `server --mock` mode and `driver --suite` remain mock
+demonstrations, not evidence of behavior in the persistent runtime.
 
 ## Local quality checks
 

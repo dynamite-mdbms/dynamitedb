@@ -32,6 +32,9 @@ public final class Main {
       output.println(
           "  stub runtime: module wiring is real; query, storage, recovery and concurrency"
               + " operations remain stubs/defaults");
+      output.println("server --real [--host 127.0.0.1] [--port 7777] [--data-dir data]");
+      output.println(
+          "  real runtime: persistent storage, WAL recovery, sample database and SQL server");
       output.println("server --mock [--host 127.0.0.1] [--port 7777] (legacy demo behavior)");
       output.println("cli [--host 127.0.0.1] [--port 7777]");
       output.println("driver [--suite | --file path] (standalone mock driver)");
@@ -40,11 +43,12 @@ public final class Main {
     Map<String, String> options = options(args);
     switch (args[0]) {
       case "server" -> {
-        requireOnly(options, "--mock", "--stub", "--host", "--port", "--data-dir");
+        requireOnly(options, "--mock", "--stub", "--real", "--host", "--port", "--data-dir");
         boolean mock = options.containsKey("--mock");
         boolean stub = options.containsKey("--stub");
-        if (mock == stub)
-          throw new IllegalArgumentException("Choose exactly one of --stub or --mock");
+        boolean real = options.containsKey("--real");
+        if ((mock ? 1 : 0) + (stub ? 1 : 0) + (real ? 1 : 0) != 1)
+          throw new IllegalArgumentException("Choose exactly one of --real, --stub or --mock");
         String host = options.getOrDefault("--host", "127.0.0.1");
         if (host.isBlank()) throw new IllegalArgumentException("Host must not be blank");
         int port = Integer.parseInt(options.getOrDefault("--port", "7777"));
@@ -55,10 +59,15 @@ public final class Main {
                 Path.of(options.getOrDefault("--data-dir", defaults.dataDirectory().toString())),
                 defaults.protocol());
         DbmsBootstrap bootstrap;
+        PersistentRuntime runtime = null;
         String mode;
-        if (stub) {
-          StubRuntime runtime = new StubRuntime(config);
+        if (real) {
+          runtime = new PersistentRuntime(config);
           bootstrap = runtime.bootstrap();
+          mode = "Persistent DynamiteDB runtime";
+        } else if (stub) {
+          StubRuntime stubRuntime = new StubRuntime(config);
+          bootstrap = stubRuntime.bootstrap();
           mode = "Stub QP server (operations remain stubs/defaults)";
         } else {
           if (options.containsKey("--data-dir")) {
@@ -82,7 +91,8 @@ public final class Main {
             }
           }
         } finally {
-          bootstrap.shutdown();
+          if (runtime == null) bootstrap.shutdown();
+          else runtime.close();
         }
       }
       case "cli" -> {
@@ -112,8 +122,10 @@ public final class Main {
     Map<String, String> options = new HashMap<>();
     for (int index = 1; index < args.length; index++) {
       String key = args[index];
-      if (key.equals("--mock") || key.equals("--stub") || key.equals("--suite"))
-        options.put(key, "true");
+      if (key.equals("--mock")
+          || key.equals("--stub")
+          || key.equals("--real")
+          || key.equals("--suite")) options.put(key, "true");
       else if (java.util.Set.of("--host", "--port", "--file", "--data-dir").contains(key)
           && index + 1 < args.length) options.put(key, args[++index]);
       else throw new IllegalArgumentException("Unknown or incomplete option: " + key);
