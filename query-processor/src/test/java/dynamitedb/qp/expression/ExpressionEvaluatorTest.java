@@ -12,8 +12,12 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
+import dynamitedb.contracts.query.SelectStatement;
+import dynamitedb.contracts.query.TableScanPlan;
+import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -24,6 +28,7 @@ import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -192,6 +197,94 @@ class ExpressionEvaluatorTest {
     assertTrue(evaluator.evaluatePredicate(bool(true), ROW));
     assertFalse(evaluator.evaluatePredicate(bool(false), ROW));
     assertFalse(evaluator.evaluatePredicate(bin(num(1), BinaryOp.EQ, nul()), ROW));
+  }
+
+  // subquery dijalanin sekali, nilai 7 = 7.0 dianggap sama, NOT IN membalik hasil
+  @Test
+  void inSubqueryRunsOnceAndChecksMembership() {
+    List<Object> calls = new ArrayList<>();
+    ExpressionEvaluator subqueries =
+        new ExpressionEvaluator(
+            plan -> {
+              calls.add(plan);
+              return List.of(new IntValue(1), new FloatValue(7.0));
+            });
+    Expression in = in(col("e", "id"), false);
+
+    assertEquals(new BooleanValue(true), subqueries.evaluate(in, ROW));
+    assertEquals(new BooleanValue(true), subqueries.evaluate(in, ROW));
+    assertEquals(new BooleanValue(false), subqueries.evaluate(in(num(2), false), ROW));
+    assertEquals(new BooleanValue(false), subqueries.evaluate(in(col("e", "id"), true), ROW));
+    assertEquals(new BooleanValue(true), subqueries.evaluate(in(num(2), true), ROW));
+    // ekspresi yang sama cuma sekali; empat ekspresi berbeda jadi empat kali
+    assertEquals(4, calls.size());
+  }
+
+  // logika tiga nilai: NULL di operand atau di hasil subquery bikin hasil NULL kecuali kosong
+  @Test
+  void inSubqueryFollowsSqlNullSemantics() {
+    ExpressionEvaluator withNull =
+        new ExpressionEvaluator(plan -> List.of(new IntValue(1), NullValue.INSTANCE));
+    ExpressionEvaluator empty = new ExpressionEvaluator(plan -> List.of());
+
+    assertEquals(new BooleanValue(true), withNull.evaluate(in(num(1), false), ROW));
+    assertEquals(NullValue.INSTANCE, withNull.evaluate(in(num(2), false), ROW));
+    assertEquals(NullValue.INSTANCE, withNull.evaluate(in(num(2), true), ROW));
+    assertEquals(NullValue.INSTANCE, withNull.evaluate(in(nul(), false), ROW));
+    assertEquals(new BooleanValue(false), empty.evaluate(in(nul(), false), ROW));
+    assertEquals(new BooleanValue(true), empty.evaluate(in(nul(), true), ROW));
+  }
+
+  // duplikat di hasil subquery ga ngaruh, CHAR berpadding tetap cocok, 7 IN (7.0) TRUE
+  @Test
+  void inSubqueryIgnoresDuplicatesPaddingAndNumericType() {
+    ExpressionEvaluator values =
+        new ExpressionEvaluator(
+            plan -> List.of(new IntValue(3), new IntValue(3), new FloatValue(7.0)));
+    ExpressionEvaluator texts = new ExpressionEvaluator(plan -> List.of(new TextValue("A  ")));
+
+    assertEquals(new BooleanValue(true), values.evaluate(in(num(3), false), ROW));
+    assertEquals(new BooleanValue(false), values.evaluate(in(num(3), true), ROW));
+    assertEquals(new BooleanValue(true), values.evaluate(in(col("e", "id"), false), ROW));
+    assertEquals(new BooleanValue(true), values.evaluate(in(lit(new FloatValue(3.0)), false), ROW));
+    assertEquals(new BooleanValue(true), texts.evaluate(in(text("A"), false), ROW));
+    assertEquals(new BooleanValue(false), texts.evaluate(in(text("B"), false), ROW));
+  }
+
+  // hasil NULL dari IN / NOT IN bikin baris ga lolos filter, sama kayak FALSE
+  @Test
+  void unknownInResultFailsThePredicate() {
+    ExpressionEvaluator withNull =
+        new ExpressionEvaluator(plan -> List.of(new IntValue(1), NullValue.INSTANCE));
+
+    assertFalse(withNull.evaluatePredicate(in(num(2), false), ROW));
+    assertFalse(withNull.evaluatePredicate(in(num(2), true), ROW));
+    assertFalse(withNull.evaluatePredicate(in(nul(), true), ROW));
+    assertTrue(withNull.evaluatePredicate(in(num(1), false), ROW));
+    // NULL di dalam AND: FALSE menang, TRUE AND NULL tetap NULL
+    assertEquals(
+        new BooleanValue(false),
+        withNull.evaluate(bin(in(num(2), false), BinaryOp.AND, bool(false)), ROW));
+    assertEquals(
+        NullValue.INSTANCE,
+        withNull.evaluate(bin(bool(true), BinaryOp.AND, in(num(2), true)), ROW));
+  }
+
+  // evaluator biasa ga punya akses ke storage, jadi subquery harus ditolak jelas
+  @Test
+  void inSubqueryWithoutRunnerIsRejected() {
+    assertCode(ErrorCode.INVALID_PLAN, in(num(1), false));
+  }
+
+  private static Expression in(Expression operand, boolean negated) {
+    var query =
+        new SelectStatement(
+            List.of(new ColumnRef(Optional.of("d"), "id")),
+            new TableSource("dept", "d"),
+            Optional.empty(),
+            List.of());
+    return new InSubqueryExpression(
+        operand, query, Optional.of(new TableScanPlan("dept", "d")), negated);
   }
 
   // helper biar ga nulis evaluator.evaluate(..., ROW) terus

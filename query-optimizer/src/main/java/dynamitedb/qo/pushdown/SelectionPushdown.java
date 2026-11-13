@@ -7,6 +7,7 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.JoinPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
@@ -94,6 +95,8 @@ public class SelectionPushdown implements PlanRewrite {
         yield all;
       }
       case LiteralExpression literal -> List.of();
+      // kolom di dalam subquery milik scope subquery, bukan query luar
+      case InSubqueryExpression in -> columns(in.operand());
     };
   }
 

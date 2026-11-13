@@ -6,24 +6,45 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
+import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
+import java.util.function.Function;
 
 /** Ngitung nilai ekspresi atau kondisi buat satu baris (QP-04). */
 public class ExpressionEvaluator {
+
+  // null berarti evaluator ini ga bisa jalanin subquery (dibikin per query sama PlanTranslator)
+  private final Function<PlanNode, List<Value>> subqueries;
+  // subquery tak berkorelasi cukup dijalanin sekali, hasilnya dipake buat semua baris
+  private final Map<InSubqueryExpression, TreeSet<Value>> materialized = new IdentityHashMap<>();
+
+  public ExpressionEvaluator() {
+    this(null);
+  }
+
+  public ExpressionEvaluator(Function<PlanNode, List<Value>> subqueries) {
+    this.subqueries = subqueries;
+  }
 
   public Value evaluate(Expression expr, OperatorRow row) {
     return switch (expr) {
       case LiteralExpression literal -> literal.value();
       case ColumnExpression column -> row.getValue(column.column());
       case BinaryExpression binary -> evaluateBinary(binary, row);
+      case InSubqueryExpression in -> evaluateIn(in, row);
     };
   }
 
@@ -48,6 +69,35 @@ public class ExpressionEvaluator {
       case ADD, SUB, MUL, DIV -> arithmetic(expr.operator(), left, right);
       default -> new BooleanValue(holds(expr.operator(), compare(left, right)));
     };
+  }
+
+  // logika tiga nilai SQL: ga ketemu tapi subquery ada NULL hasilnya NULL
+  private Value evaluateIn(InSubqueryExpression expr, OperatorRow row) {
+    TreeSet<Value> values = materialized.computeIfAbsent(expr, this::materialize);
+    if (values.isEmpty()) return new BooleanValue(expr.negated());
+    Value operand = evaluate(expr.operand(), row);
+    if (operand instanceof NullValue) return NullValue.INSTANCE;
+    if (values.contains(operand)) return new BooleanValue(!expr.negated());
+    return values.contains(NullValue.INSTANCE)
+        ? NullValue.INSTANCE
+        : new BooleanValue(expr.negated());
+  }
+
+  private TreeSet<Value> materialize(InSubqueryExpression expr) {
+    if (subqueries == null || expr.plan().isEmpty()) {
+      throw new DbmsException(ErrorCode.INVALID_PLAN, "IN subquery has no executable plan");
+    }
+    // compare() dipake supaya 1 = 1.0 dan padding CHAR tetap dianggap sama
+    TreeSet<Value> values = new TreeSet<>(ExpressionEvaluator::compareNullsFirst);
+    values.addAll(subqueries.apply(expr.plan().get()));
+    return values;
+  }
+
+  private static int compareNullsFirst(Value left, Value right) {
+    boolean leftNull = left instanceof NullValue;
+    boolean rightNull = right instanceof NullValue;
+    if (leftNull || rightNull) return Boolean.compare(!leftNull, !rightNull);
+    return compare(left, right);
   }
 
   // AND tiga nilai: ada FALSE hasilnya FALSE, ada NULL hasilnya NULL, sisanya TRUE

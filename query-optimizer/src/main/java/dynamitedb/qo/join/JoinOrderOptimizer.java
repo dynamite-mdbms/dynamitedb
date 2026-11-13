@@ -7,6 +7,7 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
@@ -199,6 +200,9 @@ public class JoinOrderOptimizer {
       case BinaryExpression binary ->
           new BinaryExpression(
               rename(binary.left(), renamed), binary.operator(), rename(binary.right(), renamed));
+      case InSubqueryExpression in ->
+          new InSubqueryExpression(
+              rename(in.operand(), renamed), in.query(), in.plan(), in.negated());
       case LiteralExpression literal -> literal;
     };
   }

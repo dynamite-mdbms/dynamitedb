@@ -26,6 +26,7 @@ public class Lexer {
           "NULL",
           "IS",
           "NOT",
+          "IN",
           "INSERT",
           "INTO",
           "VALUES",
