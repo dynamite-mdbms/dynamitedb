@@ -3,13 +3,16 @@ package dynamitedb.app;
 import dynamitedb.app.cli.CliClient;
 import dynamitedb.app.driver.DriverCli;
 import dynamitedb.app.mock.MockRuntime;
+import dynamitedb.contracts.transaction.ProtocolType;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class Main {
   private Main() {}
@@ -32,7 +35,9 @@ public final class Main {
       output.println(
           "  stub runtime: module wiring is real; query, storage, recovery and concurrency"
               + " operations remain stubs/defaults");
-      output.println("server --real [--host 127.0.0.1] [--port 7777] [--data-dir data]");
+      output.println(
+          "server --real [--host 127.0.0.1] [--port 7777] [--data-dir data]"
+              + " [--protocol strict-2pl|strict-timestamp] [--checkpoint-interval-seconds 60]");
       output.println(
           "  real runtime: persistent storage, WAL recovery, sample database and SQL server");
       output.println("server --mock [--host 127.0.0.1] [--port 7777] (legacy demo behavior)");
@@ -43,28 +48,48 @@ public final class Main {
     Map<String, String> options = options(args);
     switch (args[0]) {
       case "server" -> {
-        requireOnly(options, "--mock", "--stub", "--real", "--host", "--port", "--data-dir");
+        requireOnly(
+            options,
+            "--mock",
+            "--stub",
+            "--real",
+            "--host",
+            "--port",
+            "--data-dir",
+            "--protocol",
+            "--checkpoint-interval-seconds");
         boolean mock = options.containsKey("--mock");
         boolean stub = options.containsKey("--stub");
         boolean real = options.containsKey("--real");
         if ((mock ? 1 : 0) + (stub ? 1 : 0) + (real ? 1 : 0) != 1)
           throw new IllegalArgumentException("Choose exactly one of --real, --stub or --mock");
+        if (!real && options.containsKey("--checkpoint-interval-seconds"))
+          throw new IllegalArgumentException(
+              "--checkpoint-interval-seconds requires server --real");
+        if (mock && options.containsKey("--protocol"))
+          throw new IllegalArgumentException("--protocol is not valid with server --mock");
         String host = options.getOrDefault("--host", "127.0.0.1");
         if (host.isBlank()) throw new IllegalArgumentException("Host must not be blank");
         int port = Integer.parseInt(options.getOrDefault("--port", "7777"));
+        Duration checkpointInterval =
+            checkpointInterval(options.getOrDefault("--checkpoint-interval-seconds", "60"));
+        ProtocolType protocol = protocol(options.getOrDefault("--protocol", "strict-2pl"));
         DbmsConfig defaults = DbmsConfig.defaults();
         DbmsConfig config =
             new DbmsConfig(
                 port,
                 Path.of(options.getOrDefault("--data-dir", defaults.dataDirectory().toString())),
-                defaults.protocol());
+                protocol);
         DbmsBootstrap bootstrap;
         PersistentRuntime runtime = null;
         String mode;
         if (real) {
           runtime = new PersistentRuntime(config);
           bootstrap = runtime.bootstrap();
-          mode = "Persistent DynamiteDB runtime";
+          mode =
+              "Persistent DynamiteDB runtime (checkpoint every "
+                  + checkpointInterval.toSeconds()
+                  + " seconds)";
         } else if (stub) {
           StubRuntime stubRuntime = new StubRuntime(config);
           bootstrap = stubRuntime.bootstrap();
@@ -76,9 +101,18 @@ public final class Main {
           bootstrap = new DbmsBootstrap(new MockRuntime().processor(), () -> {});
           mode = "Mock QP server";
         }
+        PersistentRuntime activeRuntime = runtime;
+        Runnable shutdownAction =
+            activeRuntime == null ? bootstrap::shutdown : activeRuntime::close;
+        AtomicBoolean closed = new AtomicBoolean();
+        Runnable closeOnce =
+            () -> {
+              if (closed.compareAndSet(false, true)) shutdownAction.run();
+            };
         try {
           bootstrap.start(config, host);
-          Thread shutdown = new Thread(bootstrap::shutdown, "qp-shutdown");
+          if (runtime != null) runtime.startPeriodicCheckpoints(checkpointInterval);
+          Thread shutdown = new Thread(closeOnce, "qp-shutdown");
           Runtime.getRuntime().addShutdownHook(shutdown);
           output.println(mode + " listening on " + host + ":" + bootstrap.port());
           try {
@@ -91,8 +125,7 @@ public final class Main {
             }
           }
         } finally {
-          if (runtime == null) bootstrap.shutdown();
-          else runtime.close();
+          closeOnce.run();
         }
       }
       case "cli" -> {
@@ -126,7 +159,14 @@ public final class Main {
           || key.equals("--stub")
           || key.equals("--real")
           || key.equals("--suite")) options.put(key, "true");
-      else if (java.util.Set.of("--host", "--port", "--file", "--data-dir").contains(key)
+      else if (java.util.Set.of(
+                  "--host",
+                  "--port",
+                  "--file",
+                  "--data-dir",
+                  "--protocol",
+                  "--checkpoint-interval-seconds")
+              .contains(key)
           && index + 1 < args.length) options.put(key, args[++index]);
       else throw new IllegalArgumentException("Unknown or incomplete option: " + key);
     }
@@ -137,5 +177,21 @@ public final class Main {
     if (!java.util.Set.of(allowed).containsAll(options.keySet())) {
       throw new IllegalArgumentException("Option is not valid for this mode");
     }
+  }
+
+  static ProtocolType protocol(String value) {
+    return switch (value) {
+      case "strict-2pl" -> ProtocolType.STRICT_2PL;
+      case "strict-timestamp" -> ProtocolType.STRICT_TIMESTAMP;
+      default -> throw new IllegalArgumentException("Unknown concurrency protocol: " + value);
+    };
+  }
+
+  static Duration checkpointInterval(String value) {
+    long seconds = Long.parseLong(value);
+    if (seconds <= 0 || seconds > Long.MAX_VALUE / 1_000_000_000L)
+      throw new IllegalArgumentException(
+          "Checkpoint interval must be a positive number of seconds");
+    return Duration.ofSeconds(seconds);
   }
 }

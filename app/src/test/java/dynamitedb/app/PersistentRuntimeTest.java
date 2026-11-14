@@ -18,15 +18,52 @@ import dynamitedb.contracts.storage.Value;
 import dynamitedb.contracts.transaction.ProtocolType;
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class PersistentRuntimeTest {
   @TempDir Path directory;
+
+  @Test
+  void timestampRuntimeRunsPeriodicCheckpointsAndRestartsWithCommittedData() throws Exception {
+    DbmsConfig config =
+        new DbmsConfig(0, directory.resolve("periodic"), ProtocolType.STRICT_TIMESTAMP);
+    try (PersistentRuntime runtime = new PersistentRuntime(config)) {
+      runtime.bootstrap().start(config);
+      runtime.startPeriodicCheckpoints(Duration.ofMillis(50));
+      try (RemoteQueryClient client =
+          new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port())) {
+        client.execute("INSERT INTO student VALUES (9011, 'Periodic', 3.0, 'A');");
+      }
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      boolean checkpointComplete = false;
+      while (!checkpointComplete && System.nanoTime() < deadline) {
+        checkpointComplete =
+            runtime.readLog(new LogFilter(Optional.empty(), Optional.empty())).lines().stream()
+                .anyMatch(line -> line.contains("CHECKPOINT_END"));
+        if (!checkpointComplete) Thread.sleep(20);
+      }
+      assertTrue(checkpointComplete);
+    }
+    try (PersistentRuntime runtime = new PersistentRuntime(config)) {
+      runtime.bootstrap().start(config);
+      try (RemoteQueryClient client =
+          new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port())) {
+        assertEquals(
+            1,
+            client
+                .execute("SELECT student_id FROM student WHERE student_id = 9011;")
+                .rows()
+                .size());
+      }
+    }
+  }
 
   @Test
   void committedSqlWritesSurvivePersistentRuntimeRestart() throws Exception {

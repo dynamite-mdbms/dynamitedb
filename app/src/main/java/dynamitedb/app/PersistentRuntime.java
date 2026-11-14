@@ -76,6 +76,7 @@ import dynamitedb.sm.index.IndexManager;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -90,6 +91,7 @@ public final class PersistentRuntime implements AutoCloseable {
   private final DbmsBootstrap bootstrap;
   private final RecoveryManagerImpl recovery;
   private final HistoryCatalog history;
+  private final CheckpointManager checkpoint;
 
   public PersistentRuntime(DbmsConfig config) {
     Objects.requireNonNull(config, "config");
@@ -150,7 +152,7 @@ public final class PersistentRuntime implements AutoCloseable {
 
     var crash =
         new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
-    var checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
+    checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
     history = new HistoryCatalog(manifests, log, baseSnapshot);
     var historical =
         new HistoricalRecoveryManager(
@@ -224,6 +226,10 @@ public final class PersistentRuntime implements AutoCloseable {
     return bootstrap;
   }
 
+  public void startPeriodicCheckpoints(Duration interval) {
+    checkpoint.startPeriodic(interval);
+  }
+
   /** Runs a coordinated checkpoint against the live persistent runtime. */
   public CheckpointResult checkpoint() {
     return recovery.checkpoint();
@@ -242,6 +248,7 @@ public final class PersistentRuntime implements AutoCloseable {
   @Override
   public void close() {
     bootstrap.shutdown();
+    checkpoint.stopPeriodic();
     log.close();
   }
 
