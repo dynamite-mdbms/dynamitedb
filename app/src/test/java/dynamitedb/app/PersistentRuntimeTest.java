@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dynamitedb.app.client.RemoteQueryClient;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.LogFilter;
+import dynamitedb.contracts.recovery.RecoveryStatus;
+import dynamitedb.contracts.recovery.RecoveryTarget;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
@@ -16,6 +19,7 @@ import dynamitedb.contracts.transaction.ProtocolType;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -39,6 +43,7 @@ class PersistentRuntimeTest {
                 .rows()
                 .size());
       }
+      assertTrue(runtime.checkpoint().checkpointLsn().value() > 0);
     }
 
     try (PersistentRuntime runtime = new PersistentRuntime(config)) {
@@ -51,6 +56,40 @@ class PersistentRuntimeTest {
                 .execute("SELECT student_id FROM student WHERE student_id = 9001;")
                 .rows()
                 .size());
+      }
+    }
+  }
+
+  @Test
+  void liveRuntimeExposesCheckpointLogInspectionHistoricalRecoveryAndRealRollback()
+      throws Exception {
+    DbmsConfig config = new DbmsConfig(0, directory.resolve("db"), ProtocolType.STRICT_2PL);
+    try (PersistentRuntime runtime = new PersistentRuntime(config)) {
+      runtime.bootstrap().start(config);
+      try (RemoteQueryClient client =
+          new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port())) {
+        client.execute("BEGIN;");
+        client.execute("DELETE FROM student WHERE student_id = 1;");
+        client.execute("ABORT;");
+        assertEquals(1, count(client, "SELECT student_id FROM student WHERE student_id = 1;"));
+
+        var beforeInsert = runtime.readLog(new LogFilter(Optional.empty(), Optional.empty()));
+        var recoveryPoint = lastCommittedTransaction(beforeInsert.lines());
+        client.execute("INSERT INTO student VALUES (99001, 'Recover me', 3.0, 'A');");
+
+        var logAfterInsert = runtime.readLog(new LogFilter(Optional.empty(), Optional.empty()));
+        assertTrue(
+            logAfterInsert.lines().stream()
+                .anyMatch(line -> line.contains("INSERT table=student")));
+        assertTrue(runtime.checkpoint().checkpointLsn().value() > 0);
+
+        var restored =
+            runtime.recoverTo(new RecoveryTarget(Optional.empty(), Optional.of(recoveryPoint)));
+        assertEquals(RecoveryStatus.SUCCESS, restored.status(), restored.message());
+        assertEquals(0, count(client, "SELECT student_id FROM student WHERE student_id = 99001;"));
+
+        client.execute("INSERT INTO student VALUES (99001, 'After restore', 3.0, 'A');");
+        assertEquals(1, count(client, "SELECT student_id FROM student WHERE student_id = 99001;"));
       }
     }
   }
@@ -372,6 +411,21 @@ class PersistentRuntimeTest {
 
   private static int count(RemoteQueryClient client, String sql) throws Exception {
     return client.execute(sql).rows().size();
+  }
+
+  private static dynamitedb.contracts.transaction.TransactionId lastCommittedTransaction(
+      List<String> lines) {
+    dynamitedb.contracts.transaction.TransactionId latest = null;
+    for (String line : lines) {
+      if (!line.contains(" COMMIT")) continue;
+      int txStart = line.indexOf("tx=") + 3;
+      int txEnd = line.indexOf(' ', txStart);
+      latest =
+          new dynamitedb.contracts.transaction.TransactionId(
+              Long.parseLong(line.substring(txStart + 1, txEnd)));
+    }
+    if (latest == null) throw new AssertionError("Expected at least one committed transaction");
+    return latest;
   }
 
   private static Value first(RemoteQueryClient client, String sql) throws Exception {
