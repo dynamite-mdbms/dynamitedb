@@ -59,6 +59,13 @@ the data directory before it accepts clients:
 ./gradlew :app:run --args='server --real --host 127.0.0.1 --port 7777 --data-dir data'
 ```
 
+The real server defaults to strict 2PL and runs a checkpoint every 60 seconds after
+startup recovery completes. Use `--protocol strict-timestamp` to select timestamp
+ordering, or `--checkpoint-interval-seconds N` to set a positive checkpoint interval
+in seconds. These options are also available in the installed application script
+from `./gradlew :app:installDist`. Manual checkpoint and historical recovery remain
+available through the `PersistentRuntime` Java API.
+
 Connect from a second terminal:
 
 ```sh
