@@ -55,6 +55,10 @@ class HistoricalRecoveryManagerTest {
     assertEquals(RecoveryStatus.SUCCESS, result.status());
     assertEquals(new LogSequenceNumber(11), fixture.manifests.readActive().boundaryLsn());
     assertEquals(List.of(1, 3, 4), fixture.storage.replayedValues);
+    assertEquals(1, fixture.storage.materializedSnapshots.size());
+    assertEquals(
+        fixture.manifests.readActive().activeId(),
+        fixture.storage.materializedSnapshots.getFirst().id());
     assertEquals(fixture.highWater, fixture.coordinator.initializedHighWater);
     assertTrue(fixture.coordinator.guardClosed);
   }
@@ -213,6 +217,7 @@ class HistoricalRecoveryManagerTest {
 
   private static final class RecordingStorage implements HistoricalRecoveryStorage {
     private final List<Integer> replayedValues = new ArrayList<>();
+    private final List<SnapshotMetadata> materializedSnapshots = new ArrayList<>();
     private int stageCount;
 
     @Override
@@ -237,6 +242,13 @@ class HistoricalRecoveryManagerTest {
     @Override
     public SealedGeneration sealStage(RecoveryStage stage, RecoveryBoundary boundary) {
       return new SealedGeneration(stage.id(), boundary);
+    }
+
+    @Override
+    public void materializeSnapshot(SealedGeneration generation, SnapshotMetadata snapshot) {
+      assertEquals(generation.id(), snapshot.id());
+      assertTrue(snapshot.baseLsn().value() >= generation.boundary().inclusiveLsn().value());
+      materializedSnapshots.add(snapshot);
     }
   }
 

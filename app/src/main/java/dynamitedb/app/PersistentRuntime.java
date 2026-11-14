@@ -11,9 +11,14 @@ import dynamitedb.ccm.timestamp.TimestampOrderingProtocol;
 import dynamitedb.ccm.timestamp.TimestampRegistry;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.CheckpointResult;
 import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogFilter;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogView;
 import dynamitedb.contracts.recovery.RecoveryHighWater;
+import dynamitedb.contracts.recovery.RecoveryResult;
+import dynamitedb.contracts.recovery.RecoveryTarget;
 import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.contracts.transaction.ProtocolType;
 import dynamitedb.contracts.transaction.TransactionId;
@@ -83,6 +88,8 @@ public final class PersistentRuntime implements AutoCloseable {
 
   private final LogManager log;
   private final DbmsBootstrap bootstrap;
+  private final RecoveryManagerImpl recovery;
+  private final HistoryCatalog history;
 
   public PersistentRuntime(DbmsConfig config) {
     Objects.requireNonNull(config, "config");
@@ -144,11 +151,11 @@ public final class PersistentRuntime implements AutoCloseable {
     var crash =
         new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
     var checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
-    var history = new HistoryCatalog(manifests, log, baseSnapshot);
+    history = new HistoryCatalog(manifests, log, baseSnapshot);
     var historical =
         new HistoricalRecoveryManager(
             storageRecovery, history, storageRecovery, log, wal, manifests, concurrency);
-    var recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
+    recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
     var initializer = new RecoveryInitializer(manifests, recovery, concurrency);
 
     var cost = new CostEstimator(catalogAccess);
@@ -199,11 +206,37 @@ public final class PersistentRuntime implements AutoCloseable {
                 guard.close();
               }
               new SampleDatabaseLoader(storage, concurrency, concurrency).loadIfAbsent(catalog);
+              if (fresh || history.hasOnlySnapshot(baseSnapshot)) {
+                RecoveryHighWater baseline = log.readHighWater();
+                SnapshotMetadata seededSnapshot =
+                    new SnapshotMetadata(
+                        UUID.randomUUID(),
+                        manifests.readActive().walLineage(),
+                        baseline.lsn(),
+                        baseline.maxCommitTime().orElseGet(Instant::now));
+                generations.captureSnapshot(seededSnapshot);
+                history.replaceWithSnapshot(seededSnapshot);
+              }
             });
   }
 
   public DbmsBootstrap bootstrap() {
     return bootstrap;
+  }
+
+  /** Runs a coordinated checkpoint against the live persistent runtime. */
+  public CheckpointResult checkpoint() {
+    return recovery.checkpoint();
+  }
+
+  /** Restores the live runtime to a retained committed transaction or commit time. */
+  public RecoveryResult recoverTo(RecoveryTarget target) {
+    return recovery.recoverTo(Objects.requireNonNull(target, "target"));
+  }
+
+  /** Inspects the persistent WAL through FRM. */
+  public LogView readLog(LogFilter filter) {
+    return recovery.readLog(Objects.requireNonNull(filter, "filter"));
   }
 
   @Override

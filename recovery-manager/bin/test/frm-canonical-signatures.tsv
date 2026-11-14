@@ -72,6 +72,7 @@ method	dynamitedb.contracts.api.HistoricalRecoveryStorage	createStage	dynamitedb
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.contracts.api.HistoricalRecoveryStorage	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 type	dynamitedb.contracts.recovery.RecoveryTarget	record
 component	dynamitedb.contracts.recovery.RecoveryTarget	commitTime	java.util.Optional<java.time.Instant>
 component	dynamitedb.contracts.recovery.RecoveryTarget	committedTx	java.util.Optional<dynamitedb.contracts.transaction.TransactionId>

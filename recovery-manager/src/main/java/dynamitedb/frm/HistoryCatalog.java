@@ -92,10 +92,15 @@ public final class HistoryCatalog {
     this.manifestStore = manifestStore;
     this.log = log;
     this.snapshots = new CopyOnWriteArrayList<>();
-    if (log != null && !log.isMock())
-      this.snapshots.addAll(readSnapshotCatalog(log.rootDirectory()));
-    for (SnapshotMetadata snapshot : Objects.requireNonNull(snapshots, "snapshots")) {
-      mergeSnapshot(snapshot);
+    List<SnapshotMetadata> supplied = Objects.requireNonNull(snapshots, "snapshots");
+    List<SnapshotMetadata> persisted =
+        log != null && !log.isMock() ? readSnapshotCatalog(log.rootDirectory()) : List.of();
+    if (!persisted.isEmpty()) {
+      this.snapshots.addAll(persisted);
+    } else {
+      for (SnapshotMetadata snapshot : supplied) {
+        mergeSnapshot(snapshot);
+      }
     }
     if (this.snapshots.isEmpty()) {
       throw new IllegalArgumentException("At least one recovery snapshot is required");
@@ -238,6 +243,23 @@ public final class HistoryCatalog {
     if (log != null && !log.isMock()) log.registerHistory(snapshot.walLineage());
     if (log != null && !log.isMock()) persistSnapshotCatalog(log.rootDirectory(), updated);
     snapshots.add(snapshot);
+  }
+
+  /** Replaces the bootstrap-only history with a materialized baseline snapshot. */
+  public synchronized void replaceWithSnapshot(SnapshotMetadata snapshot) {
+    Objects.requireNonNull(snapshot, "snapshot");
+    if (log != null && !log.isMock()) {
+      log.registerHistory(snapshot.walLineage());
+      persistSnapshotCatalog(log.rootDirectory(), List.of(snapshot));
+    }
+    snapshots.clear();
+    snapshots.add(snapshot);
+  }
+
+  /** Reports whether history still contains only the pre-bootstrap seed snapshot. */
+  public synchronized boolean hasOnlySnapshot(SnapshotMetadata snapshot) {
+    Objects.requireNonNull(snapshot, "snapshot");
+    return snapshots.size() == 1 && snapshots.getFirst().equals(snapshot);
   }
 
   private GenerationManifest activeManifest() {

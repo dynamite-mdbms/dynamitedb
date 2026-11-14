@@ -149,13 +149,15 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
             ErrorCode.RECOVERY_FAILURE,
             "Storage sealed a generation with an unexpected identity or boundary");
       }
-      wal.prepareLineage(newLineage, sealed, highWater);
-      catalog.registerSnapshot(
+      SnapshotMetadata snapshot =
           new SnapshotMetadata(
               sealed.id(),
               newLineage,
               highWater.lsn(),
-              targetBoundary.commitTime().orElseGet(Instant::now)));
+              targetBoundary.commitTime().orElseGet(Instant::now));
+      storage.materializeSnapshot(sealed, snapshot);
+      wal.prepareLineage(newLineage, sealed, highWater);
+      catalog.registerSnapshot(snapshot);
       GenerationManifest published = catalog.buildManifest(sealed, newLineage, highWater);
       manifests.publishAtomically(published);
       generations.switchToPublishedGeneration(published);

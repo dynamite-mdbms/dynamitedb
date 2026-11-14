@@ -131,6 +131,13 @@ public final class MockRecoveryPorts {
       context.invoked("HistoricalRecoveryStorage.sealStage");
       return context.sealed();
     }
+
+    @Override
+    public void materializeSnapshot(SealedGeneration generation, SnapshotMetadata snapshot) {
+      Objects.requireNonNull(generation, "generation");
+      Objects.requireNonNull(snapshot, "snapshot");
+      context.invoked("HistoricalRecoveryStorage.materializeSnapshot");
+    }
   }
 
   private final class Generations implements StorageGenerationAdmin {

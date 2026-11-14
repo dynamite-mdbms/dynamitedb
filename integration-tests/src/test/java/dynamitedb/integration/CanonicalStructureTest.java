@@ -135,7 +135,7 @@ class CanonicalStructureTest {
     var canonicalTypes = rows.stream().filter(row -> row[0].equals("type")).toList();
     assertEquals(221, canonicalTypes.size());
     assertEquals(182, rows.stream().filter(row -> row[0].equals("component")).count());
-    assertEquals(316, rows.stream().filter(row -> row[0].equals("method")).count());
+    assertEquals(319, rows.stream().filter(row -> row[0].equals("method")).count());
     assertEquals(92, rows.stream().filter(row -> row[0].equals("provider")).count());
 
     assertCompiledTypeInventoryMatchesFixture(rows);
