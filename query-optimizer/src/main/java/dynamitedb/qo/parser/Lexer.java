@@ -47,7 +47,10 @@ public class Lexer {
           "PRIMARY",
           "KEY",
           "FOREIGN",
-          "REFERENCES");
+          "REFERENCES",
+          "DROP",
+          "RESTRICT",
+          "CASCADE");
 
   public List<Token> tokenize(String sql) {
     if (sql == null) {

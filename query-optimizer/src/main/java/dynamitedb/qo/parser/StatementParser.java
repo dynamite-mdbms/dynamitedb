@@ -6,6 +6,8 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
@@ -63,6 +65,7 @@ public class StatementParser {
             }
             yield parseCreateIndex(body, cursor);
           }
+          case "DROP" -> parseDropTable(body, cursor);
           default -> throw syntax("Expected a supported statement keyword", first);
         };
     if (cursor[0] < body.size()) {
@@ -173,6 +176,16 @@ public class StatementParser {
     } while (accept(tokens, cursor, ","));
     expect(tokens, cursor, ")");
     return new CreateTableStatement(table, columns, primaryKey, foreignKeys);
+  }
+
+  /** DROP TABLE t [RESTRICT | CASCADE]; RESTRICT is the default, as in the SQL standard. */
+  private static DropTableStatement parseDropTable(List<Token> tokens, int[] cursor) {
+    expect(tokens, cursor, "TABLE");
+    String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
+    if (accept(tokens, cursor, "CASCADE"))
+      return new DropTableStatement(table, DropBehavior.CASCADE);
+    accept(tokens, cursor, "RESTRICT");
+    return new DropTableStatement(table, DropBehavior.RESTRICT);
   }
 
   /** col INTEGER | FLOAT | CHAR(n) | VARCHAR(n); nullability is settled by the binder. */

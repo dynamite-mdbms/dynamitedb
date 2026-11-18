@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.CreateTableStatement;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.SelectStatement;
@@ -35,6 +37,13 @@ class SqlParserTest {
     assertEquals(Optional.of("student"), select.projection().get(0).relation());
     assertTrue(select.predicate().isPresent());
     assertEquals(SortDirection.ASC, select.orderBy().get(0).direction());
+  }
+
+  @Test
+  void routesTableDdlToStatementParser() {
+    assertInstanceOf(
+        CreateTableStatement.class, parser.parse(lexer.tokenize("CREATE TABLE t (id INTEGER)")));
+    assertInstanceOf(DropTableStatement.class, parser.parse(lexer.tokenize("DROP TABLE t;")));
   }
 
   @Test

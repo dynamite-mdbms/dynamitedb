@@ -22,7 +22,7 @@ import java.util.Set;
 public class SqlParser {
 
   private static final Set<String> NON_SELECT_STATEMENTS =
-      Set.of("INSERT", "UPDATE", "DELETE", "BEGIN", "COMMIT", "ABORT", "CREATE");
+      Set.of("INSERT", "UPDATE", "DELETE", "BEGIN", "COMMIT", "ABORT", "CREATE", "DROP");
 
   private final StatementParser statements;
   private final ExpressionParser expressions;

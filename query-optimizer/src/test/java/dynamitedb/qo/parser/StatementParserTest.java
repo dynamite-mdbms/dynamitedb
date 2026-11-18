@@ -12,6 +12,8 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
@@ -157,6 +159,18 @@ class StatementParserTest {
         parse("CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY)"));
   }
 
+  @Test
+  void parsesDropTableWithRestrictAsDefault() {
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.RESTRICT), parse("DROP TABLE student;"));
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.RESTRICT),
+        parse("drop table student restrict"));
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.CASCADE),
+        parse("DROP TABLE student CASCADE;"));
+  }
+
   // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana
   // (fail-fast).
   @ParameterizedTest
@@ -205,6 +219,9 @@ class StatementParserTest {
           CREATE TABLE t (a INTEGER, PRIMARY KEY (a, b)) | Expected ) at offset 41 near ','
           CREATE TABLE t (a INTEGER, FOREIGN KEY (a) s(id)) | Expected REFERENCES at offset 43 near 's'
           CREATE TABLE t (a INTEGER) x                | Unexpected token after CREATE statement at offset 27 near 'x'
+          DROP student                                | Expected TABLE at offset 5 near 'student'
+          DROP TABLE;                                 | Expected a table name at end of input
+          DROP TABLE student RESTRICT CASCADE         | Unexpected token after DROP statement at offset 28 near 'CASCADE'
           SELECT * FROM student                       | Expected a supported statement keyword at offset 0 near 'SELECT'
           """)
   void rejectsInvalidStatementAtFirstError(String sql, String message) {
