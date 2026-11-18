@@ -10,7 +10,10 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
@@ -127,6 +130,8 @@ class PlanTranslatorTest {
             new UpdatePlan(SCAN, "employee", ID, truth()),
             new DeletePlan(SCAN, "employee"),
             new CreateIndexPlan("employee_id", "employee", "id", IndexKind.HASH),
+            new CreateTablePlan("t", List.of(), Optional.empty(), List.of()),
+            new DropTablePlan("employee", DropBehavior.CASCADE),
             new TransactionCommandPlan(TransactionCommand.BEGIN));
 
     for (PlanNode plan : plans) {

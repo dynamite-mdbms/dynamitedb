@@ -11,6 +11,9 @@ import dynamitedb.contracts.api.TupleReader;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.PlanExplanation;
 import dynamitedb.contracts.query.PreparedQuery;
 import dynamitedb.contracts.query.SessionId;
@@ -89,6 +92,26 @@ class QueryProcessorImplTest {
         assertThrows(DbmsException.class, () -> processor.execute(session, "BEGIN")).getCode());
     processor.execute(session, "SELECT");
     assertEquals(Optional.of(tx), sessions.get(session).activeTx());
+    assertEquals(TransactionStatus.ACTIVE, ports.status(tx));
+    processor.closeSession(session);
+  }
+
+  @Test
+  void tableDdlIsRejectedWithoutTouchingTransactions() {
+    SessionId session = processor.openSession("client");
+    for (String sql : List.of("CREATE_TABLE", "DROP_TABLE")) {
+      assertEquals(
+          ErrorCode.UNSUPPORTED_OPERATION,
+          assertThrows(DbmsException.class, () -> processor.execute(session, sql)).getCode());
+    }
+    assertTrue(ports.events.isEmpty());
+
+    processor.execute(session, "BEGIN");
+    TransactionId tx = sessions.get(session).activeTx().orElseThrow();
+    assertEquals(
+        ErrorCode.UNSUPPORTED_OPERATION,
+        assertThrows(DbmsException.class, () -> processor.execute(session, "DROP_TABLE"))
+            .getCode());
     assertEquals(TransactionStatus.ACTIVE, ports.status(tx));
     processor.closeSession(session);
   }
@@ -176,6 +199,13 @@ class QueryProcessorImplTest {
               case "INDEX" ->
                   new PreparedQuery(
                       new CreateIndexPlan("idx", "t", "id", IndexKind.HASH), new Schema(List.of()));
+              case "CREATE_TABLE" ->
+                  new PreparedQuery(
+                      new CreateTablePlan("t2", SCHEMA.columns(), Optional.empty(), List.of()),
+                      new Schema(List.of()));
+              case "DROP_TABLE" ->
+                  new PreparedQuery(
+                      new DropTablePlan("t", DropBehavior.RESTRICT), new Schema(List.of()));
               case "BEGIN", "COMMIT", "ABORT" ->
                   new PreparedQuery(
                       new TransactionCommandPlan(TransactionCommand.valueOf(sql)),
