@@ -11,6 +11,7 @@ import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.FromSource;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.InsertStatement;
@@ -48,6 +49,10 @@ public class Binder {
   private static final String TEXT = "text";
   private static final String BOOLEAN = "boolean";
   private static final String NULL = "null";
+  // Same limits as SM's CatalogManager, so DDL fails at bind time rather than in storage.
+  private static final String IDENTIFIER = "[A-Za-z_][A-Za-z0-9_]{0,127}";
+  private static final int MAX_COLUMNS = 1024;
+  private static final int MAX_TEXT_LENGTH = 65535;
 
   private final CatalogAccess catalog;
 
@@ -62,8 +67,8 @@ public class Binder {
       case UpdateStatement update -> bindUpdate(update);
       case DeleteStatement delete -> bindDelete(delete);
       case CreateIndexStatement create -> bindCreateIndex(create);
-      case CreateTableStatement create -> create;
-      case DropTableStatement drop -> drop;
+      case CreateTableStatement create -> bindCreateTable(create);
+      case DropTableStatement drop -> bindDropTable(drop);
       case TransactionStatement transaction -> transaction;
     };
   }
@@ -159,6 +164,104 @@ public class Binder {
             .anyMatch(index -> index.name().equalsIgnoreCase(create.index()));
     if (taken) throw error("Index already exists: " + create.index());
     return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
+  }
+
+  /** PRIMARY KEY implies NOT NULL; names are matched case-insensitively like table lookups. */
+  private CreateTableStatement bindCreateTable(CreateTableStatement create) {
+    String table = identifier(create.table());
+    if (catalog.listTables().stream().anyMatch(table::equalsIgnoreCase)) {
+      throw error("Table already exists: " + table);
+    }
+    if (create.columns().isEmpty() || create.columns().size() > MAX_COLUMNS) {
+      throw error("A table requires between 1 and " + MAX_COLUMNS + " columns");
+    }
+    Set<String> names = new HashSet<>();
+    for (Column column : create.columns()) {
+      if (!names.add(identifier(column.name()).toLowerCase(Locale.ROOT))) {
+        throw error("Duplicate column: " + column.name());
+      }
+      boolean text = kindOf(column.dataType()).equals(TEXT);
+      if (text && (column.maxLength() < 1 || column.maxLength() > MAX_TEXT_LENGTH)) {
+        throw error(
+            "Invalid length "
+                + column.maxLength()
+                + " for column "
+                + column.name()
+                + ", expected 1 to "
+                + MAX_TEXT_LENGTH);
+      }
+    }
+    if (create.primaryKey().size() > 1) throw error("Multiple primary keys for table " + table);
+    Schema scope = new Schema(create.columns());
+    List<String> primaryKey =
+        create.primaryKey().stream()
+            .map(name -> ownColumn(name, scope, "PRIMARY KEY").name())
+            .toList();
+    List<ForeignKey> foreignKeys =
+        create.foreignKeys().stream()
+            .map(key -> bindForeignKey(key, table, scope, primaryKey))
+            .toList();
+    List<Column> columns =
+        create.columns().stream()
+            .map(
+                c ->
+                    primaryKey.contains(c.name())
+                        ? new Column(table, c.name(), c.dataType(), c.maxLength(), false)
+                        : c)
+            .toList();
+    return new CreateTableStatement(table, columns, primaryKey, foreignKeys);
+  }
+
+  private ForeignKey bindForeignKey(
+      ForeignKey key, String table, Schema scope, List<String> primaryKey) {
+    Column column = ownColumn(key.column(), scope, "FOREIGN KEY");
+    boolean self = key.referencedTable().equalsIgnoreCase(table);
+    String target = self ? table : tableName(key.referencedTable());
+    Column referenced =
+        resolve(
+            new ColumnRef(Optional.empty(), key.referencedColumn()),
+            self ? scope : tableScope(target, target));
+    if (referenced.dataType() != column.dataType()) {
+      throw error(
+          "FOREIGN KEY "
+              + column.name()
+              + " ("
+              + column.dataType()
+              + ") does not match "
+              + target
+              + "."
+              + referenced.name()
+              + " ("
+              + referenced.dataType()
+              + ")");
+    }
+    // shortcut: CatalogAccess exposes no key metadata yet, so only a self-reference is checked to
+    // target a PRIMARY KEY; check existing tables once SM publishes constraints (#100).
+    if (self && !primaryKey.contains(referenced.name())) {
+      throw error(
+          "FOREIGN KEY target " + target + "." + referenced.name() + " is not a primary key");
+    }
+    return new ForeignKey(column.name(), target, referenced.name());
+  }
+
+  // shortcut: CatalogAccess exposes no foreign-key metadata yet, so RESTRICT cannot reject a
+  // referenced table here; add the dependency check once SM publishes constraints (#100).
+  private DropTableStatement bindDropTable(DropTableStatement drop) {
+    return new DropTableStatement(tableName(drop.table()), drop.behavior());
+  }
+
+  private static Column ownColumn(String name, Schema scope, String clause) {
+    return scope.columns().stream()
+        .filter(c -> c.name().equalsIgnoreCase(name))
+        .findFirst()
+        .orElseThrow(() -> error(clause + " column is not in the table: " + name));
+  }
+
+  private static String identifier(String name) {
+    if (!name.matches(IDENTIFIER)) {
+      throw error("Invalid identifier (ASCII letters, digits, '_', at most 128): " + name);
+    }
+    return name;
   }
 
   /**

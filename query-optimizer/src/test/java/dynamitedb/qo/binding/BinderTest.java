@@ -13,6 +13,10 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTableStatement;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTableStatement;
+import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.LiteralExpression;
@@ -38,6 +42,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class BinderTest {
 
@@ -216,6 +222,57 @@ class BinderTest {
       var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
       assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
     }
+  }
+
+  @Test
+  void bindsCreateTableKeysToCanonicalNames() {
+    var create =
+        (CreateTableStatement)
+            bind(
+                "CREATE TABLE Grade (Id INTEGER, sid INTEGER, parent INTEGER, mark CHAR(65535),"
+                    + " PRIMARY KEY (ID), FOREIGN KEY (SID) REFERENCES STUDENT(SID),"
+                    + " FOREIGN KEY (parent) REFERENCES grade(id))");
+
+    assertEquals("Grade", create.table());
+    assertEquals(List.of("Id"), create.primaryKey());
+    assertEquals(
+        List.of(new ForeignKey("sid", "student", "sid"), new ForeignKey("parent", "Grade", "Id")),
+        create.foreignKeys());
+    assertEquals(new Column("Grade", "Id", DataType.INTEGER, 0, false), create.columns().get(0));
+    assertTrue(create.columns().get(1).nullable());
+  }
+
+  @Test
+  void bindsDropTableToCatalogName() {
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.CASCADE),
+        bind("DROP TABLE STUDENT CASCADE"));
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      textBlock =
+          """
+          CREATE TABLE Student (id INTEGER)                    | Table already exists: Student
+          CREATE TABLE t (id INTEGER, ID FLOAT)                 | Duplicate column: ID
+          CREATE TABLE t (PRIMARY KEY (id))                     | A table requires between 1 and 1024 columns
+          CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, PRIMARY KEY (b)) | Multiple primary keys for table t
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (b))           | PRIMARY KEY column is not in the table: b
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (b) REFERENCES student(sid)) | FOREIGN KEY column is not in the table: b
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES missing(id))  | Unknown table: missing
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES student(age)) | Unknown column: age
+          CREATE TABLE t (a FLOAT, FOREIGN KEY (a) REFERENCES student(sid))   | FOREIGN KEY a (FLOAT) does not match student.sid (INTEGER)
+          CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, FOREIGN KEY (a) REFERENCES t(b)) | FOREIGN KEY target t.b is not a primary key
+          CREATE TABLE t (a CHAR(0))                            | Invalid length 0 for column a, expected 1 to 65535
+          CREATE TABLE t (a VARCHAR(65536))                     | Invalid length 65536 for column a, expected 1 to 65535
+          CREATE TABLE tabél (a INTEGER)                        | Invalid identifier (ASCII letters, digits, '_', at most 128): tabél
+          DROP TABLE missing                                    | Unknown table: missing
+          """)
+  void rejectsInvalidTableDdl(String sql, String message) {
+    var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
+    assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
+    assertEquals(message, error.getMessage(), sql);
   }
 
   @Test
