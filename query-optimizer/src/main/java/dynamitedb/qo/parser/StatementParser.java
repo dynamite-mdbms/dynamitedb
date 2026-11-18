@@ -6,10 +6,8 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
-import dynamitedb.contracts.query.DropBehavior;
 import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
-import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommand;
@@ -17,7 +15,10 @@ import dynamitedb.contracts.query.TransactionStatement;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
+import dynamitedb.contracts.storage.PrimaryKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -153,29 +154,31 @@ public class StatementParser {
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
     expect(tokens, cursor, "(");
     List<Column> columns = new ArrayList<>();
-    List<String> primaryKey = new ArrayList<>();
+    List<PrimaryKey> primaryKeys = new ArrayList<>();
     List<ForeignKey> foreignKeys = new ArrayList<>();
     do {
       if (accept(tokens, cursor, "PRIMARY")) {
         expect(tokens, cursor, "KEY");
-        primaryKey.add(parenthesizedColumn(tokens, cursor));
+        primaryKeys.add(new PrimaryKey(List.of(parenthesizedColumn(tokens, cursor))));
       } else if (accept(tokens, cursor, "FOREIGN")) {
         expect(tokens, cursor, "KEY");
         String column = parenthesizedColumn(tokens, cursor);
         expect(tokens, cursor, "REFERENCES");
         String target = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
-        foreignKeys.add(new ForeignKey(column, target, parenthesizedColumn(tokens, cursor)));
+        foreignKeys.add(
+            new ForeignKey(
+                table, List.of(column), target, List.of(parenthesizedColumn(tokens, cursor))));
       } else {
         Column column = parseColumnDefinition(table, tokens, cursor);
         columns.add(column);
         if (accept(tokens, cursor, "PRIMARY")) {
           expect(tokens, cursor, "KEY");
-          primaryKey.add(column.name());
+          primaryKeys.add(new PrimaryKey(List.of(column.name())));
         }
       }
     } while (accept(tokens, cursor, ","));
     expect(tokens, cursor, ")");
-    return new CreateTableStatement(table, columns, primaryKey, foreignKeys);
+    return new CreateTableStatement(table, columns, primaryKeys, foreignKeys);
   }
 
   /** DROP TABLE t [RESTRICT | CASCADE]; RESTRICT is the default, as in the SQL standard. */

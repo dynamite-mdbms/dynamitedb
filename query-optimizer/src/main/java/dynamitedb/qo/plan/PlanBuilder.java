@@ -33,6 +33,8 @@ import dynamitedb.contracts.query.TransactionStatement;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import java.util.Optional;
 
 /** Mengubah statement hasil binding menjadi PlanNode (QO-02, QO-03). */
@@ -66,10 +68,11 @@ public class PlanBuilder {
     }
     if (bound instanceof CreateTableStatement create) {
       return new CreateTablePlan(
-          create.table(),
-          create.columns(),
-          create.primaryKey().stream().findFirst(),
-          create.foreignKeys());
+          new TableDefinition(
+              create.table(),
+              new Schema(create.columns()),
+              create.primaryKeys().stream().findFirst(),
+              create.foreignKeys()));
     }
     if (bound instanceof DropTableStatement drop) {
       return new DropTablePlan(drop.table(), drop.behavior());

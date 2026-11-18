@@ -12,10 +12,8 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
-import dynamitedb.contracts.query.DropBehavior;
 import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
-import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.Statement;
@@ -24,9 +22,12 @@ import dynamitedb.contracts.query.TransactionStatement;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.TextValue;
 import java.util.Arrays;
 import java.util.List;
@@ -143,8 +144,8 @@ class StatementParserTest {
                 new Column("enrollment", "score", DataType.FLOAT, 0, true),
                 new Column("enrollment", "grade", DataType.CHAR, 2, true),
                 new Column("enrollment", "note", DataType.VARCHAR, 50, true)),
-            List.of("id"),
-            List.of(new ForeignKey("id", "student", "student_id"))),
+            List.of(new PrimaryKey(List.of("id"))),
+            List.of(new ForeignKey("enrollment", List.of("id"), "student", List.of("student_id")))),
         parse(
             "create table enrollment (id integer, score Float, grade CHAR(2), note varchar(50),"
                 + " primary key (id), foreign key (id) references student(student_id));"));
@@ -154,7 +155,7 @@ class StatementParserTest {
             List.of(
                 new Column("t", "a", DataType.INTEGER, 0, true),
                 new Column("t", "b", DataType.INTEGER, 0, true)),
-            List.of("a", "b"),
+            List.of(new PrimaryKey(List.of("a")), new PrimaryKey(List.of("b"))),
             List.of()),
         parse("CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY)"));
   }

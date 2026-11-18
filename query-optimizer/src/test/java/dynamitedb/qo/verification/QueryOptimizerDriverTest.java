@@ -11,9 +11,7 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
-import dynamitedb.contracts.query.DropBehavior;
 import dynamitedb.contracts.query.DropTablePlan;
-import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
@@ -29,8 +27,12 @@ import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
@@ -222,12 +224,15 @@ class QueryOptimizerDriverTest {
 
     assertEquals(
         new CreateTablePlan(
-            "grade",
-            List.of(
-                new Column("grade", "id", DataType.INTEGER, 0, false),
-                new Column("grade", "sid", DataType.INTEGER, 0, true)),
-            Optional.of("id"),
-            List.of(new ForeignKey("sid", "student", "student_id"))),
+            new TableDefinition(
+                "grade",
+                new Schema(
+                    List.of(
+                        new Column("grade", "id", DataType.INTEGER, 0, false),
+                        new Column("grade", "sid", DataType.INTEGER, 0, true))),
+                Optional.of(new PrimaryKey(List.of("id"))),
+                List.of(
+                    new ForeignKey("grade", List.of("sid"), "student", List.of("student_id"))))),
         create.root());
     assertEquals(new DropTablePlan("course", DropBehavior.CASCADE), drop.root());
     for (PreparedQuery prepared : List.of(create, drop)) {

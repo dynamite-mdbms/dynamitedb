@@ -25,6 +25,7 @@ import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.util.stream.Collectors;
@@ -136,8 +137,9 @@ public class PlanVisualizer {
           + "]";
     }
     if (plan instanceof CreateTablePlan create) {
+      TableDefinition definition = create.definition();
       String columns =
-          create.columns().stream()
+          definition.schema().columns().stream()
               .map(
                   c ->
                       c.name()
@@ -147,15 +149,25 @@ public class PlanVisualizer {
                           + (c.nullable() ? "" : " NOT NULL"))
               .collect(Collectors.joining(", "));
       String foreignKeys =
-          create.foreignKeys().stream()
-              .map(k -> k.column() + " -> " + k.referencedTable() + "." + k.referencedColumn())
-              .collect(Collectors.joining(", "));
+          definition.foreignKeys().stream()
+              .map(
+                  k ->
+                      String.join(", ", k.columns())
+                          + " -> "
+                          + k.referencedTable()
+                          + "("
+                          + String.join(", ", k.referencedColumns())
+                          + ")")
+              .collect(Collectors.joining("; "));
       return "CreateTable [table="
-          + create.table()
+          + definition.name()
           + ", columns=("
           + columns
           + "), primaryKey="
-          + create.primaryKey().orElse("none")
+          + definition
+              .primaryKey()
+              .map(k -> "(" + String.join(", ", k.columns()) + ")")
+              .orElse("none")
           + ", foreignKeys="
           + (foreignKeys.isEmpty() ? "none" : "(" + foreignKeys + ")")
           + "]";

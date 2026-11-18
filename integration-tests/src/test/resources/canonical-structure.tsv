@@ -215,17 +215,11 @@ component	dynamitedb.contracts.query.CreateIndexStatement	3	kind	dynamitedb.cont
 type	dynamitedb.contracts.query.CreateTableStatement	record
 component	dynamitedb.contracts.query.CreateTableStatement	0	table	java.lang.String
 component	dynamitedb.contracts.query.CreateTableStatement	1	columns	java.util.List<dynamitedb.contracts.storage.Column>
-component	dynamitedb.contracts.query.CreateTableStatement	2	primaryKey	java.util.List<java.lang.String>
-component	dynamitedb.contracts.query.CreateTableStatement	3	foreignKeys	java.util.List<dynamitedb.contracts.query.ForeignKey>
+component	dynamitedb.contracts.query.CreateTableStatement	2	primaryKeys	java.util.List<dynamitedb.contracts.storage.PrimaryKey>
+component	dynamitedb.contracts.query.CreateTableStatement	3	foreignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>
 type	dynamitedb.contracts.query.DropTableStatement	record
 component	dynamitedb.contracts.query.DropTableStatement	0	table	java.lang.String
-component	dynamitedb.contracts.query.DropTableStatement	1	behavior	dynamitedb.contracts.query.DropBehavior
-type	dynamitedb.contracts.query.ForeignKey	record
-component	dynamitedb.contracts.query.ForeignKey	0	column	java.lang.String
-component	dynamitedb.contracts.query.ForeignKey	1	referencedTable	java.lang.String
-component	dynamitedb.contracts.query.ForeignKey	2	referencedColumn	java.lang.String
-type	dynamitedb.contracts.query.DropBehavior	enum
-enum	dynamitedb.contracts.query.DropBehavior	RESTRICT|CASCADE
+component	dynamitedb.contracts.query.DropTableStatement	1	behavior	dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.query.TransactionStatement	record
 component	dynamitedb.contracts.query.TransactionStatement	0	command	dynamitedb.contracts.query.TransactionCommand
 type	dynamitedb.contracts.query.TransactionCommand	enum
@@ -309,13 +303,10 @@ component	dynamitedb.contracts.query.CreateIndexPlan	1	table	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	2	column	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	3	kind	dynamitedb.contracts.storage.IndexKind
 type	dynamitedb.contracts.query.CreateTablePlan	record
-component	dynamitedb.contracts.query.CreateTablePlan	0	table	java.lang.String
-component	dynamitedb.contracts.query.CreateTablePlan	1	columns	java.util.List<dynamitedb.contracts.storage.Column>
-component	dynamitedb.contracts.query.CreateTablePlan	2	primaryKey	java.util.Optional<java.lang.String>
-component	dynamitedb.contracts.query.CreateTablePlan	3	foreignKeys	java.util.List<dynamitedb.contracts.query.ForeignKey>
+component	dynamitedb.contracts.query.CreateTablePlan	0	definition	dynamitedb.contracts.storage.TableDefinition
 type	dynamitedb.contracts.query.DropTablePlan	record
 component	dynamitedb.contracts.query.DropTablePlan	0	table	java.lang.String
-component	dynamitedb.contracts.query.DropTablePlan	1	behavior	dynamitedb.contracts.query.DropBehavior
+component	dynamitedb.contracts.query.DropTablePlan	1	behavior	dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.query.TransactionCommandPlan	record
 component	dynamitedb.contracts.query.TransactionCommandPlan	0	command	dynamitedb.contracts.query.TransactionCommand
 type	dynamitedb.contracts.query.PreparedQuery	record

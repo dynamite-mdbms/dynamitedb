@@ -14,9 +14,7 @@ import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
-import dynamitedb.contracts.query.DropBehavior;
 import dynamitedb.contracts.query.DropTableStatement;
-import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.LiteralExpression;
@@ -26,11 +24,14 @@ import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.contracts.storage.TextValue;
@@ -234,9 +235,11 @@ class BinderTest {
                     + " FOREIGN KEY (parent) REFERENCES grade(id))");
 
     assertEquals("Grade", create.table());
-    assertEquals(List.of("Id"), create.primaryKey());
+    assertEquals(List.of(new PrimaryKey(List.of("Id"))), create.primaryKeys());
     assertEquals(
-        List.of(new ForeignKey("sid", "student", "sid"), new ForeignKey("parent", "Grade", "Id")),
+        List.of(
+            new ForeignKey("Grade", List.of("sid"), "student", List.of("sid")),
+            new ForeignKey("Grade", List.of("parent"), "Grade", List.of("Id"))),
         create.foreignKeys());
     assertEquals(new Column("Grade", "Id", DataType.INTEGER, 0, false), create.columns().get(0));
     assertTrue(create.columns().get(1).nullable());
@@ -263,7 +266,7 @@ class BinderTest {
           CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES missing(id))  | Unknown table: missing
           CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES student(age)) | Unknown column: age
           CREATE TABLE t (a FLOAT, FOREIGN KEY (a) REFERENCES student(sid))   | FOREIGN KEY a (FLOAT) does not match student.sid (INTEGER)
-          CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, FOREIGN KEY (a) REFERENCES t(b)) | FOREIGN KEY target t.b is not a primary key
+          CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, FOREIGN KEY (a) REFERENCES t(b)) | FOREIGN KEY must reference the PRIMARY KEY of t
           CREATE TABLE t (a CHAR(0))                            | Invalid length 0 for column a, expected 1 to 65535
           CREATE TABLE t (a VARCHAR(65536))                     | Invalid length 65536 for column a, expected 1 to 65535
           CREATE TABLE tabél (a INTEGER)                        | Invalid identifier (ASCII letters, digits, '_', at most 128): tabél

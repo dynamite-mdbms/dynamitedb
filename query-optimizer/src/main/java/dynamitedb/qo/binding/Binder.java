@@ -11,7 +11,6 @@ import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
-import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.FromSource;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.InsertStatement;
@@ -28,8 +27,10 @@ import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
@@ -191,12 +192,13 @@ public class Binder {
                 + MAX_TEXT_LENGTH);
       }
     }
-    if (create.primaryKey().size() > 1) throw error("Multiple primary keys for table " + table);
+    if (create.primaryKeys().size() > 1) throw error("Multiple primary keys for table " + table);
     Schema scope = new Schema(create.columns());
     List<String> primaryKey =
-        create.primaryKey().stream()
-            .map(name -> ownColumn(name, scope, "PRIMARY KEY").name())
-            .toList();
+        create.primaryKeys().stream()
+            .findFirst()
+            .map(key -> names(ownColumns(key.columns(), scope, "PRIMARY KEY")))
+            .orElse(List.of());
     List<ForeignKey> foreignKeys =
         create.foreignKeys().stream()
             .map(key -> bindForeignKey(key, table, scope, primaryKey))
@@ -209,39 +211,46 @@ public class Binder {
                         ? new Column(table, c.name(), c.dataType(), c.maxLength(), false)
                         : c)
             .toList();
-    return new CreateTableStatement(table, columns, primaryKey, foreignKeys);
+    List<PrimaryKey> primaryKeys =
+        primaryKey.isEmpty() ? List.of() : List.of(new PrimaryKey(primaryKey));
+    return new CreateTableStatement(table, columns, primaryKeys, foreignKeys);
   }
 
+  /** {@code primaryKey} is the bound key of the table being created, for self-references. */
   private ForeignKey bindForeignKey(
       ForeignKey key, String table, Schema scope, List<String> primaryKey) {
-    Column column = ownColumn(key.column(), scope, "FOREIGN KEY");
+    List<Column> columns = ownColumns(key.columns(), scope, "FOREIGN KEY");
     boolean self = key.referencedTable().equalsIgnoreCase(table);
     String target = self ? table : tableName(key.referencedTable());
-    Column referenced =
-        resolve(
-            new ColumnRef(Optional.empty(), key.referencedColumn()),
-            self ? scope : tableScope(target, target));
-    if (referenced.dataType() != column.dataType()) {
-      throw error(
-          "FOREIGN KEY "
-              + column.name()
-              + " ("
-              + column.dataType()
-              + ") does not match "
-              + target
-              + "."
-              + referenced.name()
-              + " ("
-              + referenced.dataType()
-              + ")");
+    Schema targetScope = self ? scope : tableScope(target, target);
+    List<Column> referenced =
+        key.referencedColumns().stream()
+            .map(name -> resolve(new ColumnRef(Optional.empty(), name), targetScope))
+            .toList();
+    for (int i = 0; i < columns.size(); i++) {
+      Column column = columns.get(i);
+      Column other = referenced.get(i);
+      if (other.dataType() != column.dataType()) {
+        throw error(
+            "FOREIGN KEY "
+                + column.name()
+                + " ("
+                + column.dataType()
+                + ") does not match "
+                + target
+                + "."
+                + other.name()
+                + " ("
+                + other.dataType()
+                + ")");
+      }
     }
     // shortcut: CatalogAccess exposes no key metadata yet, so only a self-reference is checked to
     // target a PRIMARY KEY; check existing tables once SM publishes constraints (#100).
-    if (self && !primaryKey.contains(referenced.name())) {
-      throw error(
-          "FOREIGN KEY target " + target + "." + referenced.name() + " is not a primary key");
+    if (self && !names(referenced).equals(primaryKey)) {
+      throw error("FOREIGN KEY must reference the PRIMARY KEY of " + target);
     }
-    return new ForeignKey(column.name(), target, referenced.name());
+    return new ForeignKey(table, names(columns), target, names(referenced));
   }
 
   // shortcut: CatalogAccess exposes no foreign-key metadata yet, so RESTRICT cannot reject a
@@ -250,11 +259,24 @@ public class Binder {
     return new DropTableStatement(tableName(drop.table()), drop.behavior());
   }
 
-  private static Column ownColumn(String name, Schema scope, String clause) {
-    return scope.columns().stream()
-        .filter(c -> c.name().equalsIgnoreCase(name))
-        .findFirst()
-        .orElseThrow(() -> error(clause + " column is not in the table: " + name));
+  /** Resolves key columns of the table being created; like SM, a key may not repeat a column. */
+  private static List<Column> ownColumns(List<String> names, Schema scope, String clause) {
+    Set<String> seen = new HashSet<>();
+    List<Column> columns = new ArrayList<>();
+    for (String name : names) {
+      Column column =
+          scope.columns().stream()
+              .filter(c -> c.name().equalsIgnoreCase(name))
+              .findFirst()
+              .orElseThrow(() -> error(clause + " column is not in the table: " + name));
+      if (!seen.add(column.name())) throw error(clause + " repeats column " + column.name());
+      columns.add(column);
+    }
+    return columns;
+  }
+
+  private static List<String> names(List<Column> columns) {
+    return columns.stream().map(Column::name).toList();
   }
 
   private static String identifier(String name) {

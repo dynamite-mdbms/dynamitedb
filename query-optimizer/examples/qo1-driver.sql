@@ -157,7 +157,7 @@ CREATE INDEX idx_course_credits ON course(credits) USING B_PLUS_TREE;
 # DROP TABLE defaults to RESTRICT.
 -- expect: OK
 -- expect-after: columns=(grade_id INTEGER NOT NULL, student_id INTEGER, score FLOAT, letter CHAR(2), note VARCHAR(100))
--- expect-after: primaryKey=grade_id, foreignKeys=(student_id -> student.student_id)
+-- expect-after: primaryKey=(grade_id), foreignKeys=(student_id -> student(student_id))
 CREATE TABLE grade (
   grade_id INTEGER PRIMARY KEY,
   student_id INTEGER,
@@ -168,7 +168,7 @@ CREATE TABLE grade (
 );
 
 -- expect: OK
--- expect-after: primaryKey=code
+-- expect-after: primaryKey=(code)
 CREATE TABLE room (code CHAR(4), capacity INTEGER, PRIMARY KEY (code));
 
 -- expect: OK

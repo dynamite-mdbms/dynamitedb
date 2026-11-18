@@ -12,7 +12,6 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateTablePlan;
-import dynamitedb.contracts.query.DropBehavior;
 import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.PlanExplanation;
 import dynamitedb.contracts.query.PreparedQuery;
@@ -22,6 +21,7 @@ import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
@@ -29,6 +29,7 @@ import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.TransactionStatus;
 import dynamitedb.qp.execution.DeleteExecutor;
@@ -201,7 +202,8 @@ class QueryProcessorImplTest {
                       new CreateIndexPlan("idx", "t", "id", IndexKind.HASH), new Schema(List.of()));
               case "CREATE_TABLE" ->
                   new PreparedQuery(
-                      new CreateTablePlan("t2", SCHEMA.columns(), Optional.empty(), List.of()),
+                      new CreateTablePlan(
+                          new TableDefinition("t2", SCHEMA, Optional.empty(), List.of())),
                       new Schema(List.of()));
               case "DROP_TABLE" ->
                   new PreparedQuery(
