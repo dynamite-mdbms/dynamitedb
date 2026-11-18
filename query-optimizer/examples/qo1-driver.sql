@@ -196,7 +196,7 @@ CREATE TABLE grade (grade_id TEXT);
 CREATE TABLE grade (note VARCHAR);
 
 -- expect: SQL_SYNTAX
-CREATE TABLE grade (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
+CREATE TABLE grade (a INTEGER, b INTEGER, FOREIGN KEY (a, b) REFERENCES student(student_id));
 
 -- expect: SQL_SYNTAX
 DROP TABLE course SOMETIMES;

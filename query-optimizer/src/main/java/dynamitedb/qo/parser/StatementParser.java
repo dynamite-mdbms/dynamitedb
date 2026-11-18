@@ -146,8 +146,8 @@ public class StatementParser {
   }
 
   /**
-   * CREATE TABLE t (col type [PRIMARY KEY], ... [, PRIMARY KEY (col)] [, FOREIGN KEY (col)
-   * REFERENCES t2(col)]). Keys are single-column; the binder rejects more than one PRIMARY KEY.
+   * CREATE TABLE t (col type [PRIMARY KEY], ... [, PRIMARY KEY (col, ...)] [, FOREIGN KEY (col,
+   * ...) REFERENCES t2(col, ...)]). The binder rejects more than one PRIMARY KEY.
    */
   private static CreateTableStatement parseCreateTable(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "TABLE");
@@ -159,15 +159,18 @@ public class StatementParser {
     do {
       if (accept(tokens, cursor, "PRIMARY")) {
         expect(tokens, cursor, "KEY");
-        primaryKeys.add(new PrimaryKey(List.of(parenthesizedColumn(tokens, cursor))));
+        primaryKeys.add(new PrimaryKey(parenthesizedColumns(tokens, cursor)));
       } else if (accept(tokens, cursor, "FOREIGN")) {
         expect(tokens, cursor, "KEY");
-        String column = parenthesizedColumn(tokens, cursor);
+        List<String> own = parenthesizedColumns(tokens, cursor);
         expect(tokens, cursor, "REFERENCES");
         String target = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
-        foreignKeys.add(
-            new ForeignKey(
-                table, List.of(column), target, List.of(parenthesizedColumn(tokens, cursor))));
+        Token open = tokenAt(tokens, cursor[0]);
+        List<String> referenced = parenthesizedColumns(tokens, cursor);
+        if (own.size() != referenced.size()) {
+          throw syntax("FOREIGN KEY and REFERENCES need the same number of columns", open);
+        }
+        foreignKeys.add(new ForeignKey(table, own, target, referenced));
       } else {
         Column column = parseColumnDefinition(table, tokens, cursor);
         columns.add(column);
@@ -219,11 +222,14 @@ public class StatementParser {
     return new Column(table, name, type, length, true);
   }
 
-  private static String parenthesizedColumn(List<Token> tokens, int[] cursor) {
+  private static List<String> parenthesizedColumns(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "(");
-    String column = requireIdentifier(tokens, cursor, "Expected a column name").lexeme();
+    List<String> columns = new ArrayList<>();
+    do {
+      columns.add(requireIdentifier(tokens, cursor, "Expected a column name").lexeme());
+    } while (accept(tokens, cursor, ","));
     expect(tokens, cursor, ")");
-    return column;
+    return columns;
   }
 
   /** Mengonsumsi sisa token sebagai kondisi WHERE, jika ada. */

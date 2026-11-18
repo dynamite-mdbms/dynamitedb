@@ -158,6 +158,17 @@ class StatementParserTest {
             List.of(new PrimaryKey(List.of("a")), new PrimaryKey(List.of("b"))),
             List.of()),
         parse("CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY)"));
+    assertEquals(
+        new CreateTableStatement(
+            "t",
+            List.of(
+                new Column("t", "a", DataType.INTEGER, 0, true),
+                new Column("t", "b", DataType.INTEGER, 0, true)),
+            List.of(new PrimaryKey(List.of("a", "b"))),
+            List.of(new ForeignKey("t", List.of("b", "a"), "s", List.of("x", "y")))),
+        parse(
+            "CREATE TABLE t (a INTEGER, b INTEGER, PRIMARY KEY (a, b),"
+                + " FOREIGN KEY (b, a) REFERENCES s(x, y))"));
   }
 
   @Test
@@ -217,7 +228,9 @@ class StatementParserTest {
           CREATE TABLE t (id INTEGER                  | Expected ) at end of input
           CREATE TABLE t (id INTEGER PRIMARY)         | Expected KEY at offset 34 near ')'
           CREATE TABLE t (id INTEGER, PRIMARY KEY id) | Expected ( at offset 40 near 'id'
-          CREATE TABLE t (a INTEGER, PRIMARY KEY (a, b)) | Expected ) at offset 41 near ','
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a,))   | Expected a column name at offset 42 near ')'
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a b))  | Expected ) at offset 42 near 'b'
+          CREATE TABLE t (a INTEGER, b INTEGER, FOREIGN KEY (a, b) REFERENCES s(x)) | FOREIGN KEY and REFERENCES need the same number of columns at offset 69 near '('
           CREATE TABLE t (a INTEGER, FOREIGN KEY (a) s(id)) | Expected REFERENCES at offset 43 near 's'
           CREATE TABLE t (a INTEGER) x                | Unexpected token after CREATE statement at offset 27 near 'x'
           DROP student                                | Expected TABLE at offset 5 near 'student'
