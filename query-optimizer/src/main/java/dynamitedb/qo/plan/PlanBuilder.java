@@ -5,8 +5,12 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.DeleteStatement;
+import dynamitedb.contracts.query.DropTablePlan;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.FromSource;
@@ -59,6 +63,16 @@ public class PlanBuilder {
     }
     if (bound instanceof CreateIndexStatement create) {
       return new CreateIndexPlan(create.index(), create.table(), create.column(), create.kind());
+    }
+    if (bound instanceof CreateTableStatement create) {
+      return new CreateTablePlan(
+          create.table(),
+          create.columns(),
+          create.primaryKey().stream().findFirst(),
+          create.foreignKeys());
+    }
+    if (bound instanceof DropTableStatement drop) {
+      return new DropTablePlan(drop.table(), drop.behavior());
     }
     if (bound instanceof TransactionStatement transaction) {
       return new TransactionCommandPlan(transaction.command());

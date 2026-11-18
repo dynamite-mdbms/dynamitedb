@@ -9,7 +9,11 @@ import dynamitedb.contracts.api.QueryOptimizer;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTablePlan;
+import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
@@ -24,10 +28,12 @@ import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.Schema;
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class QueryOptimizerDriverTest {
@@ -202,6 +208,32 @@ class QueryOptimizerDriverTest {
         new CreateIndexPlan("idx_course_credits", "course", "credits", IndexKind.B_PLUS_TREE),
         create.root());
     assertEquals(new Schema(List.of()), create.outputSchema());
+  }
+
+  @Test
+  void preparesTableDdlWithoutOptimization() {
+    PreparedQuery create =
+        standalone.prepare(
+            "CREATE TABLE grade (id INTEGER PRIMARY KEY, sid INTEGER,"
+                + " FOREIGN KEY (sid) REFERENCES student(student_id))");
+    PreparedQuery drop = standalone.prepare("DROP TABLE course CASCADE");
+
+    assertEquals(
+        new CreateTablePlan(
+            "grade",
+            List.of(
+                new Column("grade", "id", DataType.INTEGER, 0, false),
+                new Column("grade", "sid", DataType.INTEGER, 0, true)),
+            Optional.of("id"),
+            List.of(new ForeignKey("sid", "student", "student_id"))),
+        create.root());
+    assertEquals(new DropTablePlan("course", DropBehavior.CASCADE), drop.root());
+    for (PreparedQuery prepared : List.of(create, drop)) {
+      assertEquals(new Schema(List.of()), prepared.outputSchema());
+    }
+    PlanExplanation explained = standalone.explain("DROP TABLE course");
+    assertEquals(explained.before(), explained.after());
+    assertEquals("DropTable [table=course, behavior=RESTRICT]", explained.after());
   }
 
   @Test

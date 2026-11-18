@@ -9,7 +9,10 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropBehavior;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
@@ -163,6 +166,10 @@ class CostEstimatorTest {
     assertEquals(
         100.0, cost.estimate(new CreateIndexPlan("idx_gpa", "student", "gpa", IndexKind.HASH)));
     assertEquals(0.0, cost.estimate(new TransactionCommandPlan(TransactionCommand.BEGIN)));
+    var createTable = new CreateTablePlan("t", List.of(), Optional.empty(), List.of());
+    assertEquals(1.0, cost.estimate(createTable));
+    assertEquals(0, cost.estimateRows(createTable));
+    assertEquals(1.0, cost.estimate(new DropTablePlan("student", DropBehavior.RESTRICT)));
   }
 
   private static PlanNode filter(Expression predicate) {

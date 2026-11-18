@@ -4,7 +4,9 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -132,6 +134,34 @@ public class PlanVisualizer {
           + ", kind="
           + create.kind()
           + "]";
+    }
+    if (plan instanceof CreateTablePlan create) {
+      String columns =
+          create.columns().stream()
+              .map(
+                  c ->
+                      c.name()
+                          + " "
+                          + c.dataType()
+                          + (c.maxLength() > 0 ? "(" + c.maxLength() + ")" : "")
+                          + (c.nullable() ? "" : " NOT NULL"))
+              .collect(Collectors.joining(", "));
+      String foreignKeys =
+          create.foreignKeys().stream()
+              .map(k -> k.column() + " -> " + k.referencedTable() + "." + k.referencedColumn())
+              .collect(Collectors.joining(", "));
+      return "CreateTable [table="
+          + create.table()
+          + ", columns=("
+          + columns
+          + "), primaryKey="
+          + create.primaryKey().orElse("none")
+          + ", foreignKeys="
+          + (foreignKeys.isEmpty() ? "none" : "(" + foreignKeys + ")")
+          + "]";
+    }
+    if (plan instanceof DropTablePlan drop) {
+      return "DropTable [table=" + drop.table() + ", behavior=" + drop.behavior() + "]";
     }
     if (plan instanceof TransactionCommandPlan command) {
       return "Transaction [command=" + command.command() + "]";
