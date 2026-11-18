@@ -246,10 +246,28 @@ class BinderTest {
   }
 
   @Test
+  void bindsCompositeKeysAgainstCatalogPrimaryKey() {
+    var create =
+        (CreateTableStatement)
+            bind(
+                "CREATE TABLE g (a INTEGER, b INTEGER, PRIMARY KEY (B, A),"
+                    + " FOREIGN KEY (a, b) REFERENCES ENROLL(SID, CID))");
+
+    assertEquals(List.of(new PrimaryKey(List.of("b", "a"))), create.primaryKeys());
+    assertEquals(
+        List.of(new ForeignKey("g", List.of("a", "b"), "enroll", List.of("sid", "cid"))),
+        create.foreignKeys());
+    assertTrue(create.columns().stream().noneMatch(Column::nullable));
+  }
+
+  @Test
   void bindsDropTableToCatalogName() {
     assertEquals(
         new DropTableStatement("student", DropBehavior.CASCADE),
         bind("DROP TABLE STUDENT CASCADE"));
+    // enroll only references itself, which is dropped with it.
+    assertEquals(
+        new DropTableStatement("enroll", DropBehavior.RESTRICT), bind("DROP TABLE enroll"));
   }
 
   @ParameterizedTest
@@ -267,10 +285,18 @@ class BinderTest {
           CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES student(age)) | Unknown column: age
           CREATE TABLE t (a FLOAT, FOREIGN KEY (a) REFERENCES student(sid))   | FOREIGN KEY a (FLOAT) does not match student.sid (INTEGER)
           CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, FOREIGN KEY (a) REFERENCES t(b)) | FOREIGN KEY must reference the PRIMARY KEY of t
+          CREATE TABLE t (a VARCHAR(5), FOREIGN KEY (a) REFERENCES student(name)) | FOREIGN KEY must reference the PRIMARY KEY of student
+          CREATE TABLE t (a CHAR(4), FOREIGN KEY (a) REFERENCES tagged(sid))   | FOREIGN KEY must reference the PRIMARY KEY of tagged
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES enroll(sid))   | FOREIGN KEY must reference the PRIMARY KEY of enroll
+          CREATE TABLE t (a INTEGER, b INTEGER, FOREIGN KEY (a, b) REFERENCES enroll(cid, sid)) | FOREIGN KEY must reference the PRIMARY KEY of enroll
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a, A))        | PRIMARY KEY repeats column a
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a, a) REFERENCES enroll(sid, cid)) | FOREIGN KEY repeats column a
           CREATE TABLE t (a CHAR(0))                            | Invalid length 0 for column a, expected 1 to 65535
           CREATE TABLE t (a VARCHAR(65536))                     | Invalid length 65536 for column a, expected 1 to 65535
           CREATE TABLE tabél (a INTEGER)                        | Invalid identifier (ASCII letters, digits, '_', at most 128): tabél
           DROP TABLE missing                                    | Unknown table: missing
+          DROP TABLE student                                    | Table student is referenced by a FOREIGN KEY on enroll; use DROP TABLE ... CASCADE
+          DROP TABLE Student RESTRICT                           | Table student is referenced by a FOREIGN KEY on enroll; use DROP TABLE ... CASCADE
           """)
   void rejectsInvalidTableDdl(String sql, String message) {
     var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
@@ -410,6 +436,15 @@ class BinderTest {
                     new Column("enroll", "cid", DataType.INTEGER, 0, false))),
             "tagged",
             new Schema(List.of(new Column("tagged", "sid", DataType.CHAR, 4, false))));
+    // tagged has no PRIMARY KEY; enroll has a composite one and references itself.
+    private final Map<String, PrimaryKey> primaryKeys =
+        Map.of(
+            "student", new PrimaryKey(List.of("sid")),
+            "enroll", new PrimaryKey(List.of("sid", "cid")));
+    private final List<ForeignKey> foreignKeys =
+        List.of(
+            new ForeignKey("enroll", List.of("sid"), "student", List.of("sid")),
+            new ForeignKey("enroll", List.of("sid", "cid"), "enroll", List.of("sid", "cid")));
 
     @Override
     public List<String> listTables() {
@@ -436,6 +471,21 @@ class BinderTest {
       return table.equals("student")
           ? List.of(new IndexMetadata("idx_sid", "student", "sid", IndexKind.HASH))
           : List.of();
+    }
+
+    @Override
+    public Optional<PrimaryKey> getPrimaryKey(String table) {
+      return Optional.ofNullable(primaryKeys.get(table));
+    }
+
+    @Override
+    public List<ForeignKey> listForeignKeys(String table) {
+      return foreignKeys.stream().filter(key -> key.table().equals(table)).toList();
+    }
+
+    @Override
+    public List<ForeignKey> listReferencingForeignKeys(String table) {
+      return foreignKeys.stream().filter(key -> key.referencedTable().equals(table)).toList();
     }
   }
 }

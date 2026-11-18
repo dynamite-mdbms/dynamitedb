@@ -3,6 +3,7 @@ package dynamitedb.qo.verification;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.QueryOptimizer;
@@ -238,9 +239,12 @@ class QueryOptimizerDriverTest {
     for (PreparedQuery prepared : List.of(create, drop)) {
       assertEquals(new Schema(List.of()), prepared.outputSchema());
     }
-    PlanExplanation explained = standalone.explain("DROP TABLE course");
+    PlanExplanation explained = standalone.explain("DROP TABLE enrollment");
     assertEquals(explained.before(), explained.after());
-    assertEquals("DropTable [table=course, behavior=RESTRICT]", explained.after());
+    assertEquals("DropTable [table=enrollment, behavior=RESTRICT]", explained.after());
+    assertEquals(
+        ErrorCode.SQL_BIND,
+        assertThrows(DbmsException.class, () -> standalone.prepare("DROP TABLE course")).getCode());
   }
 
   @Test

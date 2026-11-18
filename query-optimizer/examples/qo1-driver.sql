@@ -153,8 +153,9 @@ CREATE INDEX idx_enrollment_course ON enrollment(course_id);
 -- expect-after: kind=B_PLUS_TREE
 CREATE INDEX idx_course_credits ON course(credits) USING B_PLUS_TREE;
 
-# QO-17: table DDL also bypasses relational optimization. PRIMARY KEY implies NOT NULL;
-# DROP TABLE defaults to RESTRICT.
+# QO-17: table DDL also bypasses relational optimization. PRIMARY KEY implies NOT NULL; a
+# FOREIGN KEY must name the target's whole PRIMARY KEY. DROP TABLE defaults to RESTRICT, which
+# refuses a table another table references (enrollment references student and course).
 -- expect: OK
 -- expect-after: columns=(grade_id INTEGER NOT NULL, student_id INTEGER, score FLOAT, letter CHAR(2), note VARCHAR(100))
 -- expect-after: primaryKey=(grade_id), foreignKeys=(student_id -> student(student_id))
@@ -172,12 +173,23 @@ CREATE TABLE grade (
 CREATE TABLE room (code CHAR(4), capacity INTEGER, PRIMARY KEY (code));
 
 -- expect: OK
--- expect-after: DropTable [table=course, behavior=RESTRICT]
-DROP TABLE course;
+-- expect-after: primaryKey=(student_id, course_id, term)
+-- expect-after: foreignKeys=(student_id, course_id -> enrollment(student_id, course_id))
+CREATE TABLE transcript (
+  student_id INTEGER,
+  course_id INTEGER,
+  term INTEGER,
+  PRIMARY KEY (student_id, course_id, term),
+  FOREIGN KEY (student_id, course_id) REFERENCES enrollment(student_id, course_id)
+);
 
 -- expect: OK
--- expect-after: DropTable [table=enrollment, behavior=CASCADE]
-DROP TABLE enrollment CASCADE;
+-- expect-after: DropTable [table=enrollment, behavior=RESTRICT]
+DROP TABLE enrollment;
+
+-- expect: OK
+-- expect-after: DropTable [table=course, behavior=CASCADE]
+DROP TABLE course CASCADE;
 
 # QO-01: syntax errors stop before binding.
 -- expect: SQL_SYNTAX
@@ -230,4 +242,13 @@ CREATE TABLE grade (score FLOAT, FOREIGN KEY (score) REFERENCES student(student_
 CREATE TABLE grade (sid INTEGER, FOREIGN KEY (sid) REFERENCES missing_table(id));
 
 -- expect: SQL_BIND
+CREATE TABLE grade (sname VARCHAR(50), FOREIGN KEY (sname) REFERENCES student(name));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (sid INTEGER, FOREIGN KEY (sid) REFERENCES enrollment(student_id));
+
+-- expect: SQL_BIND
 DROP TABLE missing_table;
+
+-- expect: SQL_BIND
+DROP TABLE course;

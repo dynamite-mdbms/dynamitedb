@@ -26,6 +26,7 @@ import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IntValue;
@@ -245,18 +246,33 @@ public class Binder {
                 + ")");
       }
     }
-    // shortcut: CatalogAccess exposes no key metadata yet, so only a self-reference is checked to
-    // target a PRIMARY KEY; check existing tables once SM publishes constraints (#100).
-    if (self && !names(referenced).equals(primaryKey)) {
+    // Same rule as SM: the referenced columns are exactly the target's PRIMARY KEY, in order.
+    List<String> targetKey =
+        self
+            ? primaryKey
+            : catalog.getPrimaryKey(target).map(PrimaryKey::columns).orElse(List.of());
+    if (!names(referenced).equals(targetKey)) {
       throw error("FOREIGN KEY must reference the PRIMARY KEY of " + target);
     }
     return new ForeignKey(table, names(columns), target, names(referenced));
   }
 
-  // shortcut: CatalogAccess exposes no foreign-key metadata yet, so RESTRICT cannot reject a
-  // referenced table here; add the dependency check once SM publishes constraints (#100).
+  /** RESTRICT rejects a table other tables reference; a self-reference goes with the table. */
   private DropTableStatement bindDropTable(DropTableStatement drop) {
-    return new DropTableStatement(tableName(drop.table()), drop.behavior());
+    String table = tableName(drop.table());
+    if (drop.behavior() == DropBehavior.RESTRICT) {
+      for (ForeignKey key : catalog.listReferencingForeignKeys(table)) {
+        if (!key.table().equals(table)) {
+          throw error(
+              "Table "
+                  + table
+                  + " is referenced by a FOREIGN KEY on "
+                  + key.table()
+                  + "; use DROP TABLE ... CASCADE");
+        }
+      }
+    }
+    return new DropTableStatement(table, drop.behavior());
   }
 
   /** Resolves key columns of the table being created; like SM, a key may not repeat a column. */
