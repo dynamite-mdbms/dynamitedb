@@ -19,6 +19,9 @@ method	dynamitedb.contracts.api.CatalogAccess	getTableId	long	java.lang.String
 method	dynamitedb.contracts.api.CatalogAccess	getSchema	dynamitedb.contracts.storage.Schema	java.lang.String
 method	dynamitedb.contracts.api.CatalogAccess	getStatistics	dynamitedb.contracts.storage.TableStatistics	java.lang.String
 method	dynamitedb.contracts.api.CatalogAccess	listIndexes	java.util.List<dynamitedb.contracts.storage.IndexMetadata>	java.lang.String
+method	dynamitedb.contracts.api.CatalogAccess	getPrimaryKey	java.util.Optional<dynamitedb.contracts.storage.PrimaryKey>	java.lang.String
+method	dynamitedb.contracts.api.CatalogAccess	listForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
+method	dynamitedb.contracts.api.CatalogAccess	listReferencingForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
 type	dynamitedb.contracts.api.TupleReader	interface
 method	dynamitedb.contracts.api.TupleReader	openTableScan	dynamitedb.contracts.api.RowCursor	java.lang.String|dynamitedb.contracts.transaction.TransactionId
 method	dynamitedb.contracts.api.TupleReader	openIndexScan	dynamitedb.contracts.api.RowCursor	java.lang.String|dynamitedb.contracts.storage.IndexPredicate|dynamitedb.contracts.transaction.TransactionId
@@ -34,6 +37,9 @@ method	dynamitedb.contracts.api.WriteStore	applyWrite	void	dynamitedb.contracts.
 method	dynamitedb.contracts.api.WriteStore	cancelPrepared	void	dynamitedb.contracts.storage.PreparedWrite
 type	dynamitedb.contracts.api.IndexAdmin	interface
 method	dynamitedb.contracts.api.IndexAdmin	createIndex	void	java.lang.String|java.lang.String|java.lang.String|dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.api.TableAdmin	interface
+method	dynamitedb.contracts.api.TableAdmin	createTable	void	dynamitedb.contracts.storage.TableDefinition
+method	dynamitedb.contracts.api.TableAdmin	dropTable	void	java.lang.String|dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.api.AccessController	interface
 method	dynamitedb.contracts.api.AccessController	requestAccess	dynamitedb.contracts.transaction.AccessDecision	dynamitedb.contracts.transaction.AccessRequest
 method	dynamitedb.contracts.api.AccessController	awaitAccess	dynamitedb.contracts.transaction.AccessDecision	dynamitedb.contracts.transaction.WaitToken
@@ -152,6 +158,20 @@ component	dynamitedb.contracts.storage.IndexMetadata	0	name	java.lang.String
 component	dynamitedb.contracts.storage.IndexMetadata	1	table	java.lang.String
 component	dynamitedb.contracts.storage.IndexMetadata	2	column	java.lang.String
 component	dynamitedb.contracts.storage.IndexMetadata	3	kind	dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.storage.PrimaryKey	record
+component	dynamitedb.contracts.storage.PrimaryKey	0	columns	java.util.List<java.lang.String>
+type	dynamitedb.contracts.storage.ForeignKey	record
+component	dynamitedb.contracts.storage.ForeignKey	0	table	java.lang.String
+component	dynamitedb.contracts.storage.ForeignKey	1	columns	java.util.List<java.lang.String>
+component	dynamitedb.contracts.storage.ForeignKey	2	referencedTable	java.lang.String
+component	dynamitedb.contracts.storage.ForeignKey	3	referencedColumns	java.util.List<java.lang.String>
+type	dynamitedb.contracts.storage.TableDefinition	record
+component	dynamitedb.contracts.storage.TableDefinition	0	name	java.lang.String
+component	dynamitedb.contracts.storage.TableDefinition	1	schema	dynamitedb.contracts.storage.Schema
+component	dynamitedb.contracts.storage.TableDefinition	2	primaryKey	java.util.Optional<dynamitedb.contracts.storage.PrimaryKey>
+component	dynamitedb.contracts.storage.TableDefinition	3	foreignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>
+type	dynamitedb.contracts.storage.DropBehavior	enum
+enum	dynamitedb.contracts.storage.DropBehavior	RESTRICT|CASCADE
 type	dynamitedb.contracts.storage.IndexPredicate	record
 component	dynamitedb.contracts.storage.IndexPredicate	0	operator	dynamitedb.contracts.storage.ComparisonOp
 component	dynamitedb.contracts.storage.IndexPredicate	1	value	dynamitedb.contracts.storage.Value
@@ -479,12 +499,17 @@ method	dynamitedb.sm.facade.StorageManagerImpl	prepareDelete	dynamitedb.contract
 method	dynamitedb.sm.facade.StorageManagerImpl	applyWrite	void	dynamitedb.contracts.storage.PreparedWrite|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.sm.facade.StorageManagerImpl	cancelPrepared	void	dynamitedb.contracts.storage.PreparedWrite
 method	dynamitedb.sm.facade.StorageManagerImpl	createIndex	void	java.lang.String|java.lang.String|java.lang.String|dynamitedb.contracts.storage.IndexKind
+method	dynamitedb.sm.facade.StorageManagerImpl	createTable	void	dynamitedb.contracts.storage.TableDefinition
+method	dynamitedb.sm.facade.StorageManagerImpl	dropTable	void	java.lang.String|dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.sm.catalog.StorageCatalogAdapter	class
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	listTables	java.util.List<java.lang.String>
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	getTableId	long	java.lang.String
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	getSchema	dynamitedb.contracts.storage.Schema	java.lang.String
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	getStatistics	dynamitedb.contracts.storage.TableStatistics	java.lang.String
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	listIndexes	java.util.List<dynamitedb.contracts.storage.IndexMetadata>	java.lang.String
+method	dynamitedb.sm.catalog.StorageCatalogAdapter	getPrimaryKey	java.util.Optional<dynamitedb.contracts.storage.PrimaryKey>	java.lang.String
+method	dynamitedb.sm.catalog.StorageCatalogAdapter	listForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
+method	dynamitedb.sm.catalog.StorageCatalogAdapter	listReferencingForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
 type	dynamitedb.sm.facade.StorageRecoveryAdapter	class
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	readRecord	dynamitedb.contracts.storage.RecordImage	dynamitedb.contracts.storage.RecordId
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	applyRecovery	void	dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
@@ -755,6 +780,7 @@ provider	dynamitedb.contracts.api.CatalogAccess	dynamitedb.sm.catalog.StorageCat
 provider	dynamitedb.contracts.api.TupleReader	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.WriteStore	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.IndexAdmin	dynamitedb.sm.facade.StorageManagerImpl
+provider	dynamitedb.contracts.api.TableAdmin	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.RecoveryPageStore	dynamitedb.sm.facade.StorageRecoveryAdapter
 provider	dynamitedb.contracts.api.HistoricalRecoveryStorage	dynamitedb.sm.facade.StorageRecoveryAdapter
 provider	dynamitedb.contracts.api.StorageGenerationAdmin	dynamitedb.sm.facade.StorageRecoveryAdapter
@@ -812,6 +838,7 @@ provider	dynamitedb.qo.pipeline.PlanRewrite	dynamitedb.qo.join.AccessPathOptimiz
 provider	dynamitedb.contracts.api.TupleReader	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.WriteStore	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.IndexAdmin	dynamitedb.sm.facade.StorageManagerImpl
+provider	dynamitedb.contracts.api.TableAdmin	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.CatalogAccess	dynamitedb.sm.catalog.StorageCatalogAdapter
 provider	dynamitedb.contracts.api.RecoveryPageStore	dynamitedb.sm.facade.StorageRecoveryAdapter
 provider	dynamitedb.contracts.api.HistoricalRecoveryStorage	dynamitedb.sm.facade.StorageRecoveryAdapter

@@ -50,6 +50,11 @@ public final class BufferPool {
     return page;
   }
 
+  /** Jumlah page di disk, dipakai SM1 untuk memperpanjang stage historical recovery. */
+  public synchronized long pageCount() {
+    return disk.getPageCount();
+  }
+
   public synchronized Page allocatePage() {
     requireOutsideCallback();
     var victim = findVictim();
