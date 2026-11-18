@@ -8,6 +8,7 @@ public sealed interface PlanNode
         ProjectPlan,
         JoinPlan,
         SortPlan,
+        LimitPlan,
         InsertPlan,
         UpdatePlan,
         DeletePlan,
