@@ -1,6 +1,6 @@
 # Query Optimizer driver scenarios (QO-16). Also bundled as the driver's built-in suite.
 # Headers before each statement:
-#   -- expect: OK | SQL_SYNTAX | SQL_BIND     expected outcome (omitted: any error fails)
+#   -- expect: OK | <ErrorCode name>         expected outcome (omitted: any error fails)
 #   -- expect-after: <text>                   text that must appear in the optimized (AFTER) plan
 # Fake catalog: student(1000 rows, 100 blocks; HASH idx_student_id, B+Tree idx_student_gpa),
 # enrollment(5000 rows, 250 blocks), course(50 rows, 5 blocks).
@@ -250,5 +250,5 @@ CREATE TABLE grade (sid INTEGER, FOREIGN KEY (sid) REFERENCES enrollment(student
 -- expect: SQL_BIND
 DROP TABLE missing_table;
 
--- expect: SQL_BIND
+-- expect: INVALID_STATE
 DROP TABLE course;

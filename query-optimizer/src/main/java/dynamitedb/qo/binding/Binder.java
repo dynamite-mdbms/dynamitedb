@@ -263,7 +263,9 @@ public class Binder {
     if (drop.behavior() == DropBehavior.RESTRICT) {
       for (ForeignKey key : catalog.listReferencingForeignKeys(table)) {
         if (!key.table().equals(table)) {
-          throw error(
+          // Same code as SM's CatalogManager.dropTable: a catalog-state conflict, not a bad name.
+          throw new DbmsException(
+              ErrorCode.INVALID_STATE,
               "Table "
                   + table
                   + " is referenced by a FOREIGN KEY on "

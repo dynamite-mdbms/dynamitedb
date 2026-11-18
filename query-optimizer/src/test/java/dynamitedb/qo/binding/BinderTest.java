@@ -261,6 +261,18 @@ class BinderTest {
   }
 
   @Test
+  void rejectsDropRestrictOfReferencedTableLikeStorage() {
+    for (String sql : List.of("DROP TABLE student", "DROP TABLE Student RESTRICT")) {
+      var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
+      assertEquals(ErrorCode.INVALID_STATE, error.getCode(), sql);
+      assertEquals(
+          "Table student is referenced by a FOREIGN KEY on enroll; use DROP TABLE ... CASCADE",
+          error.getMessage(),
+          sql);
+    }
+  }
+
+  @Test
   void bindsDropTableToCatalogName() {
     assertEquals(
         new DropTableStatement("student", DropBehavior.CASCADE),
@@ -295,8 +307,6 @@ class BinderTest {
           CREATE TABLE t (a VARCHAR(65536))                     | Invalid length 65536 for column a, expected 1 to 65535
           CREATE TABLE tabél (a INTEGER)                        | Invalid identifier (ASCII letters, digits, '_', at most 128): tabél
           DROP TABLE missing                                    | Unknown table: missing
-          DROP TABLE student                                    | Table student is referenced by a FOREIGN KEY on enroll; use DROP TABLE ... CASCADE
-          DROP TABLE Student RESTRICT                           | Table student is referenced by a FOREIGN KEY on enroll; use DROP TABLE ... CASCADE
           """)
   void rejectsInvalidTableDdl(String sql, String message) {
     var error = assertThrows(DbmsException.class, () -> bind(sql), sql);

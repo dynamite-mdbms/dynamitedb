@@ -243,7 +243,7 @@ class QueryOptimizerDriverTest {
     assertEquals(explained.before(), explained.after());
     assertEquals("DropTable [table=enrollment, behavior=RESTRICT]", explained.after());
     assertEquals(
-        ErrorCode.SQL_BIND,
+        ErrorCode.INVALID_STATE,
         assertThrows(DbmsException.class, () -> standalone.prepare("DROP TABLE course")).getCode());
   }
 
