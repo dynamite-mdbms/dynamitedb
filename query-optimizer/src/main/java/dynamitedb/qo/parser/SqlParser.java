@@ -64,11 +64,33 @@ public class SqlParser {
       orderBy = parseSortKeys(tokens, cursor);
     }
 
+    Optional<Long> limit = Optional.empty();
+    if (peek(tokens, cursor, "LIMIT")) {
+      cursor[0]++;
+      limit = Optional.of(parseLimit(tokens, cursor));
+    }
+
     consumeTerminator(tokens, cursor);
     if (cursor[0] != tokens.size()) {
       throw syntax("Unexpected token after SELECT statement", tokens.get(cursor[0]));
     }
-    return new SelectStatement(projection, from, predicate, orderBy);
+    return new SelectStatement(projection, from, predicate, orderBy, limit);
+  }
+
+  /** {@code LIMIT n}: n is an unsigned integer literal from 0 to {@link Long#MAX_VALUE}. */
+  private static long parseLimit(List<Token> tokens, int[] cursor) {
+    Token count = tokenAt(tokens, cursor[0]);
+    if (count == null
+        || count.kind() != TokenKind.LITERAL
+        || !count.lexeme().chars().allMatch(c -> c >= '0' && c <= '9')) {
+      throw syntax("Expected a non-negative integer after LIMIT", count);
+    }
+    cursor[0]++;
+    try {
+      return Long.parseLong(count.lexeme());
+    } catch (NumberFormatException e) {
+      throw syntax("LIMIT value out of range", count);
+    }
   }
 
   private FromSource parseFrom(List<Token> tokens, int[] cursor) {
@@ -169,6 +191,7 @@ public class SqlParser {
       if (depth < 0) throw syntax("Unmatched closing parenthesis", token);
       if (depth == 0
           && (is(token, ";")
+              || is(token, "LIMIT")
               || (stopAtOrder
                   && is(token, "ORDER")
                   && index + 1 < tokens.size()
@@ -191,6 +214,7 @@ public class SqlParser {
               || is(token, "NATURAL")
               || is(token, "WHERE")
               || is(token, "ORDER")
+              || is(token, "LIMIT")
               || is(token, ";"))) return index;
     }
     if (depth != 0) throw syntax("Unclosed parenthesis", tokenAt(tokens, tokens.size()));

@@ -133,6 +133,10 @@ class InSubqueryTest {
     assertError(ErrorCode.SQL_SYNTAX, "Expected FROM", "sid IN (SELECT sid)");
     assertError(ErrorCode.SQL_SYNTAX, "Scalar subqueries", "sid = (SELECT sid FROM enroll)");
     assertError(ErrorCode.SQL_SYNTAX, "EXISTS subqueries", "EXISTS (SELECT sid FROM enroll)");
+    assertError(
+        ErrorCode.SQL_SYNTAX,
+        "LIMIT is not supported inside a subquery",
+        "sid IN (SELECT sid FROM enroll ORDER BY sid LIMIT 1)");
   }
 
   // ---- binder ----

@@ -19,6 +19,7 @@ public class Lexer {
           "BY",
           "ASC",
           "DESC",
+          "LIMIT",
           "JOIN",
           "ON",
           "NATURAL",

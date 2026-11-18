@@ -107,6 +107,12 @@ public class ExpressionParser {
     cursor[0] = close + 1;
     SelectStatement query =
         (SelectStatement) new SqlParser(new StatementParser(), new ExpressionParser()).parse(inner);
+    // shortcut: LIMIT in a subquery is rejected; allow it once QP plans and runs nested limits.
+    if (query.limit().isPresent()) {
+      throw syntax(
+          "LIMIT is not supported inside a subquery",
+          inner.stream().filter(t -> is(t, "LIMIT")).findFirst().orElse(null));
+    }
     return new InSubqueryExpression(operand, query, Optional.empty(), negated);
   }
 

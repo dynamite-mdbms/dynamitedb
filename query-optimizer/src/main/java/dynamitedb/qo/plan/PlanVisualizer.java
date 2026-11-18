@@ -11,6 +11,7 @@ import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -46,6 +47,7 @@ public class PlanVisualizer {
     if (plan instanceof FilterPlan filter) renderNode(filter.child(), depth + 1, output);
     else if (plan instanceof ProjectPlan project) renderNode(project.child(), depth + 1, output);
     else if (plan instanceof SortPlan sort) renderNode(sort.child(), depth + 1, output);
+    else if (plan instanceof LimitPlan limit) renderNode(limit.child(), depth + 1, output);
     else if (plan instanceof JoinPlan join) {
       renderNode(join.left(), depth + 1, output);
       renderNode(join.right(), depth + 1, output);
@@ -95,6 +97,7 @@ public class PlanVisualizer {
               .collect(Collectors.joining(", "));
       return "Sort [keys=" + keys + "]";
     }
+    if (plan instanceof LimitPlan limit) return "Limit [count=" + limit.count() + "]";
     if (plan instanceof JoinPlan join) {
       return "Join [kind="
           + join.kind()
