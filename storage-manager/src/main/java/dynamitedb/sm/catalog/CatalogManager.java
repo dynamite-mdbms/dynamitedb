@@ -4,14 +4,21 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
+import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.ImmutableBytes;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
+import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.TableStatistics;
+import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.io.ByteArrayInputStream;
@@ -31,6 +38,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.ToLongFunction;
 import java.util.zip.CRC32;
@@ -38,7 +46,7 @@ import java.util.zip.CRC32;
 /** Persistent schema, table identity, statistics and completed index definitions (SM-08, SM-09). */
 public final class CatalogManager {
   private static final int MAGIC = 0x44594354;
-  private static final int VERSION = 2;
+  private static final int VERSION = 3;
   private static final int MAX_FILE_BYTES = 32 * 1024 * 1024;
   private static final int INITIALIZING_SAMPLE = 1;
   private static final int READY_SAMPLE = 2;
@@ -50,6 +58,8 @@ public final class CatalogManager {
   private final Map<String, List<IndexMetadata>> indexes = new HashMap<>();
   private final Map<String, Long> rowBytes = new HashMap<>();
   private final Map<String, List<Map<Value, Long>>> frequencies = new HashMap<>();
+  private final Map<String, PrimaryKey> primaryKeys = new HashMap<>();
+  private final Map<String, List<ForeignKey>> foreignKeys = new HashMap<>();
   private final RecordSerializer serializer = new RecordSerializer();
   private final Path root;
   private final Path file;
@@ -125,17 +135,167 @@ public final class CatalogManager {
 
   /** Publishes a monotonically allocated ID only after the definition has been saved durably. */
   public synchronized long createTable(String table, Schema schema) {
+    return createTable(new TableDefinition(table, schema, Optional.empty(), List.of()));
+  }
+
+  /** CREATE TABLE + key constraints; atomic dan durable, catalog tidak berubah bila gagal. */
+  public synchronized long createTable(TableDefinition definition) {
     ensureHealthy();
-    validateSchema(table, schema);
+    Objects.requireNonNull(definition, "definition");
+    String table = definition.name();
+    validateSchema(table, definition.schema());
     if (schemas.containsKey(table)) {
       throw new DbmsException(ErrorCode.SQL_BIND, "Table already exists: " + table);
     }
     if (nextTableId == Long.MAX_VALUE) {
       throw failure("Table ID space exhausted");
     }
+    requireFitsPage(table, definition.schema());
+    PrimaryKey key = definition.primaryKey().orElse(null);
+    Schema schema = definition.schema();
+    IndexMetadata keyIndex = null;
+    if (key != null) {
+      requireColumns(schema, key.columns(), "PRIMARY KEY");
+      schema = withNotNull(schema, key.columns());
+      keyIndex =
+          new IndexMetadata(
+              primaryKeyIndexName(table), table, key.columns().get(0), IndexKind.HASH);
+      validateName(keyIndex.name());
+      if (indexNameTaken(keyIndex.name())) {
+        throw new DbmsException(ErrorCode.SQL_BIND, "Index already exists: " + keyIndex.name());
+      }
+    }
+    for (ForeignKey foreignKey : definition.foreignKeys()) {
+      validateForeignKey(table, schema, key, foreignKey);
+    }
     long id = nextTableId;
-    mutate(() -> addTable(table, schema));
+    Schema stored = schema;
+    PrimaryKey storedKey = key;
+    IndexMetadata storedIndex = keyIndex;
+    mutate(
+        () -> {
+          addTable(table, stored);
+          if (storedKey != null) {
+            primaryKeys.put(table, storedKey);
+            indexes.put(table, List.of(storedIndex));
+          }
+          foreignKeys.put(table, definition.foreignKeys());
+        });
     return id;
+  }
+
+  /** DROP TABLE; RESTRICT gagal bila masih direferensikan, CASCADE hanya menghapus FK dependen. */
+  public synchronized List<IndexMetadata> dropTable(String table, DropBehavior behavior) {
+    ensureHealthy();
+    Objects.requireNonNull(behavior, "behavior");
+    List<IndexMetadata> dropped = lookup(indexes, table);
+    List<ForeignKey> dependents =
+        referencing(table).stream().filter(key -> !key.table().equals(table)).toList();
+    if (behavior == DropBehavior.RESTRICT && !dependents.isEmpty()) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE,
+          "Table "
+              + table
+              + " is referenced by a FOREIGN KEY on "
+              + dependents.get(0).table()
+              + "; use DROP TABLE ... CASCADE");
+    }
+    mutate(
+        () -> {
+          for (ForeignKey dependent : dependents) {
+            foreignKeys.put(
+                dependent.table(),
+                foreignKeys.get(dependent.table()).stream()
+                    .filter(key -> !key.equals(dependent))
+                    .toList());
+          }
+          schemas.remove(table);
+          tableIds.remove(table);
+          stats.remove(table);
+          indexes.remove(table);
+          rowBytes.remove(table);
+          frequencies.remove(table);
+          primaryKeys.remove(table);
+          foreignKeys.remove(table);
+        });
+    return dropped;
+  }
+
+  public synchronized Optional<PrimaryKey> getPrimaryKey(String table) {
+    lookup(schemas, table);
+    return Optional.ofNullable(primaryKeys.get(table));
+  }
+
+  public synchronized List<ForeignKey> listForeignKeys(String table) {
+    return lookup(foreignKeys, table);
+  }
+
+  public synchronized List<ForeignKey> listReferencingForeignKeys(String table) {
+    lookup(schemas, table);
+    return referencing(table);
+  }
+
+  /** Nama index HASH yang mendukung PRIMARY KEY table (dipakai QP untuk cek uniqueness). */
+  public static String primaryKeyIndexName(String table) {
+    return "pk_" + table;
+  }
+
+  /** True bila ID pernah dialokasikan tetapi table-nya sudah di-drop; WAL lama boleh di-skip. */
+  public synchronized boolean isDroppedTableId(long id) {
+    ensureHealthy();
+    return id >= 1 && id < nextTableId && !tableIds.containsValue(id);
+  }
+
+  /** Samakan definisi dengan catalog aktif untuk stage historical recovery; statistics di-reset. */
+  public synchronized void replaceDefinitionsFrom(CatalogManager source) {
+    ensureHealthy();
+    if (Objects.requireNonNull(source, "source") == this) {
+      return;
+    }
+    Map<String, Schema> sourceSchemas;
+    Map<String, Long> sourceIds;
+    Map<String, List<IndexMetadata>> sourceIndexes;
+    Map<String, PrimaryKey> sourceKeys;
+    Map<String, List<ForeignKey>> sourceForeignKeys;
+    long sourceNextId;
+    int sourceSampleState;
+    synchronized (source) {
+      source.ensureHealthy();
+      sourceSchemas = new HashMap<>(source.schemas);
+      sourceIds = new HashMap<>(source.tableIds);
+      sourceIndexes = new HashMap<>(source.indexes);
+      sourceKeys = new HashMap<>(source.primaryKeys);
+      sourceForeignKeys = new HashMap<>(source.foreignKeys);
+      sourceNextId = source.nextTableId;
+      sourceSampleState = source.sampleState;
+    }
+    mutate(
+        () -> {
+          schemas.clear();
+          tableIds.clear();
+          stats.clear();
+          indexes.clear();
+          rowBytes.clear();
+          frequencies.clear();
+          primaryKeys.clear();
+          foreignKeys.clear();
+          nextTableId = Math.max(nextTableId, sourceNextId);
+          sampleState = sourceSampleState;
+          for (var entry : sourceSchemas.entrySet()) {
+            String table = entry.getKey();
+            var counts = emptyFrequencies(entry.getValue());
+            schemas.put(table, entry.getValue());
+            tableIds.put(table, sourceIds.get(table));
+            indexes.put(table, sourceIndexes.get(table));
+            foreignKeys.put(table, sourceForeignKeys.get(table));
+            if (sourceKeys.containsKey(table)) {
+              primaryKeys.put(table, sourceKeys.get(table));
+            }
+            rowBytes.put(table, 0L);
+            frequencies.put(table, counts.stream().map(Map::copyOf).toList());
+            stats.put(table, statistics(entry.getValue(), counts, 0, 0, 0));
+          }
+        });
   }
 
   /** SM5 calls only after the index is fully built and durable; failed builds remain private. */
@@ -216,6 +376,8 @@ public final class CatalogManager {
     indexes.clear();
     rowBytes.clear();
     frequencies.clear();
+    primaryKeys.clear();
+    foreignKeys.clear();
     nextTableId = 1;
     sampleState = 0;
     present = false;
@@ -311,6 +473,7 @@ public final class CatalogManager {
     schemas.put(table, schema);
     tableIds.put(table, nextTableId++);
     indexes.put(table, List.of());
+    foreignKeys.put(table, List.of());
     rowBytes.put(table, 0L);
     var counts = emptyFrequencies(schema);
     frequencies.put(table, counts.stream().map(Map::copyOf).toList());
@@ -465,6 +628,89 @@ public final class CatalogManager {
     }
   }
 
+  private void validateForeignKey(String table, Schema schema, PrimaryKey key, ForeignKey foreign) {
+    if (!table.equals(foreign.table())) {
+      throw new DbmsException(ErrorCode.SQL_BIND, "FOREIGN KEY belongs to another table");
+    }
+    requireColumns(schema, foreign.columns(), "FOREIGN KEY");
+    boolean self = foreign.referencedTable().equals(table);
+    Schema target = self ? schema : schemas.get(foreign.referencedTable());
+    PrimaryKey targetKey = self ? key : primaryKeys.get(foreign.referencedTable());
+    if (target == null) {
+      throw new DbmsException(
+          ErrorCode.SQL_BIND, "Referenced table does not exist: " + foreign.referencedTable());
+    }
+    if (targetKey == null || !targetKey.columns().equals(foreign.referencedColumns())) {
+      throw new DbmsException(
+          ErrorCode.SQL_BIND,
+          "FOREIGN KEY must reference the PRIMARY KEY of " + foreign.referencedTable());
+    }
+    for (int i = 0; i < foreign.columns().size(); i++) {
+      DataType own = column(schema, foreign.columns().get(i)).dataType();
+      DataType referenced = column(target, foreign.referencedColumns().get(i)).dataType();
+      if (own != referenced) {
+        throw new DbmsException(
+            ErrorCode.SQL_BIND, "FOREIGN KEY column type mismatch: " + foreign.columns().get(i));
+      }
+    }
+  }
+
+  private static void requireColumns(Schema schema, List<String> names, String constraint) {
+    var seen = new HashSet<String>();
+    for (String name : names) {
+      column(schema, name);
+      if (!seen.add(name)) {
+        throw new DbmsException(ErrorCode.SQL_BIND, constraint + " repeats column " + name);
+      }
+    }
+  }
+
+  private static Column column(Schema schema, String name) {
+    return schema.columns().stream()
+        .filter(column -> column.name().equals(name))
+        .findFirst()
+        .orElseThrow(() -> new DbmsException(ErrorCode.SQL_BIND, "Unknown column: " + name));
+  }
+
+  private static Schema withNotNull(Schema schema, List<String> names) {
+    return new Schema(
+        schema.columns().stream()
+            .map(
+                c ->
+                    names.contains(c.name())
+                        ? new Column(c.relation(), c.name(), c.dataType(), c.maxLength(), false)
+                        : c)
+            .toList());
+  }
+
+  private void requireFitsPage(String table, Schema schema) {
+    var values = new ArrayList<Value>();
+    for (Column column : schema.columns()) {
+      values.add(
+          switch (column.dataType()) {
+            case INTEGER -> new IntValue(0);
+            case FLOAT -> new FloatValue(0);
+            case CHAR, VARCHAR -> new TextValue("x".repeat(column.maxLength()));
+          });
+    }
+    if (encodedSize(new Row(values), schema) > RecordSerializer.MAX_RECORD_SIZE) {
+      throw new DbmsException(
+          ErrorCode.SQL_BIND, "Widest row of " + table + " does not fit in one page");
+    }
+  }
+
+  private boolean indexNameTaken(String name) {
+    return indexes.values().stream().flatMap(List::stream).anyMatch(i -> i.name().equals(name));
+  }
+
+  private List<ForeignKey> referencing(String table) {
+    return foreignKeys.keySet().stream()
+        .sorted()
+        .flatMap(owner -> foreignKeys.get(owner).stream())
+        .filter(key -> key.referencedTable().equals(table))
+        .toList();
+  }
+
   /** Mutations replace immutable values, so shallow map snapshots suffice for rollback. */
   private void mutate(Runnable mutation) {
     var oldSchemas = new HashMap<>(schemas);
@@ -473,6 +719,8 @@ public final class CatalogManager {
     var oldIndexes = new HashMap<>(indexes);
     var oldBytes = new HashMap<>(rowBytes);
     var oldFrequencies = new HashMap<>(frequencies);
+    var oldKeys = new HashMap<>(primaryKeys);
+    var oldForeignKeys = new HashMap<>(foreignKeys);
     long oldNextId = nextTableId;
     int oldSampleState = sampleState;
     try {
@@ -486,6 +734,8 @@ public final class CatalogManager {
       restore(indexes, oldIndexes);
       restore(rowBytes, oldBytes);
       restore(frequencies, oldFrequencies);
+      restore(primaryKeys, oldKeys);
+      restore(foreignKeys, oldForeignKeys);
       nextTableId = oldNextId;
       sampleState = oldSampleState;
       throw e;
@@ -502,13 +752,16 @@ public final class CatalogManager {
     try {
       var bytes = new ByteArrayOutputStream();
       try (var out = new DataOutputStream(bytes)) {
+        // Tanpa key constraints tetap ditulis sebagai versi 2, supaya build lama masih bisa
+        // membaca.
+        int version = constraintsInUse() ? VERSION : 2;
         out.writeInt(MAGIC);
-        out.writeInt(VERSION);
+        out.writeInt(version);
         out.writeLong(nextTableId);
         out.writeInt(sampleState);
         out.writeInt(schemas.size());
         for (String table : schemas.keySet().stream().sorted().toList()) {
-          writeTable(out, table);
+          writeTable(out, table, version);
         }
       }
       byte[] payload = bytes.toByteArray();
@@ -554,7 +807,12 @@ public final class CatalogManager {
     }
   }
 
-  private void writeTable(DataOutputStream out, String table) throws IOException {
+  private boolean constraintsInUse() {
+    return !primaryKeys.isEmpty()
+        || foreignKeys.values().stream().anyMatch(keys -> !keys.isEmpty());
+  }
+
+  private void writeTable(DataOutputStream out, String table, int version) throws IOException {
     out.writeUTF(table);
     out.writeLong(tableIds.get(table));
     var columns = schemas.get(table).columns();
@@ -586,6 +844,37 @@ public final class CatalogManager {
       out.writeUTF(index.column());
       out.writeUTF(index.kind().name());
     }
+    if (version < 3) {
+      return;
+    }
+    PrimaryKey key = primaryKeys.get(table);
+    out.writeBoolean(key != null);
+    if (key != null) {
+      writeNames(out, key.columns());
+    }
+    List<ForeignKey> keys = foreignKeys.get(table);
+    out.writeInt(keys.size());
+    for (ForeignKey foreign : keys) {
+      writeNames(out, foreign.columns());
+      out.writeUTF(foreign.referencedTable());
+      writeNames(out, foreign.referencedColumns());
+    }
+  }
+
+  private static void writeNames(DataOutputStream out, List<String> names) throws IOException {
+    out.writeInt(names.size());
+    for (String name : names) {
+      out.writeUTF(name);
+    }
+  }
+
+  private static List<String> readNames(DataInputStream in) throws IOException {
+    int count = readCount(in);
+    var names = new ArrayList<String>(count);
+    for (int i = 0; i < count; i++) {
+      names.add(in.readUTF());
+    }
+    return List.copyOf(names);
   }
 
   private void load() {
@@ -606,7 +895,7 @@ public final class CatalogManager {
           throw failure("Unsupported catalog format");
         }
         int version = in.readInt();
-        if (version != 1 && version != VERSION) {
+        if (version < 1 || version > VERSION) {
           throw failure("Unsupported catalog format");
         }
         nextTableId = in.readLong();
@@ -620,8 +909,9 @@ public final class CatalogManager {
         var ids = new HashSet<Long>();
         var indexNames = new HashSet<String>();
         for (int i = 0; i < tableCount; i++) {
-          readTable(in, ids, indexNames);
+          readTable(in, ids, indexNames, version);
         }
+        validateLoadedKeys();
         if (in.available() != 0) {
           throw failure("Unexpected bytes after catalog definitions");
         }
@@ -631,7 +921,8 @@ public final class CatalogManager {
     }
   }
 
-  private void readTable(DataInputStream in, HashSet<Long> ids, HashSet<String> indexNames)
+  private void readTable(
+      DataInputStream in, HashSet<Long> ids, HashSet<String> indexNames, int version)
       throws IOException {
     String table = in.readUTF();
     long id = in.readLong();
@@ -697,12 +988,40 @@ public final class CatalogManager {
       }
       definitions.add(new IndexMetadata(name, table, column, kind));
     }
+    PrimaryKey key = null;
+    var keys = new ArrayList<ForeignKey>();
+    if (version >= 3) {
+      if (in.readBoolean()) {
+        key = new PrimaryKey(readNames(in));
+        requireColumns(schema, key.columns(), "PRIMARY KEY");
+      }
+      int foreignCount = readCount(in);
+      for (int i = 0; i < foreignCount; i++) {
+        keys.add(new ForeignKey(table, readNames(in), in.readUTF(), readNames(in)));
+      }
+    }
+    if (key != null) {
+      primaryKeys.put(table, key);
+    }
+    foreignKeys.put(table, List.copyOf(keys));
     schemas.put(table, schema);
     tableIds.put(table, id);
     indexes.put(table, List.copyOf(definitions));
     rowBytes.put(table, bytes);
     frequencies.put(table, counts.stream().map(Map::copyOf).toList());
     stats.put(table, statistics(schema, counts, rows, bytes, blocks));
+  }
+
+  private void validateLoadedKeys() {
+    for (String table : foreignKeys.keySet()) {
+      for (ForeignKey foreign : foreignKeys.get(table)) {
+        requireColumns(schemas.get(table), foreign.columns(), "FOREIGN KEY");
+        PrimaryKey target = primaryKeys.get(foreign.referencedTable());
+        if (target == null || !target.columns().equals(foreign.referencedColumns())) {
+          throw failure("Persisted FOREIGN KEY references a missing PRIMARY KEY");
+        }
+      }
+    }
   }
 
   private static int readCount(DataInputStream in) throws IOException {
