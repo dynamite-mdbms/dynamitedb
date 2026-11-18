@@ -69,6 +69,53 @@ FROM student, enrollment JOIN course ON enrollment.course_id = course.course_id
 WHERE student.student_id = enrollment.student_id AND course.credits = 4
 ORDER BY student.name;
 
+# QO-17: LIMIT n is the last clause and stays the root above Project and Sort; the
+# plan below it is optimized exactly as without LIMIT. Rows are estimated as min(n, rows).
+-- expect: OK
+-- expect-after: Limit [count=1]
+-- expect-after: IndexScan [index=idx_student_id
+SELECT name FROM student WHERE student_id = 7 LIMIT 1;
+
+-- expect: OK
+-- expect-after: Limit [count=5]
+-- expect-after: Sort [keys=student.gpa DESC]
+-- expect-after: Join [kind=THETA, condition=(student.student_id EQ enrollment.student_id)]
+SELECT student.name, enrollment.grade
+FROM student, enrollment
+WHERE student.student_id = enrollment.student_id AND enrollment.grade = 'A'
+ORDER BY student.gpa DESC
+LIMIT 5;
+
+-- expect: OK
+-- expect-after: Limit [count=0]
+-- expect-after: Sort [keys=student.student_id ASC]
+-- expect-after: Join [kind=NATURAL
+SELECT student_id, grade FROM student NATURAL JOIN enrollment ORDER BY student_id ASC LIMIT 0;
+
+-- expect: OK
+-- expect-after: Limit [count=100000]
+-- expect-after: TableScan [table=course
+SELECT title FROM course LIMIT 100000;
+
+# QO-17: malformed or misplaced LIMIT is a syntax error.
+-- expect: SQL_SYNTAX
+SELECT name FROM student LIMIT -1;
+
+-- expect: SQL_SYNTAX
+SELECT name FROM student LIMIT 2.5;
+
+-- expect: SQL_SYNTAX
+SELECT name FROM student LIMIT;
+
+-- expect: SQL_SYNTAX
+SELECT name FROM student LIMIT 99999999999999999999;
+
+-- expect: SQL_SYNTAX
+SELECT name FROM student LIMIT 3 ORDER BY name;
+
+-- expect: SQL_SYNTAX
+SELECT name FROM student WHERE student_id IN (SELECT student_id FROM enrollment LIMIT 1);
+
 # QO-04/QO-05: DML with expressions; the UPDATE source uses the HASH index.
 -- expect: OK
 -- expect-after: Insert [table=student
