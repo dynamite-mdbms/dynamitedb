@@ -134,6 +134,8 @@ class QueryOptimizerDriverTest {
             "COMMIT",
             "ABORT",
             "CREATE INDEX",
+            "CREATE TABLE",
+            "DROP TABLE",
             "NATURAL JOIN",
             "LIMIT",
             "Limit [count=",

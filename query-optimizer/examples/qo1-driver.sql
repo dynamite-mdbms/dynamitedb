@@ -153,6 +153,32 @@ CREATE INDEX idx_enrollment_course ON enrollment(course_id);
 -- expect-after: kind=B_PLUS_TREE
 CREATE INDEX idx_course_credits ON course(credits) USING B_PLUS_TREE;
 
+# QO-17: table DDL also bypasses relational optimization. PRIMARY KEY implies NOT NULL;
+# DROP TABLE defaults to RESTRICT.
+-- expect: OK
+-- expect-after: columns=(grade_id INTEGER NOT NULL, student_id INTEGER, score FLOAT, letter CHAR(2), note VARCHAR(100))
+-- expect-after: primaryKey=grade_id, foreignKeys=(student_id -> student.student_id)
+CREATE TABLE grade (
+  grade_id INTEGER PRIMARY KEY,
+  student_id INTEGER,
+  score FLOAT,
+  letter CHAR(2),
+  note VARCHAR(100),
+  FOREIGN KEY (student_id) REFERENCES student(student_id)
+);
+
+-- expect: OK
+-- expect-after: primaryKey=code
+CREATE TABLE room (code CHAR(4), capacity INTEGER, PRIMARY KEY (code));
+
+-- expect: OK
+-- expect-after: DropTable [table=course, behavior=RESTRICT]
+DROP TABLE course;
+
+-- expect: OK
+-- expect-after: DropTable [table=enrollment, behavior=CASCADE]
+DROP TABLE enrollment CASCADE;
+
 # QO-01: syntax errors stop before binding.
 -- expect: SQL_SYNTAX
 SELEC * FROM student;
@@ -163,6 +189,18 @@ SELECT * FROM;
 -- expect: SQL_SYNTAX
 SELECT * FROM student WHERE gpa >;
 
+-- expect: SQL_SYNTAX
+CREATE TABLE grade (grade_id TEXT);
+
+-- expect: SQL_SYNTAX
+CREATE TABLE grade (note VARCHAR);
+
+-- expect: SQL_SYNTAX
+CREATE TABLE grade (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
+
+-- expect: SQL_SYNTAX
+DROP TABLE course SOMETIMES;
+
 # QO-07: catalog validation errors.
 -- expect: SQL_BIND
 SELECT * FROM missing_table;
@@ -172,3 +210,24 @@ SELECT missing_column FROM student;
 
 -- expect: SQL_BIND
 SELECT student_id FROM student, enrollment;
+
+-- expect: SQL_BIND
+CREATE TABLE student (student_id INTEGER);
+
+-- expect: SQL_BIND
+CREATE TABLE grade (grade_id INTEGER, GRADE_ID FLOAT);
+
+-- expect: SQL_BIND
+CREATE TABLE grade (letter CHAR(0));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY);
+
+-- expect: SQL_BIND
+CREATE TABLE grade (score FLOAT, FOREIGN KEY (score) REFERENCES student(student_id));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (sid INTEGER, FOREIGN KEY (sid) REFERENCES missing_table(id));
+
+-- expect: SQL_BIND
+DROP TABLE missing_table;
