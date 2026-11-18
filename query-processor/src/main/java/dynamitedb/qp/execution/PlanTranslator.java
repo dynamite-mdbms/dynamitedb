@@ -6,7 +6,9 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -97,6 +99,8 @@ public class PlanTranslator {
       case UpdatePlan update -> throw notRelational(plan);
       case DeletePlan delete -> throw notRelational(plan);
       case CreateIndexPlan index -> throw notRelational(plan);
+      case CreateTablePlan create -> throw notRelational(plan);
+      case DropTablePlan drop -> throw notRelational(plan);
       case TransactionCommandPlan command -> throw notRelational(plan);
     };
   }
