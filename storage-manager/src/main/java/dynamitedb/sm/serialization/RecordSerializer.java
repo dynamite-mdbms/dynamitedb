@@ -1,5 +1,12 @@
 package dynamitedb.sm.serialization;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.Column;
@@ -13,11 +20,6 @@ import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.sm.buffer.DiskManager;
-import java.io.ByteArrayOutputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 
 /** Konversi baris ke image dan sebaliknya untuk keempat tipe data (SM-02, SM-03). */
 public final class RecordSerializer {
@@ -765,6 +767,9 @@ public final class RecordSerializer {
               + ")");
     }
 
+    // Live range dikemas (offset, size, slot) agar bisa diurutkan per offset untuk cek overlap.
+    long[] liveRanges = new long[slotCount];
+    int liveCount = 0;
     for (int i = 0; i < slotCount; i++) {
       int pos = slotEntryOffset(i);
       byte status = buf.get(pos);
@@ -789,6 +794,7 @@ public final class RecordSerializer {
                   + recordSize
                   + ")");
         }
+        liveRanges[liveCount++] = ((long) recordOffset << 32) | ((long) recordSize << 16) | i;
       } else if (status == SLOT_EMPTY) {
         if (recordOffset != 0 || recordSize != 0) {
           throw new DbmsException(
@@ -799,8 +805,28 @@ public final class RecordSerializer {
             ErrorCode.STORAGE_FAILURE, "Unknown slot status " + status + " at slot " + i);
       }
     }
+    requireDisjointLiveRanges(liveRanges, liveCount);
 
     return buf;
+  }
+
+  /** Dua live slot tidak boleh berbagi byte payload. Kalau tidak, keduanya decode row yang sama. */
+  private static void requireDisjointLiveRanges(long[] ranges, int count) {
+    Arrays.sort(ranges, 0, count);
+    int previousEnd = 0;
+    int previousSlot = -1;
+    for (int k = 0; k < count; k++) {
+      int offset = (int) (ranges[k] >>> 32);
+      int size = (int) ((ranges[k] >>> 16) & 0xFFFF);
+      int slot = (int) (ranges[k] & 0xFFFF);
+      if (previousSlot >= 0 && offset < previousEnd) {
+        throw new DbmsException(
+            ErrorCode.STORAGE_FAILURE,
+            "Corrupted slotted page: live slots " + previousSlot + " and " + slot + " overlap");
+      }
+      previousEnd = offset + size;
+      previousSlot = slot;
+    }
   }
 
   private static int effectiveFreeSpaceEndOffset(ByteBuffer buf) {
