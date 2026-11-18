@@ -3,13 +3,16 @@ package dynamitedb.qo.verification;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.QueryOptimizer;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
@@ -24,10 +27,16 @@ import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class QueryOptimizerDriverTest {
@@ -128,6 +137,8 @@ class QueryOptimizerDriverTest {
             "COMMIT",
             "ABORT",
             "CREATE INDEX",
+            "CREATE TABLE",
+            "DROP TABLE",
             "NATURAL JOIN",
             "LIMIT",
             "Limit [count=",
@@ -202,6 +213,38 @@ class QueryOptimizerDriverTest {
         new CreateIndexPlan("idx_course_credits", "course", "credits", IndexKind.B_PLUS_TREE),
         create.root());
     assertEquals(new Schema(List.of()), create.outputSchema());
+  }
+
+  @Test
+  void preparesTableDdlWithoutOptimization() {
+    PreparedQuery create =
+        standalone.prepare(
+            "CREATE TABLE grade (id INTEGER PRIMARY KEY, sid INTEGER,"
+                + " FOREIGN KEY (sid) REFERENCES student(student_id))");
+    PreparedQuery drop = standalone.prepare("DROP TABLE course CASCADE");
+
+    assertEquals(
+        new CreateTablePlan(
+            new TableDefinition(
+                "grade",
+                new Schema(
+                    List.of(
+                        new Column("grade", "id", DataType.INTEGER, 0, false),
+                        new Column("grade", "sid", DataType.INTEGER, 0, true))),
+                Optional.of(new PrimaryKey(List.of("id"))),
+                List.of(
+                    new ForeignKey("grade", List.of("sid"), "student", List.of("student_id"))))),
+        create.root());
+    assertEquals(new DropTablePlan("course", DropBehavior.CASCADE), drop.root());
+    for (PreparedQuery prepared : List.of(create, drop)) {
+      assertEquals(new Schema(List.of()), prepared.outputSchema());
+    }
+    PlanExplanation explained = standalone.explain("DROP TABLE enrollment");
+    assertEquals(explained.before(), explained.after());
+    assertEquals("DropTable [table=enrollment, behavior=RESTRICT]", explained.after());
+    assertEquals(
+        ErrorCode.INVALID_STATE,
+        assertThrows(DbmsException.class, () -> standalone.prepare("DROP TABLE course")).getCode());
   }
 
   @Test

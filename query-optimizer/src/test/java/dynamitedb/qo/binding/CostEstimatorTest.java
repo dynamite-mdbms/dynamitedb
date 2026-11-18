@@ -9,7 +9,9 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
@@ -29,6 +31,7 @@ import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.ComparisonOp;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
@@ -37,6 +40,7 @@ import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.contracts.storage.TextValue;
 import java.util.List;
@@ -163,6 +167,12 @@ class CostEstimatorTest {
     assertEquals(
         100.0, cost.estimate(new CreateIndexPlan("idx_gpa", "student", "gpa", IndexKind.HASH)));
     assertEquals(0.0, cost.estimate(new TransactionCommandPlan(TransactionCommand.BEGIN)));
+    var createTable =
+        new CreateTablePlan(
+            new TableDefinition("t", new Schema(List.of()), Optional.empty(), List.of()));
+    assertEquals(1.0, cost.estimate(createTable));
+    assertEquals(0, cost.estimateRows(createTable));
+    assertEquals(1.0, cost.estimate(new DropTablePlan("student", DropBehavior.RESTRICT)));
   }
 
   private static PlanNode filter(Expression predicate) {

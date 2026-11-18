@@ -13,4 +13,6 @@ public sealed interface PlanNode
         UpdatePlan,
         DeletePlan,
         CreateIndexPlan,
+        CreateTablePlan,
+        DropTablePlan,
         TransactionCommandPlan {}

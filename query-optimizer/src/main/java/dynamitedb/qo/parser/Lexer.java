@@ -42,7 +42,15 @@ public class Lexer {
           "INDEX",
           "AS",
           "HASH",
-          "B_PLUS_TREE");
+          "B_PLUS_TREE",
+          "TABLE",
+          "PRIMARY",
+          "KEY",
+          "FOREIGN",
+          "REFERENCES",
+          "DROP",
+          "RESTRICT",
+          "CASCADE");
 
   public List<Token> tokenize(String sql) {
     if (sql == null) {

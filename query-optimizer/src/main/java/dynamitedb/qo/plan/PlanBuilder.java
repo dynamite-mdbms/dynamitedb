@@ -5,8 +5,12 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.DeleteStatement;
+import dynamitedb.contracts.query.DropTablePlan;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.FromSource;
@@ -29,6 +33,8 @@ import dynamitedb.contracts.query.TransactionStatement;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import java.util.Optional;
 
 /** Mengubah statement hasil binding menjadi PlanNode (QO-02, QO-03). */
@@ -59,6 +65,17 @@ public class PlanBuilder {
     }
     if (bound instanceof CreateIndexStatement create) {
       return new CreateIndexPlan(create.index(), create.table(), create.column(), create.kind());
+    }
+    if (bound instanceof CreateTableStatement create) {
+      return new CreateTablePlan(
+          new TableDefinition(
+              create.table(),
+              new Schema(create.columns()),
+              create.primaryKeys().stream().findFirst(),
+              create.foreignKeys()));
+    }
+    if (bound instanceof DropTableStatement drop) {
+      return new DropTablePlan(drop.table(), drop.behavior());
     }
     if (bound instanceof TransactionStatement transaction) {
       return new TransactionCommandPlan(transaction.command());

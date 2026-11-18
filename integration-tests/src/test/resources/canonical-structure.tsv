@@ -212,6 +212,14 @@ component	dynamitedb.contracts.query.CreateIndexStatement	0	index	java.lang.Stri
 component	dynamitedb.contracts.query.CreateIndexStatement	1	table	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexStatement	2	column	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexStatement	3	kind	dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.query.CreateTableStatement	record
+component	dynamitedb.contracts.query.CreateTableStatement	0	table	java.lang.String
+component	dynamitedb.contracts.query.CreateTableStatement	1	columns	java.util.List<dynamitedb.contracts.storage.Column>
+component	dynamitedb.contracts.query.CreateTableStatement	2	primaryKeys	java.util.List<dynamitedb.contracts.storage.PrimaryKey>
+component	dynamitedb.contracts.query.CreateTableStatement	3	foreignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>
+type	dynamitedb.contracts.query.DropTableStatement	record
+component	dynamitedb.contracts.query.DropTableStatement	0	table	java.lang.String
+component	dynamitedb.contracts.query.DropTableStatement	1	behavior	dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.query.TransactionStatement	record
 component	dynamitedb.contracts.query.TransactionStatement	0	command	dynamitedb.contracts.query.TransactionCommand
 type	dynamitedb.contracts.query.TransactionCommand	enum
@@ -294,6 +302,11 @@ component	dynamitedb.contracts.query.CreateIndexPlan	0	index	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	1	table	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	2	column	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	3	kind	dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.query.CreateTablePlan	record
+component	dynamitedb.contracts.query.CreateTablePlan	0	definition	dynamitedb.contracts.storage.TableDefinition
+type	dynamitedb.contracts.query.DropTablePlan	record
+component	dynamitedb.contracts.query.DropTablePlan	0	table	java.lang.String
+component	dynamitedb.contracts.query.DropTablePlan	1	behavior	dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.query.TransactionCommandPlan	record
 component	dynamitedb.contracts.query.TransactionCommandPlan	0	command	dynamitedb.contracts.query.TransactionCommand
 type	dynamitedb.contracts.query.PreparedQuery	record
@@ -810,6 +823,8 @@ provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.InsertS
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.UpdateStatement
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.DeleteStatement
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.CreateIndexStatement
+provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.CreateTableStatement
+provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.DropTableStatement
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.TransactionStatement
 provider	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource
 provider	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.JoinSource
@@ -827,6 +842,8 @@ provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.InsertPl
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.UpdatePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.DeletePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.CreateIndexPlan
+provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.CreateTablePlan
+provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.DropTablePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TransactionCommandPlan
 provider	dynamitedb.contracts.api.QueryProcessor	dynamitedb.qp.QueryProcessorImpl
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.ScanOperator
@@ -874,10 +891,10 @@ provider	dynamitedb.contracts.api.WalDurability	dynamitedb.frm.WalService
 provider	dynamitedb.contracts.api.LogInspection	dynamitedb.frm.WalService
 provider	dynamitedb.contracts.api.GenerationManifestStore	dynamitedb.frm.AtomicGenerationManifestStore
 sealed	dynamitedb.contracts.storage.Value	dynamitedb.contracts.storage.IntValue|dynamitedb.contracts.storage.FloatValue|dynamitedb.contracts.storage.TextValue|dynamitedb.contracts.storage.BooleanValue|dynamitedb.contracts.storage.NullValue
-sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.TransactionStatement
+sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.CreateTableStatement|dynamitedb.contracts.query.DropTableStatement|dynamitedb.contracts.query.TransactionStatement
 sealed	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource|dynamitedb.contracts.query.JoinSource
 sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression
-sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.TransactionCommandPlan
+sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.CreateTablePlan|dynamitedb.contracts.query.DropTablePlan|dynamitedb.contracts.query.TransactionCommandPlan
 helper	dynamitedb.app.Main
 helper	dynamitedb.app.driver.DriverCli
 helper	dynamitedb.app.mock.MockRuntime

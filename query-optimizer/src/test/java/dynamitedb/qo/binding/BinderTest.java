@@ -13,6 +13,8 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTableStatement;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.LiteralExpression;
@@ -22,11 +24,14 @@ import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.contracts.storage.TextValue;
@@ -38,6 +43,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class BinderTest {
 
@@ -219,6 +226,95 @@ class BinderTest {
   }
 
   @Test
+  void bindsCreateTableKeysToCanonicalNames() {
+    var create =
+        (CreateTableStatement)
+            bind(
+                "CREATE TABLE Grade (Id INTEGER, sid INTEGER, parent INTEGER, mark CHAR(65535),"
+                    + " PRIMARY KEY (ID), FOREIGN KEY (SID) REFERENCES STUDENT(SID),"
+                    + " FOREIGN KEY (parent) REFERENCES grade(id))");
+
+    assertEquals("Grade", create.table());
+    assertEquals(List.of(new PrimaryKey(List.of("Id"))), create.primaryKeys());
+    assertEquals(
+        List.of(
+            new ForeignKey("Grade", List.of("sid"), "student", List.of("sid")),
+            new ForeignKey("Grade", List.of("parent"), "Grade", List.of("Id"))),
+        create.foreignKeys());
+    assertEquals(new Column("Grade", "Id", DataType.INTEGER, 0, false), create.columns().get(0));
+    assertTrue(create.columns().get(1).nullable());
+  }
+
+  @Test
+  void bindsCompositeKeysAgainstCatalogPrimaryKey() {
+    var create =
+        (CreateTableStatement)
+            bind(
+                "CREATE TABLE g (a INTEGER, b INTEGER, PRIMARY KEY (B, A),"
+                    + " FOREIGN KEY (a, b) REFERENCES ENROLL(SID, CID))");
+
+    assertEquals(List.of(new PrimaryKey(List.of("b", "a"))), create.primaryKeys());
+    assertEquals(
+        List.of(new ForeignKey("g", List.of("a", "b"), "enroll", List.of("sid", "cid"))),
+        create.foreignKeys());
+    assertTrue(create.columns().stream().noneMatch(Column::nullable));
+  }
+
+  @Test
+  void rejectsDropRestrictOfReferencedTableLikeStorage() {
+    for (String sql : List.of("DROP TABLE student", "DROP TABLE Student RESTRICT")) {
+      var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
+      assertEquals(ErrorCode.INVALID_STATE, error.getCode(), sql);
+      assertEquals(
+          "Table student is referenced by a FOREIGN KEY on enroll; use DROP TABLE ... CASCADE",
+          error.getMessage(),
+          sql);
+    }
+  }
+
+  @Test
+  void bindsDropTableToCatalogName() {
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.CASCADE),
+        bind("DROP TABLE STUDENT CASCADE"));
+    // enroll only references itself, which is dropped with it.
+    assertEquals(
+        new DropTableStatement("enroll", DropBehavior.RESTRICT), bind("DROP TABLE enroll"));
+  }
+
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      textBlock =
+          """
+          CREATE TABLE Student (id INTEGER)                    | Table already exists: Student
+          CREATE TABLE t (id INTEGER, ID FLOAT)                 | Duplicate column: ID
+          CREATE TABLE t (PRIMARY KEY (id))                     | A table requires between 1 and 1024 columns
+          CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, PRIMARY KEY (b)) | Multiple primary keys for table t
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (b))           | PRIMARY KEY column is not in the table: b
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (b) REFERENCES student(sid)) | FOREIGN KEY column is not in the table: b
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES missing(id))  | Unknown table: missing
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES student(age)) | Unknown column: age
+          CREATE TABLE t (a FLOAT, FOREIGN KEY (a) REFERENCES student(sid))   | FOREIGN KEY a (FLOAT) does not match student.sid (INTEGER)
+          CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, FOREIGN KEY (a) REFERENCES t(b)) | FOREIGN KEY must reference the PRIMARY KEY of t
+          CREATE TABLE t (a VARCHAR(5), FOREIGN KEY (a) REFERENCES student(name)) | FOREIGN KEY must reference the PRIMARY KEY of student
+          CREATE TABLE t (a CHAR(4), FOREIGN KEY (a) REFERENCES tagged(sid))   | FOREIGN KEY must reference the PRIMARY KEY of tagged
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) REFERENCES enroll(sid))   | FOREIGN KEY must reference the PRIMARY KEY of enroll
+          CREATE TABLE t (a INTEGER, b INTEGER, FOREIGN KEY (a, b) REFERENCES enroll(cid, sid)) | FOREIGN KEY must reference the PRIMARY KEY of enroll
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a, A))        | PRIMARY KEY repeats column a
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a, a) REFERENCES enroll(sid, cid)) | FOREIGN KEY repeats column a
+          CREATE TABLE t (a CHAR(0))                            | Invalid length 0 for column a, expected 1 to 65535
+          CREATE TABLE t (a VARCHAR(65536))                     | Invalid length 65536 for column a, expected 1 to 65535
+          CREATE TABLE tabél (a INTEGER)                        | Invalid identifier (ASCII letters, digits, '_', at most 128): tabél
+          DROP TABLE missing                                    | Unknown table: missing
+          """)
+  void rejectsInvalidTableDdl(String sql, String message) {
+    var error = assertThrows(DbmsException.class, () -> bind(sql), sql);
+    assertEquals(ErrorCode.SQL_BIND, error.getCode(), sql);
+    assertEquals(message, error.getMessage(), sql);
+  }
+
+  @Test
   void limitsTextByUtf8BytesLikeStorage() {
     bind("INSERT INTO student VALUES (1, 'Annab', 3.5)");
     bind("INSERT INTO student VALUES (1, 'éé', 3.5)");
@@ -350,6 +446,15 @@ class BinderTest {
                     new Column("enroll", "cid", DataType.INTEGER, 0, false))),
             "tagged",
             new Schema(List.of(new Column("tagged", "sid", DataType.CHAR, 4, false))));
+    // tagged has no PRIMARY KEY; enroll has a composite one and references itself.
+    private final Map<String, PrimaryKey> primaryKeys =
+        Map.of(
+            "student", new PrimaryKey(List.of("sid")),
+            "enroll", new PrimaryKey(List.of("sid", "cid")));
+    private final List<ForeignKey> foreignKeys =
+        List.of(
+            new ForeignKey("enroll", List.of("sid"), "student", List.of("sid")),
+            new ForeignKey("enroll", List.of("sid", "cid"), "enroll", List.of("sid", "cid")));
 
     @Override
     public List<String> listTables() {
@@ -376,6 +481,21 @@ class BinderTest {
       return table.equals("student")
           ? List.of(new IndexMetadata("idx_sid", "student", "sid", IndexKind.HASH))
           : List.of();
+    }
+
+    @Override
+    public Optional<PrimaryKey> getPrimaryKey(String table) {
+      return Optional.ofNullable(primaryKeys.get(table));
+    }
+
+    @Override
+    public List<ForeignKey> listForeignKeys(String table) {
+      return foreignKeys.stream().filter(key -> key.table().equals(table)).toList();
+    }
+
+    @Override
+    public List<ForeignKey> listReferencingForeignKeys(String table) {
+      return foreignKeys.stream().filter(key -> key.referencedTable().equals(table)).toList();
     }
   }
 }

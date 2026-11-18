@@ -1,6 +1,6 @@
 # Query Optimizer driver scenarios (QO-16). Also bundled as the driver's built-in suite.
 # Headers before each statement:
-#   -- expect: OK | SQL_SYNTAX | SQL_BIND     expected outcome (omitted: any error fails)
+#   -- expect: OK | <ErrorCode name>         expected outcome (omitted: any error fails)
 #   -- expect-after: <text>                   text that must appear in the optimized (AFTER) plan
 # Fake catalog: student(1000 rows, 100 blocks; HASH idx_student_id, B+Tree idx_student_gpa),
 # enrollment(5000 rows, 250 blocks), course(50 rows, 5 blocks).
@@ -153,6 +153,44 @@ CREATE INDEX idx_enrollment_course ON enrollment(course_id);
 -- expect-after: kind=B_PLUS_TREE
 CREATE INDEX idx_course_credits ON course(credits) USING B_PLUS_TREE;
 
+# QO-17: table DDL also bypasses relational optimization. PRIMARY KEY implies NOT NULL; a
+# FOREIGN KEY must name the target's whole PRIMARY KEY. DROP TABLE defaults to RESTRICT, which
+# refuses a table another table references (enrollment references student and course).
+-- expect: OK
+-- expect-after: columns=(grade_id INTEGER NOT NULL, student_id INTEGER, score FLOAT, letter CHAR(2), note VARCHAR(100))
+-- expect-after: primaryKey=(grade_id), foreignKeys=(student_id -> student(student_id))
+CREATE TABLE grade (
+  grade_id INTEGER PRIMARY KEY,
+  student_id INTEGER,
+  score FLOAT,
+  letter CHAR(2),
+  note VARCHAR(100),
+  FOREIGN KEY (student_id) REFERENCES student(student_id)
+);
+
+-- expect: OK
+-- expect-after: primaryKey=(code)
+CREATE TABLE room (code CHAR(4), capacity INTEGER, PRIMARY KEY (code));
+
+-- expect: OK
+-- expect-after: primaryKey=(student_id, course_id, term)
+-- expect-after: foreignKeys=(student_id, course_id -> enrollment(student_id, course_id))
+CREATE TABLE transcript (
+  student_id INTEGER,
+  course_id INTEGER,
+  term INTEGER,
+  PRIMARY KEY (student_id, course_id, term),
+  FOREIGN KEY (student_id, course_id) REFERENCES enrollment(student_id, course_id)
+);
+
+-- expect: OK
+-- expect-after: DropTable [table=enrollment, behavior=RESTRICT]
+DROP TABLE enrollment;
+
+-- expect: OK
+-- expect-after: DropTable [table=course, behavior=CASCADE]
+DROP TABLE course CASCADE;
+
 # QO-01: syntax errors stop before binding.
 -- expect: SQL_SYNTAX
 SELEC * FROM student;
@@ -163,6 +201,18 @@ SELECT * FROM;
 -- expect: SQL_SYNTAX
 SELECT * FROM student WHERE gpa >;
 
+-- expect: SQL_SYNTAX
+CREATE TABLE grade (grade_id TEXT);
+
+-- expect: SQL_SYNTAX
+CREATE TABLE grade (note VARCHAR);
+
+-- expect: SQL_SYNTAX
+CREATE TABLE grade (a INTEGER, b INTEGER, FOREIGN KEY (a, b) REFERENCES student(student_id));
+
+-- expect: SQL_SYNTAX
+DROP TABLE course SOMETIMES;
+
 # QO-07: catalog validation errors.
 -- expect: SQL_BIND
 SELECT * FROM missing_table;
@@ -172,3 +222,33 @@ SELECT missing_column FROM student;
 
 -- expect: SQL_BIND
 SELECT student_id FROM student, enrollment;
+
+-- expect: SQL_BIND
+CREATE TABLE student (student_id INTEGER);
+
+-- expect: SQL_BIND
+CREATE TABLE grade (grade_id INTEGER, GRADE_ID FLOAT);
+
+-- expect: SQL_BIND
+CREATE TABLE grade (letter CHAR(0));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY);
+
+-- expect: SQL_BIND
+CREATE TABLE grade (score FLOAT, FOREIGN KEY (score) REFERENCES student(student_id));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (sid INTEGER, FOREIGN KEY (sid) REFERENCES missing_table(id));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (sname VARCHAR(50), FOREIGN KEY (sname) REFERENCES student(name));
+
+-- expect: SQL_BIND
+CREATE TABLE grade (sid INTEGER, FOREIGN KEY (sid) REFERENCES enrollment(student_id));
+
+-- expect: SQL_BIND
+DROP TABLE missing_table;
+
+-- expect: INVALID_STATE
+DROP TABLE course;

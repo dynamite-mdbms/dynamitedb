@@ -9,7 +9,11 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
@@ -28,13 +32,20 @@ import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.BooleanValue;
+import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.ComparisonOp;
+import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.TextValue;
 import java.util.List;
 import java.util.Optional;
@@ -179,6 +190,50 @@ class PlanBuilderVisualizerTest {
     assertEquals(
         "CreateIndex [index=idx_gpa, table=student, column=gpa, kind=B_PLUS_TREE]",
         visualizer.render(create));
+  }
+
+  @Test
+  void buildsAndRendersCreateTable() {
+    var columns =
+        List.of(
+            new Column("grade", "id", DataType.INTEGER, 0, false),
+            new Column("grade", "sid", DataType.INTEGER, 0, true),
+            new Column("grade", "mark", DataType.CHAR, 2, true));
+    var primaryKey = new PrimaryKey(List.of("id"));
+    var keys =
+        List.of(
+            new ForeignKey("grade", List.of("sid"), "student", List.of("student_id")),
+            new ForeignKey("grade", List.of("id", "sid"), "pair", List.of("a", "b")));
+
+    var plan =
+        new PlanBuilder()
+            .build(new CreateTableStatement("grade", columns, List.of(primaryKey), keys));
+
+    assertEquals(
+        new CreateTablePlan(
+            new TableDefinition("grade", new Schema(columns), Optional.of(primaryKey), keys)),
+        plan);
+    assertEquals(
+        "CreateTable [table=grade, columns=(id INTEGER NOT NULL, sid INTEGER, mark CHAR(2)),"
+            + " primaryKey=(id), foreignKeys=(sid -> student(student_id); id, sid -> pair(a, b))]",
+        visualizer.render(plan));
+    assertEquals(
+        "CreateTable [table=t, columns=(v VARCHAR(9)), primaryKey=none, foreignKeys=none]",
+        visualizer.render(
+            new CreateTablePlan(
+                new TableDefinition(
+                    "t",
+                    new Schema(List.of(new Column("t", "v", DataType.VARCHAR, 9, true))),
+                    Optional.empty(),
+                    List.of()))));
+  }
+
+  @Test
+  void buildsAndRendersDropTable() {
+    var plan = new PlanBuilder().build(new DropTableStatement("grade", DropBehavior.CASCADE));
+
+    assertEquals(new DropTablePlan("grade", DropBehavior.CASCADE), plan);
+    assertEquals("DropTable [table=grade, behavior=CASCADE]", visualizer.render(plan));
   }
 
   @Test
