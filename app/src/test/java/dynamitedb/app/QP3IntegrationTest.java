@@ -118,9 +118,11 @@ class QP3IntegrationTest {
   @DisplayName("DELETE ... WHERE menghapus baris yang sesuai, SELECT sesudahnya konsisten")
   void deleteThenSelect() {
     int total = storedRows("student").size();
-    long toDelete = storedRows("student").stream().filter(r -> gpaBelow(r, 2.0)).count();
 
-    QueryResult deleted = sql("DELETE FROM student WHERE gpa < 2.0");
+    long toDelete = storedRows("student").stream().filter(r -> gpaBelow(r, 2.5)).count();
+    assertTrue(toDelete > 0, "data contoh harus punya baris yang cocok dengan kondisi DELETE");
+
+    QueryResult deleted = sql("DELETE FROM student WHERE gpa < 2.5");
 
     assertEquals(toDelete, deleted.affectedRows());
     assertEquals(total - toDelete, sql("SELECT * FROM student").rows().size());
