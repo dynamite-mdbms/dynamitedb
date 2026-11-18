@@ -10,14 +10,18 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.ForeignKey;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionStatement;
 import dynamitedb.contracts.query.UpdateStatement;
+import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IntValue;
@@ -127,6 +131,32 @@ class StatementParserTest {
         parse("CREATE INDEX idx_gpa ON student(gpa) USING B_PLUS_TREE;"));
   }
 
+  @Test
+  void parsesCreateTableWithTypesAndKeys() {
+    assertEquals(
+        new CreateTableStatement(
+            "enrollment",
+            List.of(
+                new Column("enrollment", "id", DataType.INTEGER, 0, true),
+                new Column("enrollment", "score", DataType.FLOAT, 0, true),
+                new Column("enrollment", "grade", DataType.CHAR, 2, true),
+                new Column("enrollment", "note", DataType.VARCHAR, 50, true)),
+            List.of("id"),
+            List.of(new ForeignKey("id", "student", "student_id"))),
+        parse(
+            "create table enrollment (id integer, score Float, grade CHAR(2), note varchar(50),"
+                + " primary key (id), foreign key (id) references student(student_id));"));
+    assertEquals(
+        new CreateTableStatement(
+            "t",
+            List.of(
+                new Column("t", "a", DataType.INTEGER, 0, true),
+                new Column("t", "b", DataType.INTEGER, 0, true)),
+            List.of("a", "b"),
+            List.of()),
+        parse("CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY)"));
+  }
+
   // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana
   // (fail-fast).
   @ParameterizedTest
@@ -157,7 +187,24 @@ class StatementParserTest {
           ;                                           | Expected an SQL statement at offset 0 near ';'
           CREATE INDEX idx student(id);               | Expected ON at offset 17 near 'student'
           CREATE INDEX idx ON student(id) USING BTREE | Expected HASH or B_PLUS_TREE after USING at offset 38 near 'BTREE'
-          CREATE TABLE student                        | Expected INDEX at offset 7 near 'TABLE'
+          CREATE VIEW v                               | Expected INDEX or TABLE at offset 7 near 'VIEW'
+          CREATE TABLE student                        | Expected ( at end of input
+          CREATE TABLE (id INTEGER)                   | Expected a table name at offset 13 near '('
+          CREATE TABLE t ()                           | Expected a column name at offset 16 near ')'
+          CREATE TABLE t (id)                         | Expected a column type INTEGER, FLOAT, CHAR(n), or VARCHAR(n) at offset 18 near ')'
+          CREATE TABLE t (id TEXT)                    | Expected a column type INTEGER, FLOAT, CHAR(n), or VARCHAR(n) at offset 19 near 'TEXT'
+          CREATE TABLE t (name VARCHAR)               | Expected ( at offset 28 near ')'
+          CREATE TABLE t (name CHAR(n))               | Expected an integer length for CHAR at offset 26 near 'n'
+          CREATE TABLE t (name CHAR(2.5))             | Expected an integer length for CHAR at offset 26 near '2.5'
+          CREATE TABLE t (name CHAR(9999999999))      | Expected an integer length for CHAR at offset 26 near '9999999999'
+          CREATE TABLE t (id INTEGER(4))              | Expected ) at offset 26 near '('
+          CREATE TABLE t (id INTEGER,)                | Expected a column name at offset 27 near ')'
+          CREATE TABLE t (id INTEGER                  | Expected ) at end of input
+          CREATE TABLE t (id INTEGER PRIMARY)         | Expected KEY at offset 34 near ')'
+          CREATE TABLE t (id INTEGER, PRIMARY KEY id) | Expected ( at offset 40 near 'id'
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a, b)) | Expected ) at offset 41 near ','
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) s(id)) | Expected REFERENCES at offset 43 near 's'
+          CREATE TABLE t (a INTEGER) x                | Unexpected token after CREATE statement at offset 27 near 'x'
           SELECT * FROM student                       | Expected a supported statement keyword at offset 0 near 'SELECT'
           """)
   void rejectsInvalidStatementAtFirstError(String sql, String message) {
