@@ -10,6 +10,7 @@ import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -46,6 +47,7 @@ public class AccessPathOptimizer implements PlanRewrite {
       case FilterPlan filter -> rewriteFilter(filter);
       case ProjectPlan project -> new ProjectPlan(rewrite(project.child()), project.columns());
       case SortPlan sort -> new SortPlan(rewrite(sort.child()), sort.keys());
+      case LimitPlan limit -> new LimitPlan(rewrite(limit.child()), limit.count());
       case JoinPlan join ->
           new JoinPlan(rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition());
       case UpdatePlan update ->
