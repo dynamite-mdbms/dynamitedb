@@ -195,6 +195,7 @@ component	dynamitedb.contracts.query.SelectStatement	0	projection	java.util.List
 component	dynamitedb.contracts.query.SelectStatement	1	from	dynamitedb.contracts.query.FromSource
 component	dynamitedb.contracts.query.SelectStatement	2	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
 component	dynamitedb.contracts.query.SelectStatement	3	orderBy	java.util.List<dynamitedb.contracts.query.SortKey>
+component	dynamitedb.contracts.query.SelectStatement	4	limit	java.util.Optional<java.lang.Long>
 type	dynamitedb.contracts.query.InsertStatement	record
 component	dynamitedb.contracts.query.InsertStatement	0	table	java.lang.String
 component	dynamitedb.contracts.query.InsertStatement	1	values	java.util.List<dynamitedb.contracts.query.Expression>
@@ -274,6 +275,9 @@ enum	dynamitedb.contracts.query.SortDirection	ASC|DESC
 type	dynamitedb.contracts.query.SortPlan	record
 component	dynamitedb.contracts.query.SortPlan	0	child	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.SortPlan	1	keys	java.util.List<dynamitedb.contracts.query.SortKey>
+type	dynamitedb.contracts.query.LimitPlan	record
+component	dynamitedb.contracts.query.LimitPlan	0	child	dynamitedb.contracts.query.PlanNode
+component	dynamitedb.contracts.query.LimitPlan	1	count	long
 type	dynamitedb.contracts.query.InsertPlan	record
 component	dynamitedb.contracts.query.InsertPlan	0	table	java.lang.String
 component	dynamitedb.contracts.query.InsertPlan	1	row	dynamitedb.contracts.storage.Row
@@ -818,6 +822,7 @@ provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.FilterPl
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.ProjectPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.JoinPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.SortPlan
+provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.LimitPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.InsertPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.UpdatePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.DeletePlan
@@ -872,7 +877,7 @@ sealed	dynamitedb.contracts.storage.Value	dynamitedb.contracts.storage.IntValue|
 sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.TransactionStatement
 sealed	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource|dynamitedb.contracts.query.JoinSource
 sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression
-sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.TransactionCommandPlan
+sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.TransactionCommandPlan
 helper	dynamitedb.app.Main
 helper	dynamitedb.app.driver.DriverCli
 helper	dynamitedb.app.mock.MockRuntime

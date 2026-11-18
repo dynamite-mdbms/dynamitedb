@@ -100,7 +100,8 @@ public class Binder {
         projection,
         from,
         select.predicate().map(p -> predicate(rename(p, merged), scope)),
-        orderBy);
+        orderBy,
+        select.limit());
   }
 
   private InsertStatement bindInsert(InsertStatement insert) {

@@ -16,6 +16,7 @@ import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -67,6 +68,16 @@ class CostEstimatorTest {
                     BinaryOp.AND,
                     compare("s", "gpa", BinaryOp.LT, 4.0)))));
     assertEquals(100.0, cost.estimate(filter(compare("s", "sid", BinaryOp.EQ, 5))));
+  }
+
+  @Test
+  void limitCapsRowsButKeepsChildCost() {
+    assertEquals(5, cost.estimateRows(new LimitPlan(STUDENT, 5)));
+    assertEquals(0, cost.estimateRows(new LimitPlan(STUDENT, 0)));
+    assertEquals(1000, cost.estimateRows(new LimitPlan(STUDENT, Long.MAX_VALUE)));
+    assertEquals(
+        1, cost.estimateRows(new LimitPlan(filter(compare("s", "sid", BinaryOp.EQ, 5)), 3)));
+    assertEquals(cost.estimate(STUDENT), cost.estimate(new LimitPlan(STUDENT, 5)));
   }
 
   // NULL dihitung sebagai satu nilai distinct: IS = 1/distinct, IS_NOT = 1 - 1/distinct

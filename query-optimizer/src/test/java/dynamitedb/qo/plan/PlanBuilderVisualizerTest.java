@@ -15,6 +15,7 @@ import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.SelectStatement;
@@ -64,6 +65,37 @@ class PlanBuilderVisualizerTest {
     assertTrue(rendered.startsWith("Project [columns=student.name]"));
     assertTrue(rendered.contains(System.lineSeparator() + "  Sort"));
     assertTrue(rendered.contains(System.lineSeparator() + "      Join [kind=NATURAL"));
+  }
+
+  @Test
+  void placesLimitAboveProjectionAndSortAndRendersIt() {
+    var name = new ColumnRef(Optional.of("student"), "name");
+    var statement =
+        new SelectStatement(
+            List.of(name),
+            new TableSource("student", "student"),
+            Optional.of(new LiteralExpression(new BooleanValue(true))),
+            List.of(new SortKey(gpa, SortDirection.DESC)),
+            Optional.of(0L));
+
+    var plan = new PlanBuilder().build(statement);
+
+    LimitPlan limit = assertInstanceOf(LimitPlan.class, plan);
+    assertEquals(0, limit.count());
+    ProjectPlan project = assertInstanceOf(ProjectPlan.class, limit.child());
+    SortPlan sort = assertInstanceOf(SortPlan.class, project.child());
+    assertInstanceOf(FilterPlan.class, sort.child());
+    assertEquals(
+        "Limit [count=0]"
+            + NL
+            + "  Project [columns=student.name]"
+            + NL
+            + "    Sort [keys=student.gpa DESC]"
+            + NL
+            + "      Filter [predicate=TRUE]"
+            + NL
+            + "        TableScan [table=student, alias=student]",
+        visualizer.render(plan));
   }
 
   private static final String NL = System.lineSeparator();

@@ -72,6 +72,15 @@ class BinderTest {
   }
 
   @Test
+  void keepsLimitAndLeavesOutputSchemaUnchanged() {
+    var limited = (SelectStatement) bind("SELECT name FROM student ORDER BY gpa DESC LIMIT 3");
+    assertEquals(Optional.of(3L), limited.limit());
+    assertEquals(ref("student", "gpa"), limited.orderBy().get(0).column());
+    assertEquals(
+        binder.outputSchema(bind("SELECT name FROM student")), binder.outputSchema(limited));
+  }
+
+  @Test
   void naturalJoinSharesCommonColumnsOnce() {
     var select = (SelectStatement) bind("SELECT * FROM student NATURAL JOIN enroll");
     assertEquals(

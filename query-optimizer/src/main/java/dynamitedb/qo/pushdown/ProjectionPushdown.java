@@ -6,6 +6,7 @@ import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.SortKey;
@@ -39,6 +40,8 @@ public class ProjectionPushdown implements PlanRewrite {
 
   @Override
   public PlanNode rewrite(PlanNode plan) {
+    if (plan instanceof LimitPlan limit)
+      return new LimitPlan(rewrite(limit.child()), limit.count());
     if (!(plan instanceof ProjectPlan project)) return plan;
     PlanNode child = project.child();
     // An inner projection must already contain every outer column, so only the outermost matters.

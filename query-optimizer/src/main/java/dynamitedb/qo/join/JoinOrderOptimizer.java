@@ -11,6 +11,7 @@ import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -76,6 +77,8 @@ public class JoinOrderOptimizer {
                       sort.keys().stream()
                           .map(k -> new SortKey(rename(k.column(), renamed), k.direction()))
                           .toList()));
+      case LimitPlan cap ->
+          map(cap.child(), limit, (child, renamed) -> new LimitPlan(child, cap.count()));
       case FilterPlan filter ->
           map(
               filter.child(),
@@ -148,6 +151,7 @@ public class JoinOrderOptimizer {
       case IndexScanPlan scan -> tableColumns(scan.table(), scan.alias());
       case FilterPlan filter -> outputs(filter.child());
       case SortPlan sort -> outputs(sort.child());
+      case LimitPlan cap -> outputs(cap.child());
       case ProjectPlan project -> project.columns();
       case JoinPlan join -> {
         List<ColumnRef> columns = new ArrayList<>(outputs(join.left()));
@@ -325,6 +329,7 @@ public class JoinOrderOptimizer {
       case FilterPlan filter -> collectRelations(filter.child(), names);
       case ProjectPlan project -> collectRelations(project.child(), names);
       case SortPlan sort -> collectRelations(sort.child(), names);
+      case LimitPlan cap -> collectRelations(cap.child(), names);
       case JoinPlan join -> {
         collectRelations(join.left(), names);
         collectRelations(join.right(), names);

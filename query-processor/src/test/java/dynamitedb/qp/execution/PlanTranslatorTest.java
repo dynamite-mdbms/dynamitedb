@@ -16,6 +16,7 @@ import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -132,6 +133,15 @@ class PlanTranslatorTest {
       DbmsException error = assertThrows(DbmsException.class, () -> translate(plan));
       assertEquals(ErrorCode.INVALID_PLAN, error.getCode());
     }
+  }
+
+  // LIMIT belum punya operator (#104), jadi harus ditolak, bukan dieksekusi tanpa batas
+  @Test
+  void rejectsLimitPlanUntilItsOperatorExists() {
+    DbmsException error =
+        assertThrows(DbmsException.class, () -> translate(new LimitPlan(SCAN, 1)));
+
+    assertEquals(ErrorCode.UNSUPPORTED_OPERATION, error.getCode());
   }
 
   // helper biar ga nulis TX terus

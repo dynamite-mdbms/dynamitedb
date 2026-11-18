@@ -15,6 +15,7 @@ import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinPlan;
 import dynamitedb.contracts.query.JoinSource;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -69,7 +70,10 @@ public class PlanBuilder {
     PlanNode plan = buildFrom(select.from());
     if (select.predicate().isPresent()) plan = filter(plan, select.predicate().get());
     if (!select.orderBy().isEmpty()) plan = new SortPlan(plan, select.orderBy());
-    return new ProjectPlan(plan, select.projection());
+    plan = new ProjectPlan(plan, select.projection());
+    // LIMIT applies last, after filtering and sorting have fixed which rows come first.
+    if (select.limit().isPresent()) plan = new LimitPlan(plan, select.limit().get());
+    return plan;
   }
 
   private static PlanNode buildFrom(FromSource source) {

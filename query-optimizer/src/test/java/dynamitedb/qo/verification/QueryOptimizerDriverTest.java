@@ -129,6 +129,8 @@ class QueryOptimizerDriverTest {
             "ABORT",
             "CREATE INDEX",
             "NATURAL JOIN",
+            "LIMIT",
+            "Limit [count=",
             "expect: SQL_SYNTAX",
             "expect: SQL_BIND",
             "IndexScan",
