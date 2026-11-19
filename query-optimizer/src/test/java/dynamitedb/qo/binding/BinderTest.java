@@ -277,7 +277,7 @@ class BinderTest {
     assertEquals(ErrorCode.SQL_BIND, failure.getCode());
     assertTrue(failure.getMessage().contains("Duplicate UPDATE target"));
   }
-  
+
   void bindsCreateTableKeysToCanonicalNames() {
     var create =
         (CreateTableStatement)

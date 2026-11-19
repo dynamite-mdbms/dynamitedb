@@ -129,7 +129,7 @@ class SqlParserTest {
     assertTrue(select.having().isPresent());
     assertEquals("total", select.orderBy().get(0).column().column());
   }
-  
+
   void parsesLimitAsTheLastClause() {
     assertEquals(Optional.empty(), select("SELECT student_id FROM student").limit());
     assertEquals(

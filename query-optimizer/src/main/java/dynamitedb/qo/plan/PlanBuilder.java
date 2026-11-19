@@ -137,7 +137,7 @@ public class PlanBuilder {
     if (!select.orderBy().isEmpty() && sortByExpressionAlias) {
       plan = new SortPlan(plan, select.orderBy());
     }
-    
+
     if (select.limit().isPresent()) {
       plan = new LimitPlan(plan, select.limit().get());
     }

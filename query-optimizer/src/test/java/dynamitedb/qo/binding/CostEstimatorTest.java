@@ -111,7 +111,6 @@ class CostEstimatorTest {
     assertEquals(1, cost.estimateRows(global));
   }
 
-
   void limitCapsRowsButKeepsChildCost() {
     assertEquals(5, cost.estimateRows(new LimitPlan(STUDENT, 5)));
     assertEquals(0, cost.estimateRows(new LimitPlan(STUDENT, 0)));
