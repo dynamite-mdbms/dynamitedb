@@ -61,7 +61,6 @@ class AccessPathOptimizerTest {
     assertEquals(Optional.empty(), indexScan.residual());
   }
 
-
   @Test
   void neverUsesIndexForIsNullPredicates() {
     for (String column : List.of("id", "age")) {

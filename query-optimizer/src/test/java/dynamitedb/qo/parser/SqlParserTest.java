@@ -154,8 +154,6 @@ class SqlParserTest {
     assertTrue(failure.getMessage().contains("end of input"));
   }
 
-
-
   @ParameterizedTest
   @ValueSource(
       strings = {
@@ -178,7 +176,6 @@ class SqlParserTest {
 
     assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
   }
-
 
   @ParameterizedTest
   @ValueSource(

@@ -151,8 +151,6 @@ class StatementParserTest {
         parse("CREATE INDEX idx_gpa ON student(gpa) USING B_PLUS_TREE;"));
   }
 
-
-
   @ParameterizedTest
   @CsvSource(
       delimiter = '|',

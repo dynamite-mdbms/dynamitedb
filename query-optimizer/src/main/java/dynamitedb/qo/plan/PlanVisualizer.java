@@ -31,7 +31,6 @@ import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.util.stream.Collectors;
 
-
 public class PlanVisualizer {
 
   public String render(PlanNode plan) {

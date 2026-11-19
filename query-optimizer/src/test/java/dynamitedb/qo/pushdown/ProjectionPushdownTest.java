@@ -46,8 +46,6 @@ class ProjectionPushdownTest {
     PlanNode plan =
         new ProjectPlan(new ProjectPlan(sorted, refs("s.gpa", "s.name")), refs("s.name"));
 
-
-
     PlanNode expected =
         new ProjectPlan(
             new SortPlan(

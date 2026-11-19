@@ -13,7 +13,6 @@ import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.qo.pipeline.PlanRewrite;
 import java.util.Optional;
 
-
 public class JoinRewriter implements PlanRewrite {
 
   @Override

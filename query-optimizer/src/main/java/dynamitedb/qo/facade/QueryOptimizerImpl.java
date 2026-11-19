@@ -16,7 +16,6 @@ import dynamitedb.qo.plan.PlanBuilder;
 import dynamitedb.qo.plan.PlanVisualizer;
 import java.util.Objects;
 
-
 public class QueryOptimizerImpl implements QueryOptimizer {
 
   private final Lexer lexer;

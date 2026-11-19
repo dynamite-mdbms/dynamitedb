@@ -20,7 +20,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
-
 public class SqlParser {
 
   private static final Set<String> NON_SELECT_STATEMENTS =

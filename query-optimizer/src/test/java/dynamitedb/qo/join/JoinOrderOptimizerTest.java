@@ -152,7 +152,6 @@ class JoinOrderOptimizerTest {
 
     List<PlanNode> candidates = optimizer().enumerate(original);
 
-
     assertEquals(List.of(original, selectAbove(natural(enrollment, student), "e")), candidates);
   }
 
@@ -200,7 +199,6 @@ class JoinOrderOptimizerTest {
 
     List<PlanNode> candidates = optimizer().enumerate(chain);
 
-
     assertEquals(32, candidates.size());
     assertTrue(candidates.stream().allMatch(c -> ((JoinPlan) c).right().equals(last)));
   }
@@ -220,7 +218,6 @@ class JoinOrderOptimizerTest {
     PlanNode best =
         new BestPlanSelector(new CostEstimator(catalog))
             .choose(new JoinOrderOptimizer(catalog).enumerate(original));
-
 
     assertEquals(selectAbove(natural(enrollment, student), "e"), best);
   }
@@ -274,7 +271,6 @@ class JoinOrderOptimizerTest {
   private static JoinPlan natural(PlanNode left, PlanNode right) {
     return new JoinPlan(left, right, JoinKind.NATURAL, Optional.empty());
   }
-
 
   private static PlanNode selectAbove(PlanNode join, String relation) {
     Expression filter =

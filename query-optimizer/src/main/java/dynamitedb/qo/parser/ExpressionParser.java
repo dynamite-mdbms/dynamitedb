@@ -26,9 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-
 public class ExpressionParser {
-
 
   private static final List<Map<String, BinaryOp>> LEVELS =
       List.of(
@@ -44,7 +42,6 @@ public class ExpressionParser {
               ">=", BinaryOp.GTE),
           Map.of("+", BinaryOp.ADD, "-", BinaryOp.SUB),
           Map.of("*", BinaryOp.MUL, "/", BinaryOp.DIV));
-
 
   private static final int NOT_LEVEL = 2;
 
@@ -79,7 +76,6 @@ public class ExpressionParser {
     return level == COMPARISON_LEVEL ? parseIsNull(tokens, cursor, left) : left;
   }
 
-
   private static Expression parseIsNull(List<Token> tokens, int[] cursor, Expression operand) {
     if (!isKeyword(tokenAt(tokens, cursor[0]), "IS")) return operand;
     cursor[0]++;
@@ -99,7 +95,6 @@ public class ExpressionParser {
         && token.kind() == TokenKind.KEYWORD
         && token.lexeme().equalsIgnoreCase(keyword);
   }
-
 
   private static Expression parseInSubquery(List<Token> tokens, int[] cursor, Expression operand) {
     Token token = tokenAt(tokens, cursor[0]);
@@ -225,7 +220,6 @@ public class ExpressionParser {
       return new LiteralExpression(NullValue.INSTANCE);
     }
 
-
     if (token.kind() == TokenKind.SYMBOL && token.lexeme().equals("-")) {
       Token number = tokenAt(tokens, cursor[0] + 1);
       if (number == null
@@ -283,7 +277,6 @@ public class ExpressionParser {
   private static Token tokenAt(List<Token> tokens, int index) {
     return index >= 0 && index < tokens.size() ? tokens.get(index) : null;
   }
-
 
   static DbmsException syntax(String message, Token token) {
     if (token == null) return new DbmsException(ErrorCode.SQL_SYNTAX, message + " at end of input");

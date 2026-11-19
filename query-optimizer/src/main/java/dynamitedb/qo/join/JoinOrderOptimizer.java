@@ -36,7 +36,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
 
-
 public class JoinOrderOptimizer {
 
   private static final int MAX_LEAVES = 6;
@@ -52,10 +51,6 @@ public class JoinOrderOptimizer {
     Objects.requireNonNull(plan, "plan");
     return variants(plan, MAX_CANDIDATES).stream().map(Map.Entry::getKey).toList();
   }
-
-
-
-
 
   private List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> variants(PlanNode plan, int limit) {
     return switch (plan) {
@@ -119,10 +114,6 @@ public class JoinOrderOptimizer {
     };
   }
 
-
-
-
-
   private List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> naturalVariants(
       JoinPlan join, int limit) {
     boolean swappable = CostEstimator.scans(join).size() <= MAX_LEAVES;
@@ -149,11 +140,6 @@ public class JoinOrderOptimizer {
     return result;
   }
 
-
-
-
-
-
   private Optional<Map<ColumnRef, ColumnRef>> swapRenames(PlanNode left, PlanNode right) {
     Map<String, List<ColumnRef>> rightByName = byName(outputs(right));
     Map<ColumnRef, ColumnRef> renamed = new HashMap<>();
@@ -165,7 +151,6 @@ public class JoinOrderOptimizer {
     }
     return Optional.of(renamed);
   }
-
 
   private List<ColumnRef> outputs(PlanNode node) {
     return switch (node) {
@@ -195,7 +180,6 @@ public class JoinOrderOptimizer {
         .toList();
   }
 
-
   private static Map<String, List<ColumnRef>> byName(List<ColumnRef> columns) {
     Map<String, List<ColumnRef>> byName = new LinkedHashMap<>();
     for (ColumnRef column : columns) {
@@ -207,7 +191,6 @@ public class JoinOrderOptimizer {
   private static String name(ColumnRef column) {
     return column.column().toLowerCase(Locale.ROOT);
   }
-
 
   private static Map<ColumnRef, ColumnRef> then(
       Map<ColumnRef, ColumnRef> first, Map<ColumnRef, ColumnRef> second) {
@@ -263,7 +246,6 @@ public class JoinOrderOptimizer {
     return candidates;
   }
 
-
   private static List<PlanNode> groupings(List<PlanNode> leaves, int start, int end, int limit) {
     if (end - start == 1) return List.of(leaves.get(start));
     List<PlanNode> result = new ArrayList<>();
@@ -285,7 +267,6 @@ public class JoinOrderOptimizer {
     for (Expression condition : conditions) result = attachCondition(result, condition);
     return result;
   }
-
 
   private static PlanNode attachCondition(PlanNode node, Expression condition) {
     Set<String> used = new LinkedHashSet<>();
@@ -328,7 +309,6 @@ public class JoinOrderOptimizer {
         .ifPresent(condition -> conditions.addAll(PlanExpressions.conjuncts(condition)));
     return new Flat(leaves, conditions);
   }
-
 
   private List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> map(
       PlanNode plan, int limit, BiFunction<PlanNode, Map<ColumnRef, ColumnRef>, PlanNode> parent) {

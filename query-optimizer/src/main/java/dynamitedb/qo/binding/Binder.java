@@ -264,11 +264,6 @@ public class Binder {
     return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
   }
 
-
-
-
-
-
   private FromSource bindFrom(
       FromSource source, Set<String> aliases, List<Column> scope, Map<String, Column> merged) {
     if (source instanceof TableSource table) {
@@ -449,7 +444,6 @@ public class Binder {
     };
   }
 
-
   private SelectStatement bindSubquery(SelectStatement query) {
     SelectStatement bound = bindExistsSubquery(query);
     if (bound.projection().size() != 1) {
@@ -495,7 +489,6 @@ public class Binder {
     String argument = kindOf(resolve(ref, scope).dataType());
     return aggregate.function() == AggregateFunction.AVG ? NUMBER : argument;
   }
-
 
   private boolean isFloat(Expression expression, Schema scope) {
     return switch (expression) {

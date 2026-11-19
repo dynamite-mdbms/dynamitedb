@@ -40,7 +40,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-
 public class PlanBuilder {
 
   public PlanNode build(Statement bound) {
@@ -159,7 +158,6 @@ public class PlanBuilder {
   private static FilterPlan filter(PlanNode child, Expression predicate) {
     return new FilterPlan(child, withSubplans(predicate));
   }
-
 
   private static Expression withSubplans(Expression expression) {
     return switch (expression) {

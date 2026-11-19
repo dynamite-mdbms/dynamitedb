@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-
 public class AccessPathOptimizer implements PlanRewrite {
 
   private static final double RANGE_SELECTIVITY = 1.0 / 3;

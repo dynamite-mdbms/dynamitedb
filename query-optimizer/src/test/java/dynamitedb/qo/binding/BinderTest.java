@@ -334,7 +334,6 @@ class BinderTest {
     bind("SELECT sid FROM student WHERE NULL IS NULL;");
     bind("SELECT sid FROM tagged WHERE sid IS NOT NULL;");
 
-
     var error =
         assertThrows(DbmsException.class, () -> bind("UPDATE student SET gpa = gpa IS NULL;"));
     assertEquals(ErrorCode.SQL_BIND, error.getCode());

@@ -24,13 +24,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-
-
-
-
-
-
-
 public class ProjectionPushdown implements PlanRewrite {
 
   private final CatalogAccess catalog;
@@ -51,7 +44,6 @@ public class ProjectionPushdown implements PlanRewrite {
             .collect(Collectors.toSet());
     return ProjectPlan.fromItems(prune(child, Set.copyOf(needed)), project.items());
   }
-
 
   private PlanNode prune(PlanNode node, Set<ColumnRef> needed) {
     return switch (node) {
@@ -84,7 +76,6 @@ public class ProjectionPushdown implements PlanRewrite {
     };
   }
 
-
   private PlanNode input(PlanNode side, Set<ColumnRef> needed) {
     PlanNode pruned = prune(side, needed);
 
@@ -96,11 +87,6 @@ public class ProjectionPushdown implements PlanRewrite {
     if (kept.isEmpty() || kept.size() == available.size()) return pruned;
     return new ProjectPlan(pruned, kept);
   }
-
-
-
-
-
 
   private List<ColumnRef> sharedColumns(JoinPlan join) {
     List<ColumnRef> left = tableColumns(join.left());
@@ -116,7 +102,6 @@ public class ProjectionPushdown implements PlanRewrite {
         .filter(c -> shared.contains(name(c)))
         .toList();
   }
-
 
   private List<ColumnRef> tableColumns(PlanNode node) {
     return CostEstimator.scans(node).entrySet().stream()
@@ -135,7 +120,6 @@ public class ProjectionPushdown implements PlanRewrite {
       default -> false;
     };
   }
-
 
   private static String name(ColumnRef column) {
     return column.column().toLowerCase(Locale.ROOT);

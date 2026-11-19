@@ -7,7 +7,6 @@ import dynamitedb.qo.binding.CostEstimator;
 import java.util.List;
 import java.util.Objects;
 
-
 public class BestPlanSelector {
 
   private final CostEstimator cost;

@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-
 public class StatementParser {
 
   private final ExpressionParser expressions;
@@ -63,7 +62,6 @@ public class StatementParser {
     return statement;
   }
 
-
   private InsertStatement parseInsert(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "INTO");
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
@@ -89,7 +87,6 @@ public class StatementParser {
     }
     throw syntax("Expected ')' to close VALUES list opened at offset " + open.offset(), null);
   }
-
 
   private UpdateStatement parseUpdate(List<Token> tokens, int[] cursor) {
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
@@ -122,13 +119,11 @@ public class StatementParser {
     return new UpdateAssignment(target, expression);
   }
 
-
   private DeleteStatement parseDelete(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "FROM");
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
     return new DeleteStatement(table, parseOptionalWhere(tokens, cursor));
   }
-
 
   private static CreateIndexStatement parseCreateIndex(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "INDEX");
@@ -150,7 +145,6 @@ public class StatementParser {
     }
     return new CreateIndexStatement(index, table, column, kind);
   }
-
 
   private Optional<Expression> parseOptionalWhere(List<Token> tokens, int[] cursor) {
     if (cursor[0] >= tokens.size()) return Optional.empty();

@@ -106,7 +106,6 @@ class CostEstimatorTest {
     assertEquals(1, cost.estimateRows(global));
   }
 
-
   @Test
   void isNullSelectivityTreatsNullAsOneDistinctValue() {
     Expression nul = new LiteralExpression(NullValue.INSTANCE);

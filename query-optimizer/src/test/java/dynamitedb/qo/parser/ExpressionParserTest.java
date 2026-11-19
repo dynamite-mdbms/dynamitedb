@@ -212,7 +212,6 @@ class ExpressionParserTest {
     assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("-0.0"));
   }
 
-
   @ParameterizedTest
   @CsvSource(
       delimiter = '|',

@@ -56,7 +56,6 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-
 class InSubqueryTest {
 
   private static final String SELECT = "SELECT sid FROM student WHERE ";
@@ -64,8 +63,6 @@ class InSubqueryTest {
 
   private final CatalogAccess catalog = new FakeCatalog();
   private final QueryOptimizerImpl optimizer = optimizer(catalog);
-
-
 
   @Test
   void inBindsTighterThanAndOnEitherSide() {
@@ -139,8 +136,6 @@ class InSubqueryTest {
     assertInstanceOf(ExistsSubqueryExpression.class, where("EXISTS (SELECT sid FROM enroll)"));
     assertInstanceOf(UnaryExpression.class, where("NOT sid IN (SELECT sid FROM enroll)"));
   }
-
-
 
   @Test
   void rejectsCorrelatedReferencesQualifiedOrNot() {
@@ -218,8 +213,6 @@ class InSubqueryTest {
     assertTrue(optimizer.explain(update).after().contains("(student.sid IN subquery)"));
     assertTrue(optimizer.explain(delete).after().contains("(student.sid NOT IN subquery)"));
   }
-
-
 
   @Test
   void pushesInPredicateBelowJoinToItsOwnSide() {

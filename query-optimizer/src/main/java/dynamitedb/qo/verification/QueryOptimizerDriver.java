@@ -38,7 +38,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-
 public class QueryOptimizerDriver {
 
   private static final String EXPECT_PREFIX = "-- expect:";
@@ -138,7 +137,6 @@ public class QueryOptimizerDriver {
     }
   }
 
-
   static List<String> builtInScenarios() throws IOException {
     try (var in = QueryOptimizerDriver.class.getResourceAsStream(SCENARIO_RESOURCE)) {
       if (in == null) throw new IOException("Missing driver resource " + SCENARIO_RESOURCE);
@@ -185,7 +183,6 @@ public class QueryOptimizerDriver {
     return List.copyOf(scenarios);
   }
 
-
   private record Scenario(String expectation, List<String> afterContains, String sql) {
 
     static Scenario parse(String text) {
@@ -207,7 +204,6 @@ public class QueryOptimizerDriver {
     }
   }
 
-
   public static QueryOptimizer standaloneOptimizer() {
     CatalogAccess catalog = fakeCatalog();
     CostEstimator cost = new CostEstimator(catalog);
@@ -228,10 +224,6 @@ public class QueryOptimizerDriver {
         cost,
         new PlanVisualizer());
   }
-
-
-
-
 
   static CatalogAccess fakeCatalog() {
     Map<String, FakeTable> tables =

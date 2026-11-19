@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 
-
 public final class GeneticJoinOrderOptimizer {
 
   private final CostEstimator costs;
@@ -38,7 +37,6 @@ public final class GeneticJoinOrderOptimizer {
     this.config = Objects.requireNonNull(config, "config");
     this.random = new Random(seed);
   }
-
 
   public OptimizationResult optimize(PlanNode original) {
     Objects.requireNonNull(original, "original");

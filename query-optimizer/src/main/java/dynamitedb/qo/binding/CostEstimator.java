@@ -31,9 +31,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-
 public class CostEstimator {
-
 
   private static final int JOIN_BLOCK_ROWS = 100;
   private static final double RANGE_SELECTIVITY = 1.0 / 3;
@@ -47,7 +45,6 @@ public class CostEstimator {
   public double estimate(PlanNode plan) {
     return switch (plan) {
       case TableScanPlan scan -> stats(scan.table()).blockCount();
-
 
       case IndexScanPlan scan -> 1 + indexRows(scan);
       case FilterPlan filter -> estimate(filter.child());
@@ -88,7 +85,6 @@ public class CostEstimator {
       case TransactionCommandPlan command -> 0;
     };
   }
-
 
   private double indexRows(IndexScanPlan scan) {
     return stats(scan.table()).rowCount() * selectivity(indexCondition(scan), scan);
@@ -176,7 +172,6 @@ public class CostEstimator {
         BinaryOp.valueOf(scan.predicate().operator().name()),
         new LiteralExpression(scan.predicate().value()));
   }
-
 
   public static Map<String, String> scans(PlanNode plan) {
     return switch (plan) {

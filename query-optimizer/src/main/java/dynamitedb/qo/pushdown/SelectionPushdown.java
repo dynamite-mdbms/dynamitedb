@@ -26,12 +26,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-
-
-
-
-
-
 public class SelectionPushdown implements PlanRewrite {
 
   @Override
@@ -57,7 +51,6 @@ public class SelectionPushdown implements PlanRewrite {
       default -> plan;
     };
   }
-
 
   private static PlanNode push(PlanNode node, Expression predicate) {
     return switch (node) {

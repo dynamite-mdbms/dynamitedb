@@ -55,9 +55,6 @@ final class Qo5TestSupport {
     return new TestCatalog(statistics, indexes, Map.of());
   }
 
-
-
-
   static CatalogAccess catalog(
       Map<String, TableStatistics> statistics, Map<String, List<String>> columns) {
     return new TestCatalog(statistics, List.of(), columns);

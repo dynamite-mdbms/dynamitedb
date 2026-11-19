@@ -7,7 +7,6 @@ import dynamitedb.qo.join.JoinOrderOptimizer;
 import java.util.List;
 import java.util.Objects;
 
-
 public class OptimizerPipeline {
 
   private final List<PlanRewrite> rewrites;
@@ -19,7 +18,6 @@ public class OptimizerPipeline {
       List<PlanRewrite> rewrites, JoinOrderOptimizer joinEnumerator, BestPlanSelector selector) {
     this(rewrites, joinEnumerator, selector, null);
   }
-
 
   public OptimizerPipeline(
       List<PlanRewrite> rewrites,
