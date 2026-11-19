@@ -14,12 +14,15 @@ import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -33,12 +36,15 @@ import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.ComparisonOp;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.FakeComponents;
 import dynamitedb.qp.expression.ExpressionEvaluator;
@@ -148,12 +154,24 @@ class PlanTranslatorTest {
             new UpdatePlan(SCAN, "employee", ID, truth()),
             new DeletePlan(SCAN, "employee"),
             new CreateIndexPlan("employee_id", "employee", "id", IndexKind.HASH),
+            new CreateTablePlan(
+                new TableDefinition("t", new Schema(List.of()), Optional.empty(), List.of())),
+            new DropTablePlan("employee", DropBehavior.CASCADE),
             new TransactionCommandPlan(TransactionCommand.BEGIN));
 
     for (PlanNode plan : plans) {
       DbmsException error = assertThrows(DbmsException.class, () -> translate(plan));
       assertEquals(ErrorCode.INVALID_PLAN, error.getCode());
     }
+  }
+
+  // LIMIT belum punya operator (#104), jadi harus ditolak, bukan dieksekusi tanpa batas
+  @Test
+  void rejectsLimitPlanUntilItsOperatorExists() {
+    DbmsException error =
+        assertThrows(DbmsException.class, () -> translate(new LimitPlan(SCAN, 1)));
+
+    assertEquals(ErrorCode.UNSUPPORTED_OPERATION, error.getCode());
   }
 
   // helper biar ga nulis TX terus

@@ -6,14 +6,17 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.ExistsSubqueryExpression;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -27,6 +30,7 @@ import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.util.stream.Collectors;
@@ -53,6 +57,7 @@ public class PlanVisualizer {
     else if (plan instanceof SortPlan sort) renderNode(sort.child(), depth + 1, output);
     else if (plan instanceof AggregatePlan aggregate)
       renderNode(aggregate.child(), depth + 1, output);
+    else if (plan instanceof LimitPlan limit) renderNode(limit.child(), depth + 1, output);
     else if (plan instanceof JoinPlan join) {
       renderNode(join.left(), depth + 1, output);
       renderNode(join.right(), depth + 1, output);
@@ -124,6 +129,7 @@ public class PlanVisualizer {
               .collect(Collectors.joining(", "));
       return "Sort [keys=" + keys + "]";
     }
+    if (plan instanceof LimitPlan limit) return "Limit [count=" + limit.count() + "]";
     if (plan instanceof JoinPlan join) {
       return "Join [kind="
           + join.kind()
@@ -165,6 +171,45 @@ public class PlanVisualizer {
           + ", kind="
           + create.kind()
           + "]";
+    }
+    if (plan instanceof CreateTablePlan create) {
+      TableDefinition definition = create.definition();
+      String columns =
+          definition.schema().columns().stream()
+              .map(
+                  c ->
+                      c.name()
+                          + " "
+                          + c.dataType()
+                          + (c.maxLength() > 0 ? "(" + c.maxLength() + ")" : "")
+                          + (c.nullable() ? "" : " NOT NULL"))
+              .collect(Collectors.joining(", "));
+      String foreignKeys =
+          definition.foreignKeys().stream()
+              .map(
+                  k ->
+                      String.join(", ", k.columns())
+                          + " -> "
+                          + k.referencedTable()
+                          + "("
+                          + String.join(", ", k.referencedColumns())
+                          + ")")
+              .collect(Collectors.joining("; "));
+      return "CreateTable [table="
+          + definition.name()
+          + ", columns=("
+          + columns
+          + "), primaryKey="
+          + definition
+              .primaryKey()
+              .map(k -> "(" + String.join(", ", k.columns()) + ")")
+              .orElse("none")
+          + ", foreignKeys="
+          + (foreignKeys.isEmpty() ? "none" : "(" + foreignKeys + ")")
+          + "]";
+    }
+    if (plan instanceof DropTablePlan drop) {
+      return "DropTable [table=" + drop.table() + ", behavior=" + drop.behavior() + "]";
     }
     if (plan instanceof TransactionCommandPlan command) {
       return "Transaction [command=" + command.command() + "]";

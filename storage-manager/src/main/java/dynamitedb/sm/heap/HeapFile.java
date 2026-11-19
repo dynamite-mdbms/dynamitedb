@@ -34,7 +34,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.LongPredicate;
 import java.util.zip.CRC32;
 
 /** Heap page access dan slot allocation; table-to-page mapping disimpan di heap.dir. */
@@ -237,6 +239,41 @@ public final class HeapFile {
   /** Update free-space hint setelah page berubah. */
   public synchronized void noteFreeSpace(long pageId, ImmutableBytes data) {
     freeHint.put(pageId, serializer.getFreeSpaceSize(project(pageId, data)));
+  }
+
+  /** DROP TABLE: lepas semua page milik table dari heap.dir; page tidak dipakai ulang. */
+  public synchronized void dropTable(long tableId) {
+    ensureLoaded();
+    retainOnly(id -> id != tableId);
+  }
+
+  /** Buang entry heap.dir milik table yang sudah tidak ada di catalog (crash di tengah DROP). */
+  public synchronized void retainTables(Set<Long> liveTableIds) {
+    ensureLoaded();
+    retainOnly(liveTableIds::contains);
+  }
+
+  /** Pastikan page ada di disk; stage historical bisa lebih pendek dari page di WAL. */
+  public synchronized void ensurePage(long pageId) {
+    while (buffer.pageCount() <= pageId) {
+      buffer.unpin(buffer.allocatePage());
+    }
+  }
+
+  private void retainOnly(LongPredicate keep) {
+    var removed = pagesByTable.keySet().stream().filter(id -> !keep.test(id)).toList();
+    if (removed.isEmpty()) {
+      return;
+    }
+    for (long tableId : removed) {
+      for (long pageId : pagesByTable.remove(tableId)) {
+        ownerByPage.remove(pageId);
+        freeHint.remove(pageId);
+        reservedIds.remove(pageId);
+        reservedImages.remove(pageId);
+      }
+    }
+    persist();
   }
 
   /** Reload heap.dir dan buang reservation, dipakai saat generation switch. */

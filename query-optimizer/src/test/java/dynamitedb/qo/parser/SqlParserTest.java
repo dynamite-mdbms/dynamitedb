@@ -13,6 +13,8 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
+import dynamitedb.contracts.query.CreateTableStatement;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.LiteralExpression;
@@ -44,6 +46,13 @@ class SqlParserTest {
     assertEquals(Optional.of("student"), select.projection().get(0).relation());
     assertTrue(select.predicate().isPresent());
     assertEquals(SortDirection.ASC, select.orderBy().get(0).direction());
+  }
+
+  @Test
+  void routesTableDdlToStatementParser() {
+    assertInstanceOf(
+        CreateTableStatement.class, parser.parse(lexer.tokenize("CREATE TABLE t (id INTEGER)")));
+    assertInstanceOf(DropTableStatement.class, parser.parse(lexer.tokenize("DROP TABLE t;")));
   }
 
   @Test
@@ -119,6 +128,74 @@ class SqlParserTest {
     assertEquals(List.of(new ColumnRef(Optional.empty(), "sid")), select.groupBy());
     assertTrue(select.having().isPresent());
     assertEquals("total", select.orderBy().get(0).column().column());
+  }
+  
+  void parsesLimitAsTheLastClause() {
+    assertEquals(Optional.empty(), select("SELECT student_id FROM student").limit());
+    assertEquals(
+        Optional.of(5L),
+        select("SELECT student_id FROM student ORDER BY student_id DESC LIMIT 5;").limit());
+    assertEquals(
+        Optional.of(0L), select("SELECT student_id FROM student WHERE gpa > 3 limit 0").limit());
+    assertEquals(
+        Optional.of(2L),
+        select("SELECT * FROM student JOIN enrollment ON student.id = enrollment.id LIMIT 2")
+            .limit());
+    assertEquals(
+        Optional.of(1L), select("SELECT * FROM student NATURAL JOIN enrollment LIMIT 1").limit());
+    // The accepted range is 0 to Long.MAX_VALUE.
+    assertEquals(
+        Optional.of(Long.MAX_VALUE),
+        select("SELECT * FROM student LIMIT 9223372036854775807").limit());
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SELECT * FROM student LIMIT",
+        "SELECT * FROM student LIMIT;",
+        "SELECT * FROM student LIMIT -1",
+        "SELECT * FROM student LIMIT 1.5",
+        "SELECT * FROM student LIMIT '3'",
+        "SELECT * FROM student LIMIT gpa",
+        "SELECT * FROM student LIMIT (1)",
+        "SELECT * FROM student LIMIT 1 + 1",
+        "SELECT * FROM student LIMIT 9223372036854775808",
+        "SELECT * FROM student LIMIT 1 2",
+        "SELECT * FROM student LIMIT 1 LIMIT 2",
+        "SELECT * FROM student LIMIT 1 ORDER BY name",
+        "SELECT * FROM student LIMIT 1 WHERE gpa > 3",
+        "SELECT * LIMIT 1 FROM student",
+        "SELECT * FROM student WHERE LIMIT 1",
+        "SELECT * FROM student ORDER BY LIMIT 1",
+        "SELECT * FROM student JOIN enrollment ON LIMIT 1",
+        "UPDATE student SET gpa = 4 WHERE gpa > 3 LIMIT 1",
+        "DELETE FROM student WHERE gpa > 3 LIMIT 1",
+      })
+  void rejectsMalformedOrMisplacedLimit(String sql) {
+    DbmsException failure =
+        assertThrows(DbmsException.class, () -> parser.parse(lexer.tokenize(sql)));
+
+    assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
+  }
+
+  @Test
+  void reportsLimitRangeAndMissingValue() {
+    assertTrue(
+        assertThrows(
+                DbmsException.class,
+                () -> parser.parse(lexer.tokenize("SELECT * FROM t LIMIT 99999999999999999999")))
+            .getMessage()
+            .contains("out of range"));
+    assertTrue(
+        assertThrows(
+                DbmsException.class, () -> parser.parse(lexer.tokenize("SELECT * FROM t LIMIT -1")))
+            .getMessage()
+            .contains("non-negative integer after LIMIT"));
+  }
+
+  private SelectStatement select(String sql) {
+    return assertInstanceOf(SelectStatement.class, parser.parse(lexer.tokenize(sql)));
   }
 
   @ParameterizedTest
