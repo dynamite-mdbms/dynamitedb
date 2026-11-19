@@ -9,12 +9,15 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -52,6 +55,8 @@ public class CostEstimator {
       case AggregatePlan aggregate -> estimate(aggregate.child());
 
       case SortPlan sort -> estimate(sort.child());
+      // Upper bound: a blocking sort below still reads every input row before the cap applies.
+      case LimitPlan limit -> estimate(limit.child());
       case JoinPlan join ->
           estimate(join.left())
               + Math.ceil(rows(join.left()) / JOIN_BLOCK_ROWS) * estimate(join.right());
@@ -59,6 +64,9 @@ public class CostEstimator {
       case UpdatePlan update -> estimate(update.source()) + rows(update.source());
       case DeletePlan delete -> estimate(delete.source()) + rows(delete.source());
       case CreateIndexPlan create -> stats(create.table()).blockCount();
+      // DDL rewrites catalog metadata only; one write each, like a single-row INSERT.
+      case CreateTablePlan create -> 1;
+      case DropTablePlan drop -> 1;
       case TransactionCommandPlan command -> 0;
     };
   }
@@ -77,11 +85,14 @@ public class CostEstimator {
       case ProjectPlan project -> rows(project.child());
       case AggregatePlan aggregate -> aggregateRows(aggregate);
       case SortPlan sort -> rows(sort.child());
+      case LimitPlan limit -> Math.min(limit.count(), rows(limit.child()));
       case JoinPlan join -> rows(join.left()) * rows(join.right()) * joinSelectivity(join);
       case InsertPlan insert -> 1;
       case UpdatePlan update -> rows(update.source());
       case DeletePlan delete -> rows(delete.source());
       case CreateIndexPlan create -> 0;
+      case CreateTablePlan create -> 0;
+      case DropTablePlan drop -> 0;
       case TransactionCommandPlan command -> 0;
     };
   }
@@ -181,6 +192,7 @@ public class CostEstimator {
       case ProjectPlan project -> scans(project.child());
       case AggregatePlan aggregate -> scans(aggregate.child());
       case SortPlan sort -> scans(sort.child());
+      case LimitPlan limit -> scans(limit.child());
       case JoinPlan join -> {
         Map<String, String> all = new HashMap<>(scans(join.left()));
         all.putAll(scans(join.right()));

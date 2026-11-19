@@ -9,8 +9,10 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.ExistsSubqueryExpression;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FromSource;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -31,9 +33,12 @@ import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
@@ -53,6 +58,10 @@ public class Binder {
   private static final String TEXT = "text";
   private static final String BOOLEAN = "boolean";
   private static final String NULL = "null";
+  // Same limits as SM's CatalogManager, so DDL fails at bind time rather than in storage.
+  private static final String IDENTIFIER = "[A-Za-z_][A-Za-z0-9_]{0,127}";
+  private static final int MAX_COLUMNS = 1024;
+  private static final int MAX_TEXT_LENGTH = 65535;
 
   private final CatalogAccess catalog;
 
@@ -67,6 +76,8 @@ public class Binder {
       case UpdateStatement update -> bindUpdate(update);
       case DeleteStatement delete -> bindDelete(delete);
       case CreateIndexStatement create -> bindCreateIndex(create);
+      case CreateTableStatement create -> bindCreateTable(create);
+      case DropTableStatement drop -> bindDropTable(drop);
       case TransactionStatement transaction -> transaction;
     };
   }
@@ -179,6 +190,8 @@ public class Binder {
         groupBy,
         having.map(expression -> aggregatePredicate(expression, scope)),
         orderBy);
+        orderBy,
+        select.limit());
   }
 
   private SortKey bindSortKey(
@@ -264,6 +277,147 @@ public class Binder {
     return new CreateIndexStatement(create.index(), table, column.name(), create.kind());
   }
 
+  /** PRIMARY KEY implies NOT NULL; names are matched case-insensitively like table lookups. */
+  private CreateTableStatement bindCreateTable(CreateTableStatement create) {
+    String table = identifier(create.table());
+    if (catalog.listTables().stream().anyMatch(table::equalsIgnoreCase)) {
+      throw error("Table already exists: " + table);
+    }
+    if (create.columns().isEmpty() || create.columns().size() > MAX_COLUMNS) {
+      throw error("A table requires between 1 and " + MAX_COLUMNS + " columns");
+    }
+    Set<String> names = new HashSet<>();
+    for (Column column : create.columns()) {
+      if (!names.add(identifier(column.name()).toLowerCase(Locale.ROOT))) {
+        throw error("Duplicate column: " + column.name());
+      }
+      boolean text = kindOf(column.dataType()).equals(TEXT);
+      if (text && (column.maxLength() < 1 || column.maxLength() > MAX_TEXT_LENGTH)) {
+        throw error(
+            "Invalid length "
+                + column.maxLength()
+                + " for column "
+                + column.name()
+                + ", expected 1 to "
+                + MAX_TEXT_LENGTH);
+      }
+    }
+    if (create.primaryKeys().size() > 1) throw error("Multiple primary keys for table " + table);
+    Schema scope = new Schema(create.columns());
+    List<String> primaryKey =
+        create.primaryKeys().stream()
+            .findFirst()
+            .map(key -> names(ownColumns(key.columns(), scope, "PRIMARY KEY")))
+            .orElse(List.of());
+    List<ForeignKey> foreignKeys =
+        create.foreignKeys().stream()
+            .map(key -> bindForeignKey(key, table, scope, primaryKey))
+            .toList();
+    List<Column> columns =
+        create.columns().stream()
+            .map(
+                c ->
+                    primaryKey.contains(c.name())
+                        ? new Column(table, c.name(), c.dataType(), c.maxLength(), false)
+                        : c)
+            .toList();
+    List<PrimaryKey> primaryKeys =
+        primaryKey.isEmpty() ? List.of() : List.of(new PrimaryKey(primaryKey));
+    return new CreateTableStatement(table, columns, primaryKeys, foreignKeys);
+  }
+
+  /** {@code primaryKey} is the bound key of the table being created, for self-references. */
+  private ForeignKey bindForeignKey(
+      ForeignKey key, String table, Schema scope, List<String> primaryKey) {
+    List<Column> columns = ownColumns(key.columns(), scope, "FOREIGN KEY");
+    boolean self = key.referencedTable().equalsIgnoreCase(table);
+    String target = self ? table : tableName(key.referencedTable());
+    Schema targetScope = self ? scope : tableScope(target, target);
+    List<Column> referenced =
+        key.referencedColumns().stream()
+            .map(name -> resolve(new ColumnRef(Optional.empty(), name), targetScope))
+            .toList();
+    for (int i = 0; i < columns.size(); i++) {
+      Column column = columns.get(i);
+      Column other = referenced.get(i);
+      if (other.dataType() != column.dataType()) {
+        throw error(
+            "FOREIGN KEY "
+                + column.name()
+                + " ("
+                + column.dataType()
+                + ") does not match "
+                + target
+                + "."
+                + other.name()
+                + " ("
+                + other.dataType()
+                + ")");
+      }
+    }
+    // Same rule as SM: the referenced columns are exactly the target's PRIMARY KEY, in order.
+    List<String> targetKey =
+        self
+            ? primaryKey
+            : catalog.getPrimaryKey(target).map(PrimaryKey::columns).orElse(List.of());
+    if (!names(referenced).equals(targetKey)) {
+      throw error("FOREIGN KEY must reference the PRIMARY KEY of " + target);
+    }
+    return new ForeignKey(table, names(columns), target, names(referenced));
+  }
+
+  /** RESTRICT rejects a table other tables reference; a self-reference goes with the table. */
+  private DropTableStatement bindDropTable(DropTableStatement drop) {
+    String table = tableName(drop.table());
+    if (drop.behavior() == DropBehavior.RESTRICT) {
+      for (ForeignKey key : catalog.listReferencingForeignKeys(table)) {
+        if (!key.table().equals(table)) {
+          // Same code as SM's CatalogManager.dropTable: a catalog-state conflict, not a bad name.
+          throw new DbmsException(
+              ErrorCode.INVALID_STATE,
+              "Table "
+                  + table
+                  + " is referenced by a FOREIGN KEY on "
+                  + key.table()
+                  + "; use DROP TABLE ... CASCADE");
+        }
+      }
+    }
+    return new DropTableStatement(table, drop.behavior());
+  }
+
+  /** Resolves key columns of the table being created; like SM, a key may not repeat a column. */
+  private static List<Column> ownColumns(List<String> names, Schema scope, String clause) {
+    Set<String> seen = new HashSet<>();
+    List<Column> columns = new ArrayList<>();
+    for (String name : names) {
+      Column column =
+          scope.columns().stream()
+              .filter(c -> c.name().equalsIgnoreCase(name))
+              .findFirst()
+              .orElseThrow(() -> error(clause + " column is not in the table: " + name));
+      if (!seen.add(column.name())) throw error(clause + " repeats column " + column.name());
+      columns.add(column);
+    }
+    return columns;
+  }
+
+  private static List<String> names(List<Column> columns) {
+    return columns.stream().map(Column::name).toList();
+  }
+
+  private static String identifier(String name) {
+    if (!name.matches(IDENTIFIER)) {
+      throw error("Invalid identifier (ASCII letters, digits, '_', at most 128): " + name);
+    }
+    return name;
+  }
+
+  /**
+   * Appends the visible columns of {@code source} to {@code scope}. A NATURAL JOIN drops the right
+   * copy of each common column, as QP does, and records it in {@code merged} so references to it
+   * resolve to the surviving left column.
+   */
   private FromSource bindFrom(
       FromSource source, Set<String> aliases, List<Column> scope, Map<String, Column> merged) {
     if (source instanceof TableSource table) {

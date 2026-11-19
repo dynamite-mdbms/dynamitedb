@@ -1,10 +1,16 @@
 package dynamitedb.qo.parser;
 
-import static dynamitedb.qo.parser.ExpressionParser.syntax;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.Statement;
@@ -12,12 +18,15 @@ import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionStatement;
 import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdateStatement;
+import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+import dynamitedb.contracts.storage.PrimaryKey;
+import static dynamitedb.qo.parser.ExpressionParser.syntax;
 
+/** Mengenali statement non-SELECT dari token (QO-05, QO-06, QO-17). SELECT ditangani SqlParser. */
 public class StatementParser {
 
   private final ExpressionParser expressions;
@@ -51,7 +60,14 @@ public class StatementParser {
           }
           case "COMMIT" -> new TransactionStatement(TransactionCommand.COMMIT);
           case "ABORT" -> new TransactionStatement(TransactionCommand.ABORT);
-          case "CREATE" -> parseCreateIndex(body, cursor);
+          case "CREATE" -> {
+            if (peek(body, cursor, "TABLE")) yield parseCreateTable(body, cursor);
+            if (!peek(body, cursor, "INDEX")) {
+              throw syntax("Expected INDEX or TABLE", tokenAt(body, cursor[0]));
+            }
+            yield parseCreateIndex(body, cursor);
+          }
+          case "DROP" -> parseDropTable(body, cursor);
           default -> throw syntax("Expected a supported statement keyword", first);
         };
     if (cursor[0] < body.size()) {
@@ -146,6 +162,94 @@ public class StatementParser {
     return new CreateIndexStatement(index, table, column, kind);
   }
 
+  /**
+   * CREATE TABLE t (col type [PRIMARY KEY], ... [, PRIMARY KEY (col, ...)] [, FOREIGN KEY (col,
+   * ...) REFERENCES t2(col, ...)]). The binder rejects more than one PRIMARY KEY.
+   */
+  private static CreateTableStatement parseCreateTable(List<Token> tokens, int[] cursor) {
+    expect(tokens, cursor, "TABLE");
+    String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
+    expect(tokens, cursor, "(");
+    List<Column> columns = new ArrayList<>();
+    List<PrimaryKey> primaryKeys = new ArrayList<>();
+    List<ForeignKey> foreignKeys = new ArrayList<>();
+    do {
+      if (accept(tokens, cursor, "PRIMARY")) {
+        expect(tokens, cursor, "KEY");
+        primaryKeys.add(new PrimaryKey(parenthesizedColumns(tokens, cursor)));
+      } else if (accept(tokens, cursor, "FOREIGN")) {
+        expect(tokens, cursor, "KEY");
+        List<String> own = parenthesizedColumns(tokens, cursor);
+        expect(tokens, cursor, "REFERENCES");
+        String target = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
+        Token open = tokenAt(tokens, cursor[0]);
+        List<String> referenced = parenthesizedColumns(tokens, cursor);
+        if (own.size() != referenced.size()) {
+          throw syntax("FOREIGN KEY and REFERENCES need the same number of columns", open);
+        }
+        foreignKeys.add(new ForeignKey(table, own, target, referenced));
+      } else {
+        Column column = parseColumnDefinition(table, tokens, cursor);
+        columns.add(column);
+        if (accept(tokens, cursor, "PRIMARY")) {
+          expect(tokens, cursor, "KEY");
+          primaryKeys.add(new PrimaryKey(List.of(column.name())));
+        }
+      }
+    } while (accept(tokens, cursor, ","));
+    expect(tokens, cursor, ")");
+    return new CreateTableStatement(table, columns, primaryKeys, foreignKeys);
+  }
+
+  /** DROP TABLE t [RESTRICT | CASCADE]; RESTRICT is the default, as in the SQL standard. */
+  private static DropTableStatement parseDropTable(List<Token> tokens, int[] cursor) {
+    expect(tokens, cursor, "TABLE");
+    String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
+    if (accept(tokens, cursor, "CASCADE"))
+      return new DropTableStatement(table, DropBehavior.CASCADE);
+    accept(tokens, cursor, "RESTRICT");
+    return new DropTableStatement(table, DropBehavior.RESTRICT);
+  }
+
+  /** col INTEGER | FLOAT | CHAR(n) | VARCHAR(n); nullability is settled by the binder. */
+  private static Column parseColumnDefinition(String table, List<Token> tokens, int[] cursor) {
+    String name = requireIdentifier(tokens, cursor, "Expected a column name").lexeme();
+    Token typeName = tokenAt(tokens, cursor[0]);
+    DataType type =
+        Arrays.stream(DataType.values())
+            .filter(t -> typeName != null && is(typeName, t.name()))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    syntax(
+                        "Expected a column type INTEGER, FLOAT, CHAR(n), or VARCHAR(n)", typeName));
+    cursor[0]++;
+    int length = 0;
+    if (type == DataType.CHAR || type == DataType.VARCHAR) {
+      expect(tokens, cursor, "(");
+      Token size = tokenAt(tokens, cursor[0]);
+      // Up to 9 digits always fits an int; the binder checks the allowed range.
+      if (size == null || !size.lexeme().matches("[0-9]{1,9}")) {
+        throw syntax("Expected an integer length for " + type, size);
+      }
+      length = Integer.parseInt(size.lexeme());
+      cursor[0]++;
+      expect(tokens, cursor, ")");
+    }
+    return new Column(table, name, type, length, true);
+  }
+
+  private static List<String> parenthesizedColumns(List<Token> tokens, int[] cursor) {
+    expect(tokens, cursor, "(");
+    List<String> columns = new ArrayList<>();
+    do {
+      columns.add(requireIdentifier(tokens, cursor, "Expected a column name").lexeme());
+    } while (accept(tokens, cursor, ","));
+    expect(tokens, cursor, ")");
+    return columns;
+  }
+
+  /** Mengonsumsi sisa token sebagai kondisi WHERE, jika ada. */
   private Optional<Expression> parseOptionalWhere(List<Token> tokens, int[] cursor) {
     if (cursor[0] >= tokens.size()) return Optional.empty();
     expect(tokens, cursor, "WHERE");
@@ -189,6 +293,12 @@ public class StatementParser {
     Token token = tokenAt(tokens, cursor[0]);
     if (token == null || !is(token, expected)) throw syntax("Expected " + expected, token);
     cursor[0]++;
+  }
+
+  private static boolean accept(List<Token> tokens, int[] cursor, String lexeme) {
+    if (!peek(tokens, cursor, lexeme)) return false;
+    cursor[0]++;
+    return true;
   }
 
   private static boolean peek(List<Token> tokens, int[] cursor, String lexeme) {

@@ -2,6 +2,8 @@ package dynamitedb.qo.facade;
 
 import dynamitedb.contracts.api.QueryOptimizer;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.PlanExplanation;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.PreparedQuery;
@@ -75,6 +77,10 @@ public class QueryOptimizerImpl implements QueryOptimizer {
   }
 
   private static boolean shouldOptimize(PlanNode plan) {
-    return !(plan instanceof TransactionCommandPlan) && !(plan instanceof CreateIndexPlan);
+    // Transaction commands and DDL have no relational tree to rewrite.
+    return !(plan instanceof TransactionCommandPlan
+        || plan instanceof CreateIndexPlan
+        || plan instanceof CreateTablePlan
+        || plan instanceof DropTablePlan);
   }
 }

@@ -135,6 +135,12 @@ class InSubqueryTest {
         ScalarSubqueryExpression.class, assertInstanceOf(BinaryExpression.class, scalar).right());
     assertInstanceOf(ExistsSubqueryExpression.class, where("EXISTS (SELECT sid FROM enroll)"));
     assertInstanceOf(UnaryExpression.class, where("NOT sid IN (SELECT sid FROM enroll)"));
+    assertError(ErrorCode.SQL_SYNTAX, "Scalar subqueries", "sid = (SELECT sid FROM enroll)");
+    assertError(ErrorCode.SQL_SYNTAX, "EXISTS subqueries", "EXISTS (SELECT sid FROM enroll)");
+    assertError(
+        ErrorCode.SQL_SYNTAX,
+        "LIMIT is not supported inside a subquery",
+        "sid IN (SELECT sid FROM enroll ORDER BY sid LIMIT 1)");
   }
 
   @Test

@@ -23,7 +23,7 @@ import java.util.Set;
 public class SqlParser {
 
   private static final Set<String> NON_SELECT_STATEMENTS =
-      Set.of("INSERT", "UPDATE", "DELETE", "BEGIN", "COMMIT", "ABORT", "CREATE");
+      Set.of("INSERT", "UPDATE", "DELETE", "BEGIN", "COMMIT", "ABORT", "CREATE", "DROP");
 
   private final StatementParser statements;
   private final ExpressionParser expressions;
@@ -83,11 +83,17 @@ public class SqlParser {
       orderBy = parseSortKeys(tokens, cursor);
     }
 
+    Optional<Long> limit = Optional.empty();
+    if (peek(tokens, cursor, "LIMIT")) {
+      cursor[0]++;
+      limit = Optional.of(parseLimit(tokens, cursor));
+    }
+
     consumeTerminator(tokens, cursor);
     if (cursor[0] != tokens.size()) {
       throw syntax("Unexpected token after SELECT statement", tokens.get(cursor[0]));
     }
-    return new SelectStatement(items, from, predicate, groupBy, having, orderBy);
+    return new SelectStatement(items, from, predicate, groupBy, having, orderBy, limit);
   }
 
   private List<SelectItem> parseSelectItems(List<Token> tokens, int[] cursor) {
@@ -159,6 +165,22 @@ public class SqlParser {
     }
     if (columns.isEmpty()) throw syntax("Expected a column after GROUP BY", tokenAt(tokens, end));
     return List.copyOf(columns);
+  }
+
+  /** {@code LIMIT n}: n is an unsigned integer literal from 0 to {@link Long#MAX_VALUE}. */
+  private static long parseLimit(List<Token> tokens, int[] cursor) {
+    Token count = tokenAt(tokens, cursor[0]);
+    if (count == null
+        || count.kind() != TokenKind.LITERAL
+        || !count.lexeme().chars().allMatch(c -> c >= '0' && c <= '9')) {
+      throw syntax("Expected a non-negative integer after LIMIT", count);
+    }
+    cursor[0]++;
+    try {
+      return Long.parseLong(count.lexeme());
+    } catch (NumberFormatException e) {
+      throw syntax("LIMIT value out of range", count);
+    }
   }
 
   private FromSource parseFrom(List<Token> tokens, int[] cursor) {
@@ -244,6 +266,7 @@ public class SqlParser {
       if (depth < 0) throw syntax("Unmatched closing parenthesis", token);
       if (depth == 0
           && (is(token, ";")
+              || is(token, "LIMIT")
               || is(token, "HAVING")
               || (is(token, "GROUP")
                   && index + 1 < tokens.size()
@@ -280,6 +303,7 @@ public class SqlParser {
               || is(token, "NATURAL")
               || is(token, "WHERE")
               || is(token, "ORDER")
+              || is(token, "LIMIT")
               || is(token, ";"))) return index;
     }
     if (depth != 0) throw syntax("Unclosed parenthesis", tokenAt(tokens, tokens.size()));

@@ -6,4 +6,6 @@ public sealed interface Statement
         UpdateStatement,
         DeleteStatement,
         CreateIndexStatement,
+        CreateTableStatement,
+        DropTableStatement,
         TransactionStatement {}

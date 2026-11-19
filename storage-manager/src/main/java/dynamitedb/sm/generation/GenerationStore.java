@@ -132,6 +132,8 @@ public final class GenerationStore {
     // Stage tanpa WAL: bila crash sebelum seal, stage dibuat ulang.
     var stageBuffer = new BufferPool(new DiskManager(stageDir), lsn -> {});
     var stageCatalog = new CatalogManager(stageDir);
+    // Contract D9: stage memakai definisi table yang berlaku sekarang, bukan DDL time travel.
+    stageCatalog.replaceDefinitionsFrom(catalog);
     var serializer = new RecordSerializer();
     var stageHeap = new HeapFile(stageDir, stageBuffer, serializer, stageCatalog);
     var stageIndexes = new IndexManager(stageHeap, serializer);

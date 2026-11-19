@@ -7,13 +7,16 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
@@ -90,11 +93,17 @@ public class PlanTranslator {
               join.condition(),
               evaluatorFor(join.condition(), tx));
       case SortPlan sort -> new SortOperator(translate(sort.child(), tx), sort.keys());
+      // LIMIT operator belum ada (#104), jadi ditolak daripada dieksekusi tanpa batas
+      case LimitPlan limit ->
+          throw new DbmsException(
+              ErrorCode.UNSUPPORTED_OPERATION, "LIMIT is not supported by the query processor yet");
       // DML, DDL, sama perintah transaksi udah diarahin ExecutionEngine, ga boleh sampe sini
       case InsertPlan insert -> throw notRelational(plan);
       case UpdatePlan update -> throw notRelational(plan);
       case DeletePlan delete -> throw notRelational(plan);
       case CreateIndexPlan index -> throw notRelational(plan);
+      case CreateTablePlan create -> throw notRelational(plan);
+      case DropTablePlan drop -> throw notRelational(plan);
       case TransactionCommandPlan command -> throw notRelational(plan);
     };
   }

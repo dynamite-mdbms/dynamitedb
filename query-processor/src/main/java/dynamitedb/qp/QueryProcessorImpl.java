@@ -5,6 +5,8 @@ import dynamitedb.contracts.api.QueryProcessor;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.PreparedQuery;
 import dynamitedb.contracts.query.QueryResult;
 import dynamitedb.contracts.query.SessionId;
@@ -88,6 +90,11 @@ public final class QueryProcessorImpl implements QueryProcessor {
           }
           throw failure;
         }
+      }
+      // Temporary until #102 executes table DDL; rejected before any transaction work.
+      if (prepared.root() instanceof CreateTablePlan || prepared.root() instanceof DropTablePlan) {
+        throw new DbmsException(
+            ErrorCode.UNSUPPORTED_OPERATION, "CREATE TABLE and DROP TABLE cannot be executed yet");
       }
       if (prepared.root() instanceof CreateIndexPlan && session.activeTx().isPresent()) {
         throw new DbmsException(
