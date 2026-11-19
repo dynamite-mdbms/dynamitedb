@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
@@ -143,6 +145,9 @@ class BinderTest {
 
     bind("UPDATE student SET sid = sid + 1");
     bind("UPDATE student SET gpa = sid * 2");
+    var multi = (UpdateStatement) bind("UPDATE student SET sid = sid + 1, gpa = gpa * 2");
+    assertEquals(2, multi.assignments().size());
+    assertEquals(ref("student", "sid"), multi.assignments().get(0).target());
     var update = (UpdateStatement) bind("UPDATE student SET gpa = gpa * 2 WHERE sid = 1");
     assertEquals(ref("student", "gpa"), update.target());
     assertEquals(
@@ -174,6 +179,46 @@ class BinderTest {
     var index = (CreateIndexStatement) bind("CREATE INDEX idx_name ON STUDENT(Name)");
     assertEquals("student", index.table());
     assertEquals("name", index.column());
+  }
+
+  @Test
+  void bindsExpressionAliasesForOrderByButKeepsWhereInInputScope() {
+    var select =
+        (SelectStatement) bind("SELECT sid + 1 AS next_sid FROM student ORDER BY next_sid");
+    assertEquals(Optional.of("next_sid"), select.items().get(0).alias());
+    assertEquals(new ColumnRef(Optional.empty(), "next_sid"), select.orderBy().get(0).column());
+
+    DbmsException unknownAlias =
+        assertThrows(
+            DbmsException.class,
+            () -> bind("SELECT sid + 1 AS next_sid FROM student WHERE next_sid > 2"));
+    assertEquals(ErrorCode.SQL_BIND, unknownAlias.getCode());
+
+    DbmsException duplicate =
+        assertThrows(DbmsException.class, () -> bind("SELECT sid AS x, gpa AS x FROM student"));
+    assertEquals(ErrorCode.SQL_BIND, duplicate.getCode());
+    assertTrue(duplicate.getMessage().contains("Duplicate output alias"));
+  }
+
+  @Test
+  void bindsAggregatesAndRequiresEverySelectedColumnToBeGrouped() {
+    var aggregate =
+        (SelectStatement)
+            bind(
+                "SELECT name AS dept, COUNT(*) AS total, AVG(gpa) AS mean "
+                    + "FROM student GROUP BY name HAVING COUNT(*) > 1 ORDER BY total");
+    assertEquals(List.of(ref("student", "name")), aggregate.groupBy());
+    assertEquals(
+        new AggregateExpression(AggregateFunction.COUNT, Optional.empty()),
+        aggregate.items().get(1).expression());
+    assertEquals(DataType.INTEGER, binder.outputSchema(aggregate).columns().get(1).dataType());
+    assertEquals(DataType.FLOAT, binder.outputSchema(aggregate).columns().get(2).dataType());
+
+    DbmsException ungrouped =
+        assertThrows(
+            DbmsException.class, () -> bind("SELECT name, COUNT(*) FROM student GROUP BY sid"));
+    assertEquals(ErrorCode.SQL_BIND, ungrouped.getCode());
+    assertTrue(ungrouped.getMessage().contains("not grouped or aggregated"));
   }
 
   @Test
@@ -210,6 +255,14 @@ class BinderTest {
   }
 
   @Test
+  void rejectsDuplicateUpdateTargets() {
+    DbmsException failure =
+        assertThrows(DbmsException.class, () -> bind("UPDATE student SET sid = 1, SID = 2"));
+    assertEquals(ErrorCode.SQL_BIND, failure.getCode());
+    assertTrue(failure.getMessage().contains("Duplicate UPDATE target"));
+  }
+
+  @Test
   void limitsTextByUtf8BytesLikeStorage() {
     bind("INSERT INTO student VALUES (1, 'Annab', 3.5)");
     bind("INSERT INTO student VALUES (1, 'éé', 3.5)");
@@ -223,7 +276,7 @@ class BinderTest {
 
   @Test
   void bindsNegativeNumbersByColumnType() {
-    // INTEGER menerima int negatif; FLOAT menerima float maupun int negatif.
+
     var insert = (InsertStatement) bind("INSERT INTO student VALUES (-1, 'Ann', -2.5)");
     assertEquals(number(-1), insert.values().get(0));
     assertEquals(new LiteralExpression(new FloatValue(-2.5)), insert.values().get(2));
@@ -281,11 +334,11 @@ class BinderTest {
     bind("SELECT sid FROM student WHERE NULL IS NULL;");
     bind("SELECT sid FROM tagged WHERE sid IS NOT NULL;");
 
-    // hasil IS NULL bertipe boolean, tidak cocok untuk kolom mana pun
+
     var error =
         assertThrows(DbmsException.class, () -> bind("UPDATE student SET gpa = gpa IS NULL;"));
     assertEquals(ErrorCode.SQL_BIND, error.getCode());
-    // IS hanya boleh diikuti NULL
+
     error =
         assertThrows(DbmsException.class, () -> bind("SELECT sid FROM student WHERE gpa IS 3;"));
     assertEquals(ErrorCode.SQL_SYNTAX, error.getCode());

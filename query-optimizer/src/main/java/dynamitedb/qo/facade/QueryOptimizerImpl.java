@@ -16,7 +16,7 @@ import dynamitedb.qo.plan.PlanBuilder;
 import dynamitedb.qo.plan.PlanVisualizer;
 import java.util.Objects;
 
-/** Pintu masuk QO untuk QP: parse, bind, lalu optimasi. */
+
 public class QueryOptimizerImpl implements QueryOptimizer {
 
   private final Lexer lexer;

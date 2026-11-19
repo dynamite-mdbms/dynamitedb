@@ -71,6 +71,11 @@ public class WriteExecutor {
   }
 
   public long update(UpdatePlan plan, TransactionId tx) {
+    if (plan.assignments().size() != 1) {
+      throw new DbmsException(
+          ErrorCode.UNSUPPORTED_OPERATION,
+          "Multi-assignment UPDATE is not supported by the query processor yet");
+    }
     // izin WRITE diminta sebelum scan supaya tidak ada upgrade lock READ -> WRITE
     coordinator.authorizeTable(tx, plan.table(), AccessMode.WRITE);
     Map<RecordId, Row> targets = collectTargets(plan, tx);

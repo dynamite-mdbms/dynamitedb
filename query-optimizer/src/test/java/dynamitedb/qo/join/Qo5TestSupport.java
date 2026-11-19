@@ -55,9 +55,9 @@ final class Qo5TestSupport {
     return new TestCatalog(statistics, indexes, Map.of());
   }
 
-  /**
-   * Like {@link #catalog(Map, List)}, but every table in {@code columns} has those INTEGER columns.
-   */
+
+
+
   static CatalogAccess catalog(
       Map<String, TableStatistics> statistics, Map<String, List<String>> columns) {
     return new TestCatalog(statistics, List.of(), columns);

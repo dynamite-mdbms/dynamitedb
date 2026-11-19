@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
@@ -35,6 +36,10 @@ import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.TextValue;
+import dynamitedb.qo.parser.ExpressionParser;
+import dynamitedb.qo.parser.Lexer;
+import dynamitedb.qo.parser.SqlParser;
+import dynamitedb.qo.parser.StatementParser;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -64,6 +69,27 @@ class PlanBuilderVisualizerTest {
     assertTrue(rendered.startsWith("Project [columns=student.name]"));
     assertTrue(rendered.contains(System.lineSeparator() + "  Sort"));
     assertTrue(rendered.contains(System.lineSeparator() + "      Join [kind=NATURAL"));
+  }
+
+  @Test
+  void placesAggregateAndHavingBelowProjectionAndSort() {
+    var parser = new SqlParser(new StatementParser(), new ExpressionParser());
+    var statement =
+        (SelectStatement)
+            parser.parse(
+                new Lexer()
+                    .tokenize(
+                        "SELECT sid AS group_id, COUNT(*) AS total FROM student "
+                            + "GROUP BY sid HAVING COUNT(*) > 1 ORDER BY total"));
+
+    var sort = assertInstanceOf(SortPlan.class, new PlanBuilder().build(statement));
+    var project = assertInstanceOf(ProjectPlan.class, sort.child());
+    var having = assertInstanceOf(FilterPlan.class, project.child());
+    var aggregate = assertInstanceOf(AggregatePlan.class, having.child());
+    assertEquals(1, aggregate.groupBy().size());
+    assertEquals(1, aggregate.aggregates().size());
+    assertTrue(
+        new PlanVisualizer().render(sort).contains("Aggregate [groupBy=sid, calls=COUNT(*)]"));
   }
 
   private static final String NL = System.lineSeparator();

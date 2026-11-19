@@ -39,6 +39,38 @@ SELECT name FROM student WHERE gpa = 3.5;
 -- expect-after: residual=(student.gpa GT 3.0)
 SELECT name FROM student WHERE student_id = 7 AND gpa > 3.0;
 
+# QO optional output alias: WHERE uses the input scope; ORDER BY may reference an output alias.
+-- expect: OK
+-- expect-after: Sort [keys=next_id ASC]
+-- expect-after: Project [columns=(student.student_id ADD 1) AS next_id]
+SELECT student_id + 1 AS next_id FROM student ORDER BY next_id;
+
+# QO optional aggregation: grouping, aggregate output aliases, HAVING, and ORDER BY alias.
+-- expect: OK
+-- expect-after: Aggregate [groupBy=student.gpa, calls=COUNT(*)]
+-- expect-after: Project [columns=student.gpa, COUNT(*) AS total]
+SELECT gpa, COUNT(*) AS total
+FROM student
+GROUP BY gpa
+HAVING COUNT(*) > 1
+ORDER BY total DESC;
+
+# QO optional predicate extension: OR/NOT precedence is preserved and never split for pushdown.
+-- expect: OK
+-- expect-after: NOT
+SELECT name FROM student WHERE NOT (gpa < 3.0 OR student_id = 1);
+
+# QO optional subqueries: scalar subqueries are uncorrelated and select exactly one column.
+-- expect: OK
+-- expect-after: (scalar subquery)
+SELECT name FROM student
+WHERE student_id = (SELECT student_id FROM student WHERE student_id = 1);
+
+-- expect: OK
+-- expect-after: EXISTS (subquery)
+SELECT name FROM student
+WHERE EXISTS (SELECT student_id FROM enrollment WHERE student_id = 1);
+
 # QO-03/QO-07: NATURAL JOIN emits the shared column once.
 -- expect: OK
 -- expect-after: Join [kind=NATURAL
@@ -80,6 +112,11 @@ INSERT INTO student VALUES (1001, 'Alya', 3.9);
 UPDATE student
 SET gpa = gpa + 0.1
 WHERE student_id = 1;
+
+# QO optional DML extension: multiple assignments bind independently; QP reports unsupported.
+-- expect: OK
+-- expect-after: set=student.gpa=(student.gpa ADD 0.1), student.name='Alya'
+UPDATE student SET gpa = gpa + 0.1, name = 'Alya' WHERE student_id = 1;
 
 -- expect: OK
 -- expect-after: Delete [table=enrollment]

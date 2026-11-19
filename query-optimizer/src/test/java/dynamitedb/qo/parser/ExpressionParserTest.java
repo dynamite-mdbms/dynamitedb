@@ -5,12 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.LiteralExpression;
+import dynamitedb.contracts.query.UnaryExpression;
+import dynamitedb.contracts.query.UnaryOp;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
@@ -86,6 +90,16 @@ class ExpressionParserTest {
         new ColumnExpression(new ColumnRef(Optional.of("emp"), "salary")), parse("emp.salary"));
   }
 
+  @Test
+  void parsesAggregateFunctions() {
+    assertEquals(
+        new AggregateExpression(AggregateFunction.COUNT, Optional.empty()), parse("COUNT(*)"));
+    assertEquals(
+        new AggregateExpression(
+            AggregateFunction.AVG, Optional.of(new ColumnRef(Optional.of("s"), "gpa"))),
+        parse("avg(s.gpa)"));
+  }
+
   @ParameterizedTest
   @CsvSource({
     "=, EQ", "<>, NEQ", "<, LT", "<=, LTE", ">, GT", ">=, GTE", "+, ADD", "-, SUB", "*, MUL",
@@ -98,6 +112,18 @@ class ExpressionParserTest {
   @Test
   void parsesAndCaseInsensitively() {
     assertEquals(bin(col("a"), BinaryOp.AND, col("b")), parse("a and b"));
+  }
+
+  @Test
+  void parsesOrAndNotWithSqlPrecedence() {
+    Expression not = new UnaryExpression(UnaryOp.NOT, col("a"));
+    assertEquals(
+        bin(bin(not, BinaryOp.AND, col("b")), BinaryOp.OR, col("c")), parse("NOT a AND b OR c"));
+    assertEquals(
+        bin(col("a"), BinaryOp.OR, bin(col("b"), BinaryOp.AND, col("c"))), parse("a OR b AND c"));
+    assertEquals(
+        new UnaryExpression(UnaryOp.NOT, bin(col("a"), BinaryOp.OR, col("b"))),
+        parse("NOT (a OR b)"));
   }
 
   @Test
@@ -186,7 +212,7 @@ class ExpressionParserTest {
     assertEquals(new LiteralExpression(new FloatValue(0.0)), parse("-0.0"));
   }
 
-  // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana.
+
   @ParameterizedTest
   @CsvSource(
       delimiter = '|',
@@ -226,7 +252,7 @@ class ExpressionParserTest {
   void rejectsFloatLiteralThatOverflowsToInfinity() {
     String huge = "9".repeat(400) + ".0";
     assertFloatOutOfRange(huge, 0, huge);
-    // Pangkat sepuluh terkecil yang melewati Double.MAX_VALUE (~1.8e308).
+
     String smallestOver = "1" + "0".repeat(309) + ".0";
     assertFloatOutOfRange(smallestOver, 0, smallestOver);
   }
@@ -247,7 +273,7 @@ class ExpressionParserTest {
 
   @Test
   void roundsToNearestAtTheUpperBoundary() {
-    // Titik tengah MAX + ulp/2 dibulatkan ke genap (Infinity); tepat di bawahnya masih ke MAX.
+
     BigDecimal tie =
         new BigDecimal(Double.MAX_VALUE).add(new BigDecimal(Math.ulp(Double.MAX_VALUE) / 2));
     String belowTie = tie.subtract(BigDecimal.ONE).toPlainString() + ".0";

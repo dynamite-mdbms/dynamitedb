@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Memecah teks SQL menjadi token (QO-01). */
+
 public class Lexer {
 
   private static final Set<String> KEYWORDS =
@@ -23,9 +23,10 @@ public class Lexer {
           "ON",
           "NATURAL",
           "AND",
+          "OR",
+          "NOT",
           "NULL",
           "IS",
-          "NOT",
           "IN",
           "INSERT",
           "INTO",

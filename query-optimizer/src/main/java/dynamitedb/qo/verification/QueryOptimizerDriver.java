@@ -38,7 +38,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Menguji QO lewat port QueryOptimizer tanpa Storage Manager asli (QO-16). */
+
 public class QueryOptimizerDriver {
 
   private static final String EXPECT_PREFIX = "-- expect:";
@@ -138,7 +138,7 @@ public class QueryOptimizerDriver {
     }
   }
 
-  /** Scenarios bundled from {@code examples/qo1-driver.sql}, the single source of the demo. */
+
   static List<String> builtInScenarios() throws IOException {
     try (var in = QueryOptimizerDriver.class.getResourceAsStream(SCENARIO_RESOURCE)) {
       if (in == null) throw new IOException("Missing driver resource " + SCENARIO_RESOURCE);
@@ -185,7 +185,7 @@ public class QueryOptimizerDriver {
     return List.copyOf(scenarios);
   }
 
-  /** Leading {@code -- expect:} and {@code -- expect-after:} headers followed by one SQL. */
+
   private record Scenario(String expectation, List<String> afterContains, String sql) {
 
     static Scenario parse(String text) {
@@ -207,7 +207,7 @@ public class QueryOptimizerDriver {
     }
   }
 
-  /** Full QO pipeline wired to the deterministic fake catalog below. */
+
   public static QueryOptimizer standaloneOptimizer() {
     CatalogAccess catalog = fakeCatalog();
     CostEstimator cost = new CostEstimator(catalog);
@@ -229,10 +229,10 @@ public class QueryOptimizerDriver {
         new PlanVisualizer());
   }
 
-  /**
-   * Fake SM catalog: three tables with asymmetric statistics, a HASH and a B+Tree index, so the
-   * driver can show join rewrite/reorder, an IndexScan being chosen, and a TableScan fallback.
-   */
+
+
+
+
   static CatalogAccess fakeCatalog() {
     Map<String, FakeTable> tables =
         Map.of(

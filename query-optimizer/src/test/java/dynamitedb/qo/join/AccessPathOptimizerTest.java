@@ -61,7 +61,7 @@ class AccessPathOptimizerTest {
     assertEquals(Optional.empty(), indexScan.residual());
   }
 
-  // pencarian NULL tidak didukung index, jadi IS [NOT] NULL selalu lewat scan + filter
+
   @Test
   void neverUsesIndexForIsNullPredicates() {
     for (String column : List.of("id", "age")) {

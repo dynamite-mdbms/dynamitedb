@@ -7,10 +7,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
+import dynamitedb.contracts.query.BinaryExpression;
+import dynamitedb.contracts.query.BinaryOp;
+import dynamitedb.contracts.query.ColumnExpression;
+import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
+import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.query.SortDirection;
+import dynamitedb.contracts.storage.IntValue;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -86,6 +95,32 @@ class SqlParserTest {
     assertEquals(SortDirection.ASC, select.orderBy().get(1).direction());
   }
 
+  @Test
+  void parsesExpressionAliasesAndAggregateClauses() {
+    SelectStatement select =
+        assertInstanceOf(
+            SelectStatement.class,
+            parser.parse(
+                lexer.tokenize(
+                    "SELECT sid + 1 AS next_sid, COUNT(*) AS total FROM student "
+                        + "GROUP BY sid HAVING COUNT(*) > 1 ORDER BY total DESC")));
+
+    assertEquals(2, select.items().size());
+    assertEquals(Optional.of("next_sid"), select.items().get(0).alias());
+    assertEquals(
+        new BinaryExpression(
+            new ColumnExpression(new ColumnRef(Optional.empty(), "sid")),
+            BinaryOp.ADD,
+            new LiteralExpression(new IntValue(1))),
+        select.items().get(0).expression());
+    assertEquals(
+        new AggregateExpression(AggregateFunction.COUNT, Optional.empty()),
+        select.items().get(1).expression());
+    assertEquals(List.of(new ColumnRef(Optional.empty(), "sid")), select.groupBy());
+    assertTrue(select.having().isPresent());
+    assertEquals("total", select.orderBy().get(0).column().column());
+  }
+
   @ParameterizedTest
   @ValueSource(
       strings = {
@@ -119,8 +154,8 @@ class SqlParserTest {
     assertTrue(failure.getMessage().contains("end of input"));
   }
 
-  // Spec invalid-query families: keyword typo, incomplete clause, wrong clause order,
-  // unbalanced parentheses, and unterminated string all fail as SQL_SYNTAX.
+
+
   @ParameterizedTest
   @ValueSource(
       strings = {
@@ -144,7 +179,7 @@ class SqlParserTest {
     assertEquals(ErrorCode.SQL_SYNTAX, failure.getCode());
   }
 
-  // HUGE diganti literal float yang overflow ke Infinity.
+
   @ParameterizedTest
   @ValueSource(
       strings = {

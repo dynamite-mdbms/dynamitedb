@@ -17,6 +17,7 @@ import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionStatement;
+import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
@@ -96,6 +97,29 @@ class StatementParserTest {
   }
 
   @Test
+  void parsesMultipleUpdateAssignments() {
+    assertEquals(
+        new UpdateStatement(
+            "employee",
+            List.of(
+                new UpdateAssignment(new ColumnRef(Optional.empty(), "salary"), lit(10)),
+                new UpdateAssignment(
+                    new ColumnRef(Optional.empty(), "department"),
+                    new LiteralExpression(new TextValue("RnD")))),
+            Optional.of(new BinaryExpression(col("id"), BinaryOp.EQ, lit(1)))),
+        parse("UPDATE employee SET salary = 10, department = 'RnD' WHERE id = 1"));
+
+    UpdateStatement nested =
+        (UpdateStatement)
+            parse(
+                "UPDATE employee SET salary = (SELECT salary FROM employee WHERE id = 2), "
+                    + "department = 'RnD' WHERE id = 1");
+    assertEquals(2, nested.assignments().size());
+    assertEquals(
+        Optional.of(new BinaryExpression(col("id"), BinaryOp.EQ, lit(1))), nested.predicate());
+  }
+
+  @Test
   void parsesDeleteWithAndWithoutWhere() {
     assertEquals(new DeleteStatement("student", Optional.empty()), parse("DELETE FROM student;"));
     assertEquals(
@@ -127,8 +151,8 @@ class StatementParserTest {
         parse("CREATE INDEX idx_gpa ON student(gpa) USING B_PLUS_TREE;"));
   }
 
-  // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana
-  // (fail-fast).
+
+
   @ParameterizedTest
   @CsvSource(
       delimiter = '|',

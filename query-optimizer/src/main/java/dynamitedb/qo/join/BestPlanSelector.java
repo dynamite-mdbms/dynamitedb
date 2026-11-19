@@ -7,7 +7,7 @@ import dynamitedb.qo.binding.CostEstimator;
 import java.util.List;
 import java.util.Objects;
 
-/** Memilih kandidat plan dengan biaya terendah (QO-14). */
+
 public class BestPlanSelector {
 
   private final CostEstimator cost;

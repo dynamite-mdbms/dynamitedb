@@ -46,8 +46,8 @@ class ProjectionPushdownTest {
     PlanNode plan =
         new ProjectPlan(new ProjectPlan(sorted, refs("s.gpa", "s.name")), refs("s.name"));
 
-    // student needs name (SELECT), gpa (ORDER BY) and sid (join) = all its columns, so no project.
-    // enroll keeps sid for the join; grade is only read by the selection below the projection.
+
+
     PlanNode expected =
         new ProjectPlan(
             new SortPlan(

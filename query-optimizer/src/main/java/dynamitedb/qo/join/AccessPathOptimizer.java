@@ -1,6 +1,7 @@
 package dynamitedb.qo.join;
 
 import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
@@ -29,7 +30,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Memilih pembacaan lewat index atau scan sekuensial (QO-13). */
+
 public class AccessPathOptimizer implements PlanRewrite {
 
   private static final double RANGE_SELECTIVITY = 1.0 / 3;
@@ -44,12 +45,15 @@ public class AccessPathOptimizer implements PlanRewrite {
   public PlanNode rewrite(PlanNode plan) {
     return switch (plan) {
       case FilterPlan filter -> rewriteFilter(filter);
-      case ProjectPlan project -> new ProjectPlan(rewrite(project.child()), project.columns());
+      case ProjectPlan project -> ProjectPlan.fromItems(rewrite(project.child()), project.items());
+      case AggregatePlan aggregate ->
+          new AggregatePlan(
+              rewrite(aggregate.child()), aggregate.groupBy(), aggregate.aggregates());
       case SortPlan sort -> new SortPlan(rewrite(sort.child()), sort.keys());
       case JoinPlan join ->
           new JoinPlan(rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition());
       case UpdatePlan update ->
-          new UpdatePlan(rewrite(update.source()), update.table(), update.target(), update.value());
+          new UpdatePlan(rewrite(update.source()), update.table(), update.assignments());
       case DeletePlan delete -> new DeletePlan(rewrite(delete.source()), delete.table());
       default -> plan;
     };

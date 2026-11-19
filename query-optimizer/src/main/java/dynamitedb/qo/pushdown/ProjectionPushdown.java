@@ -1,6 +1,8 @@
 package dynamitedb.qo.pushdown;
 
 import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
@@ -22,13 +24,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * Membuang kolom yang tidak dibutuhkan sedini mungkin (QO-10).
- *
- * <p>The outermost projection is kept as written, so the SELECT column order never changes. Each
- * table under a join gets a projection holding only the columns read above it: the final result,
- * join conditions, selections and ORDER BY.
- */
+
+
+
+
+
+
+
 public class ProjectionPushdown implements PlanRewrite {
 
   private final CatalogAccess catalog;
@@ -41,12 +43,16 @@ public class ProjectionPushdown implements PlanRewrite {
   public PlanNode rewrite(PlanNode plan) {
     if (!(plan instanceof ProjectPlan project)) return plan;
     PlanNode child = project.child();
-    // An inner projection must already contain every outer column, so only the outermost matters.
+
     while (child instanceof ProjectPlan inner) child = inner.child();
-    return new ProjectPlan(prune(child, Set.copyOf(project.columns())), project.columns());
+    Set<ColumnRef> needed =
+        project.items().stream()
+            .flatMap(item -> SelectionPushdown.columns(item.expression()).stream())
+            .collect(Collectors.toSet());
+    return ProjectPlan.fromItems(prune(child, Set.copyOf(needed)), project.items());
   }
 
-  /** Rebuilds {@code node} so every table under a join carries only {@code needed} columns. */
+
   private PlanNode prune(PlanNode node, Set<ColumnRef> needed) {
     return switch (node) {
       case FilterPlan filter ->
@@ -57,8 +63,16 @@ public class ProjectionPushdown implements PlanRewrite {
           new SortPlan(
               prune(sort.child(), with(needed, sort.keys().stream().map(SortKey::column).toList())),
               sort.keys());
-      // A projection placed by an earlier pass is rebuilt from the current needs.
+
       case ProjectPlan project -> prune(project.child(), needed);
+      case AggregatePlan aggregate -> {
+        Set<ColumnRef> input = with(needed, aggregate.groupBy());
+        for (AggregateExpression expression : aggregate.aggregates()) {
+          expression.argument().ifPresent(column -> input.add(column));
+        }
+        yield new AggregatePlan(
+            prune(aggregate.child(), input), aggregate.groupBy(), aggregate.aggregates());
+      }
       case JoinPlan join -> {
         Set<ColumnRef> all =
             with(needed, join.condition().map(SelectionPushdown::columns).orElse(List.of()));
@@ -70,26 +84,24 @@ public class ProjectionPushdown implements PlanRewrite {
     };
   }
 
-  /** Prunes one join input and, when it reads a single table, projects that table. */
+
   private PlanNode input(PlanNode side, Set<ColumnRef> needed) {
     PlanNode pruned = prune(side, needed);
-    // Unbound columns (e.g. the driver's stub binder) cannot be traced to a table: keep them all.
+
     if (!readsOneTable(pruned) || needed.stream().anyMatch(c -> c.relation().isEmpty())) {
       return pruned;
     }
     List<ColumnRef> available = tableColumns(pruned);
     List<ColumnRef> kept = available.stream().filter(needed::contains).toList();
-    // shortcut: a table that feeds no column keeps all of them, because a zero-column row may
-    // not be supported by QP; project it to one column once QP confirms empty rows work.
     if (kept.isEmpty() || kept.size() == available.size()) return pruned;
     return new ProjectPlan(pruned, kept);
   }
 
-  /**
-   * NATURAL JOIN matches on every column name both sides share, even though the plan names none of
-   * them. Like PostgreSQL and Calcite, which expand NATURAL into equalities on the shared columns,
-   * those columns count as join-condition columns on both sides.
-   */
+
+
+
+
+
   private List<ColumnRef> sharedColumns(JoinPlan join) {
     List<ColumnRef> left = tableColumns(join.left());
     List<ColumnRef> right = tableColumns(join.right());
@@ -105,7 +117,7 @@ public class ProjectionPushdown implements PlanRewrite {
         .toList();
   }
 
-  /** Every column of every table scanned under {@code node}, qualified by its alias. */
+
   private List<ColumnRef> tableColumns(PlanNode node) {
     return CostEstimator.scans(node).entrySet().stream()
         .flatMap(
@@ -124,7 +136,7 @@ public class ProjectionPushdown implements PlanRewrite {
     };
   }
 
-  // Binder matches NATURAL JOIN columns case-insensitively, so this does too.
+
   private static String name(ColumnRef column) {
     return column.column().toLowerCase(Locale.ROOT);
   }
