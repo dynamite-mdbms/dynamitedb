@@ -1,10 +1,6 @@
 package dynamitedb.qo.parser;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
-import java.util.Optional;
+import static dynamitedb.qo.parser.ExpressionParser.syntax;
 
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
@@ -24,7 +20,11 @@ import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.PrimaryKey;
-import static dynamitedb.qo.parser.ExpressionParser.syntax;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 /** Mengenali statement non-SELECT dari token (QO-05, QO-06, QO-17). SELECT ditangani SqlParser. */
 public class StatementParser {

@@ -1,12 +1,7 @@
 package dynamitedb.qo.binding;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.Test;
 
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.query.AggregateExpression;
@@ -53,6 +48,10 @@ import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.contracts.storage.TextValue;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import org.junit.jupiter.api.Test;
 
 class CostEstimatorTest {
 
