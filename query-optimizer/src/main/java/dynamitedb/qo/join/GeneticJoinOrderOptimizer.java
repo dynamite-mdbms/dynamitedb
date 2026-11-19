@@ -2,13 +2,16 @@ package dynamitedb.qo.join;
 
 import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.SortPlan;
@@ -65,6 +68,7 @@ public final class GeneticJoinOrderOptimizer {
       case FilterPlan filter -> new FilterPlan(rewrite(filter.child()), filter.predicate());
       case ProjectPlan project -> ProjectPlan.fromItems(rewrite(project.child()), project.items());
       case SortPlan sort -> new SortPlan(rewrite(sort.child()), sort.keys());
+      case LimitPlan limit -> new LimitPlan(rewrite(limit.child()), limit.count());
       case AggregatePlan aggregate ->
           new AggregatePlan(
               rewrite(aggregate.child()), aggregate.groupBy(), aggregate.aggregates());
@@ -75,6 +79,8 @@ public final class GeneticJoinOrderOptimizer {
       case IndexScanPlan scan -> scan;
       case InsertPlan insert -> insert;
       case CreateIndexPlan index -> index;
+      case CreateTablePlan create -> create;
+      case DropTablePlan drop -> drop;
       case TransactionCommandPlan command -> command;
     };
   }

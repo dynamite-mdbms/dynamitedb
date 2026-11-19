@@ -117,7 +117,7 @@ class InSubqueryTest {
   }
 
   @Test
-  void rejectsMalformedAndUnsupportedFormsWithSyntaxErrors() {
+  void rejectsMalformedFormsAndSubqueryLimitsWithSyntaxErrors() {
     assertError(ErrorCode.SQL_SYNTAX, "Unclosed parenthesis", "sid IN (SELECT sid FROM enroll");
     assertError(ErrorCode.SQL_SYNTAX, "IN only supports a subquery", "sid IN ()");
     assertError(ErrorCode.SQL_SYNTAX, "IN only supports a subquery", "sid IN (1, 2)");
@@ -135,8 +135,6 @@ class InSubqueryTest {
         ScalarSubqueryExpression.class, assertInstanceOf(BinaryExpression.class, scalar).right());
     assertInstanceOf(ExistsSubqueryExpression.class, where("EXISTS (SELECT sid FROM enroll)"));
     assertInstanceOf(UnaryExpression.class, where("NOT sid IN (SELECT sid FROM enroll)"));
-    assertError(ErrorCode.SQL_SYNTAX, "Scalar subqueries", "sid = (SELECT sid FROM enroll)");
-    assertError(ErrorCode.SQL_SYNTAX, "EXISTS subqueries", "EXISTS (SELECT sid FROM enroll)");
     assertError(
         ErrorCode.SQL_SYNTAX,
         "LIMIT is not supported inside a subquery",

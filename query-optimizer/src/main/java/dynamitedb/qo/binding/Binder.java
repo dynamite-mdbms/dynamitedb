@@ -11,8 +11,8 @@ import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
-import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.DropTableStatement;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FromSource;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -189,7 +189,6 @@ public class Binder {
         select.predicate().map(p -> predicate(rename(p, merged), scope)),
         groupBy,
         having.map(expression -> aggregatePredicate(expression, scope)),
-        orderBy);
         orderBy,
         select.limit());
   }

@@ -11,7 +11,6 @@ public record SelectStatement(
     Optional<Expression> predicate,
     List<ColumnRef> groupBy,
     Optional<Expression> having,
-    List<SortKey> orderBy)
     List<SortKey> orderBy,
     Optional<Long> limit)
     implements Statement {
@@ -26,7 +25,6 @@ public record SelectStatement(
     }
   }
 
-  /** A SELECT without LIMIT. */
   public SelectStatement(
       List<ColumnRef> projection,
       FromSource from,
@@ -39,7 +37,8 @@ public record SelectStatement(
       List<ColumnRef> projection,
       FromSource from,
       Optional<Expression> predicate,
-      List<SortKey> orderBy) {
+      List<SortKey> orderBy,
+      Optional<Long> limit) {
     this(
         projection.stream()
             .map(column -> new SelectItem(new ColumnExpression(column), Optional.empty()))
@@ -48,7 +47,8 @@ public record SelectStatement(
         predicate,
         List.of(),
         Optional.empty(),
-        orderBy);
+        orderBy,
+        limit);
   }
 
   public List<ColumnRef> projection() {
