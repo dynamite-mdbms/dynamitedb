@@ -49,6 +49,7 @@ import dynamitedb.qp.execution.DeleteExecutor;
 import dynamitedb.qp.execution.ExecutionEngine;
 import dynamitedb.qp.execution.PlanTranslator;
 import dynamitedb.qp.execution.ReadExecutor;
+import dynamitedb.qp.execution.TableDdlExecutor;
 import dynamitedb.qp.execution.TransactionCommandExecutor;
 import dynamitedb.qp.execution.WriteCoordinator;
 import dynamitedb.qp.execution.WriteExecutor;
@@ -169,7 +170,13 @@ public final class StubRuntime {
         new WriteExecutor(
             storage, writes, translator, evaluator, coordinator, storage, delete, catalogAccess);
     var commands = new TransactionCommandExecutor(coordinator);
-    var engine = new ExecutionEngine(translator, new ReadExecutor(), writer, commands);
+    var engine =
+        new ExecutionEngine(
+            translator,
+            new ReadExecutor(),
+            writer,
+            commands,
+            new TableDdlExecutor(storage, concurrency));
     processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
     bootstrap =
         new DbmsBootstrap(

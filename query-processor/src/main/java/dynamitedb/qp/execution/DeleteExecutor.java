@@ -12,8 +12,7 @@ import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.expression.ExpressionEvaluator;
 import dynamitedb.qp.operator.Operator;
 import dynamitedb.qp.transaction.TransactionCoordinator;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -39,14 +38,23 @@ public class DeleteExecutor {
   }
 
   public long execute(DeletePlan plan, TransactionId tx) {
+    return execute(plan, tx, null);
+  }
+
+  long execute(DeletePlan plan, TransactionId tx, KeyConstraints keys) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(tx, "tx");
 
     String table = plan.table();
-    coordinator.authorizeTable(tx, table, AccessMode.WRITE);
+    KeyConstraints.Statement constraints = null;
+    if (keys == null) {
+      coordinator.authorizeTable(tx, table, AccessMode.WRITE);
+    } else {
+      constraints = keys.delete(table, tx);
+    }
 
     Operator sourceOperator = translator.translate(plan.source(), tx);
-    List<RecordId> targetRids = new ArrayList<>();
+    Map<RecordId, KeyConstraints.Change> targets = new LinkedHashMap<>();
 
     try {
       sourceOperator.open();
@@ -67,20 +75,18 @@ public class DeleteExecutor {
               ErrorCode.INVALID_STATE,
               "Target RecordId not found in provenance for table: " + table);
         }
-        targetRids.add(rid);
+        targets.putIfAbsent(rid, new KeyConstraints.Change(opRow.get().row(), null));
       }
     } finally {
       sourceOperator.close();
     }
 
-    long affectedRows = 0;
-
-    for (RecordId rid : targetRids) {
+    if (constraints != null) constraints.validateChanges(targets);
+    for (RecordId rid : targets.keySet()) {
       PreparedWrite prepared = store.prepareDelete(tx, rid);
       writes.execute(prepared);
-      affectedRows++;
     }
 
-    return affectedRows;
+    return targets.size();
   }
 }
