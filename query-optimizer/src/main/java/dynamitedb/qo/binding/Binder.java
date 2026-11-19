@@ -3,6 +3,8 @@ package dynamitedb.qo.binding;
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
@@ -10,6 +12,7 @@ import dynamitedb.contracts.query.CreateIndexStatement;
 import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
 import dynamitedb.contracts.query.DropTableStatement;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FromSource;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -17,11 +20,15 @@ import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
 import dynamitedb.contracts.query.LiteralExpression;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
+import dynamitedb.contracts.query.SelectItem;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TableSource;
 import dynamitedb.contracts.query.TransactionStatement;
+import dynamitedb.contracts.query.UnaryExpression;
+import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
@@ -78,7 +85,44 @@ public class Binder {
   public Schema outputSchema(Statement bound) {
     if (!(bound instanceof SelectStatement select)) return new Schema(List.of());
     Schema scope = sourceScope(select.from());
-    return new Schema(select.projection().stream().map(ref -> resolve(ref, scope)).toList());
+    List<Column> output = new ArrayList<>();
+    for (int index = 0; index < select.items().size(); index++) {
+      SelectItem item = select.items().get(index);
+      if (item.expression() instanceof ColumnExpression column
+          && column.column().column().equals("*")) {
+        output.addAll(
+            scope.columns().stream().filter(c -> inRelation(column.column(), c)).toList());
+      } else {
+        Column source =
+            item.expression() instanceof ColumnExpression column
+                ? resolve(column.column(), scope)
+                : null;
+        String name =
+            item.alias().orElse(source == null ? "__select_item_" + index : source.name());
+        if (source != null) {
+          output.add(
+              new Column(
+                  source.relation(),
+                  name,
+                  source.dataType(),
+                  source.maxLength(),
+                  source.nullable()));
+        } else {
+          String type = kind(item.expression(), scope);
+          if (type.equals(BOOLEAN) || type.equals(TEXT) || type.equals(NULL)) {
+            throw error("SELECT expression has no supported output type: " + type);
+          }
+          output.add(
+              new Column(
+                  "",
+                  name,
+                  isFloat(item.expression(), scope) ? DataType.FLOAT : DataType.INTEGER,
+                  0,
+                  true));
+        }
+      }
+    }
+    return new Schema(output);
   }
 
   public Column resolve(ColumnRef column, Schema scope) {
@@ -96,23 +140,73 @@ public class Binder {
     Map<String, Column> merged = new HashMap<>();
     FromSource from = bindFrom(select.from(), new HashSet<>(), columns, merged);
     Schema scope = new Schema(columns);
-    List<ColumnRef> projection =
-        select.projection().stream()
-            .flatMap(ref -> expand(rename(ref, merged), scope).stream())
+    List<SelectItem> items = new ArrayList<>();
+    Set<String> aliases = new HashSet<>();
+    for (SelectItem item : select.items()) {
+      if (item.alias().isPresent() && !aliases.add(item.alias().get().toLowerCase(Locale.ROOT))) {
+        throw error("Duplicate output alias: " + item.alias().get());
+      }
+      if (item.expression() instanceof ColumnExpression column
+          && column.column().column().equals("*")) {
+        if (item.alias().isPresent()) throw error("A wildcard cannot have an output alias");
+        items.addAll(
+            expand(rename(column.column(), merged), scope).stream()
+                .map(ref -> new SelectItem(new ColumnExpression(ref), Optional.empty()))
+                .toList());
+      } else {
+        Expression expression = qualify(rename(item.expression(), merged), scope);
+        kind(expression, scope);
+        items.add(new SelectItem(expression, item.alias()));
+      }
+    }
+    List<ColumnRef> groupBy =
+        select.groupBy().stream()
+            .map(ref -> qualified(resolve(rename(ref, merged), scope)))
             .toList();
+    Set<ColumnRef> groupKeys = Set.copyOf(groupBy);
+    Optional<Expression> having =
+        select.having().map(expression -> qualify(rename(expression, merged), scope));
+    if (select.predicate().filter(Binder::containsAggregate).isPresent()) {
+      throw error("Aggregate functions are not allowed in WHERE");
+    }
+    boolean aggregateQuery =
+        !groupBy.isEmpty()
+            || items.stream().anyMatch(item -> containsAggregate(item.expression()))
+            || having.filter(Binder::containsAggregate).isPresent();
+    if (aggregateQuery) {
+      items.forEach(item -> validateGrouped(item.expression(), groupKeys, false));
+      having.ifPresent(expression -> validateGrouped(expression, groupKeys, false));
+    }
+    Map<String, SelectItem> byAlias = new HashMap<>();
+    items.stream()
+        .filter(item -> item.alias().isPresent())
+        .forEach(item -> byAlias.put(item.alias().get().toLowerCase(Locale.ROOT), item));
     List<SortKey> orderBy =
-        select.orderBy().stream()
-            .map(
-                key ->
-                    new SortKey(
-                        qualified(resolve(rename(key.column(), merged), scope)), key.direction()))
-            .toList();
+        select.orderBy().stream().map(key -> bindSortKey(key, byAlias, merged, scope)).toList();
     return new SelectStatement(
-        projection,
+        items,
         from,
         select.predicate().map(p -> predicate(rename(p, merged), scope)),
+        groupBy,
+        having.map(expression -> aggregatePredicate(expression, scope)),
         orderBy,
         select.limit());
+  }
+
+  private SortKey bindSortKey(
+      SortKey key, Map<String, SelectItem> aliases, Map<String, Column> merged, Schema scope) {
+    if (key.column().relation().isEmpty()) {
+      SelectItem item = aliases.get(key.column().column().toLowerCase(Locale.ROOT));
+      if (item != null) {
+        if (item.expression() instanceof ColumnExpression column) {
+          return new SortKey(
+              qualified(resolve(rename(column.column(), merged), scope)), key.direction());
+        }
+        return new SortKey(
+            new ColumnRef(Optional.empty(), item.alias().orElseThrow()), key.direction());
+      }
+    }
+    return new SortKey(qualified(resolve(rename(key.column(), merged), scope)), key.direction());
   }
 
   private InsertStatement bindInsert(InsertStatement insert) {
@@ -138,16 +232,30 @@ public class Binder {
   private UpdateStatement bindUpdate(UpdateStatement update) {
     String table = tableName(update.table());
     Schema scope = tableScope(table, table);
-    Column target = resolve(update.target(), scope);
-    Expression value = qualify(update.expression(), scope);
-    if (value instanceof LiteralExpression literal) {
-      checkValue(target, literal.value());
-    } else if (!kind(value, scope).equals(kindOf(target.dataType()))
-        || (target.dataType() == DataType.INTEGER && isFloat(value, scope))) {
-      throw error("SET value does not match the type of " + target.name());
-    }
+    Set<String> targets = new HashSet<>();
+    List<UpdateAssignment> assignments =
+        update.assignments().stream()
+            .map(
+                assignment -> {
+                  if (containsAggregate(assignment.expression())) {
+                    throw error("Aggregate functions are not allowed in UPDATE assignments");
+                  }
+                  Column target = resolve(assignment.target(), scope);
+                  if (!targets.add(target.name().toLowerCase(Locale.ROOT))) {
+                    throw error("Duplicate UPDATE target: " + target.name());
+                  }
+                  Expression value = qualify(assignment.expression(), scope);
+                  if (value instanceof LiteralExpression literal) {
+                    checkValue(target, literal.value());
+                  } else if (!kind(value, scope).equals(kindOf(target.dataType()))
+                      || (target.dataType() == DataType.INTEGER && isFloat(value, scope))) {
+                    throw error("SET value does not match the type of " + target.name());
+                  }
+                  return new UpdateAssignment(qualified(target), value);
+                })
+            .toList();
     return new UpdateStatement(
-        table, qualified(target), value, update.predicate().map(p -> predicate(p, scope)));
+        table, assignments, update.predicate().map(p -> predicate(p, scope)));
   }
 
   private DeleteStatement bindDelete(DeleteStatement delete) {
@@ -353,9 +461,16 @@ public class Binder {
       case BinaryExpression binary ->
           new BinaryExpression(
               rename(binary.left(), merged), binary.operator(), rename(binary.right(), merged));
+      case AggregateExpression aggregate ->
+          new AggregateExpression(
+              aggregate.function(), aggregate.argument().map(ref -> rename(ref, merged)));
+      case UnaryExpression unary ->
+          new UnaryExpression(unary.operator(), rename(unary.operand(), merged));
       case InSubqueryExpression in ->
           new InSubqueryExpression(
               rename(in.operand(), merged), in.query(), in.plan(), in.negated());
+      case ExistsSubqueryExpression exists -> exists;
+      case ScalarSubqueryExpression scalar -> scalar;
     };
   }
 
@@ -401,6 +516,12 @@ public class Binder {
   }
 
   private Expression predicate(Expression expression, Schema scope) {
+    if (containsAggregate(expression))
+      throw error("Aggregate functions are not allowed in this condition");
+    return aggregatePredicate(expression, scope);
+  }
+
+  private Expression aggregatePredicate(Expression expression, Schema scope) {
     Expression bound = qualify(expression, scope);
     if (!kind(bound, scope).equals(BOOLEAN)) throw error("Condition must be boolean");
     return bound;
@@ -414,9 +535,34 @@ public class Binder {
       case BinaryExpression binary ->
           new BinaryExpression(
               qualify(binary.left(), scope), binary.operator(), qualify(binary.right(), scope));
+      case AggregateExpression aggregate -> {
+        if (aggregate.argument().isEmpty()) yield aggregate;
+        Column column = resolve(aggregate.argument().get(), scope);
+        String argumentKind = kindOf(column.dataType());
+        if ((aggregate.function() == AggregateFunction.SUM
+                || aggregate.function() == AggregateFunction.AVG)
+            && !argumentKind.equals(NUMBER)) {
+          throw error(aggregate.function() + " requires a numeric column");
+        }
+        if ((aggregate.function() == AggregateFunction.MIN
+                || aggregate.function() == AggregateFunction.MAX)
+            && argumentKind.equals(BOOLEAN)) {
+          throw error(aggregate.function() + " does not support boolean columns");
+        }
+        yield new AggregateExpression(aggregate.function(), Optional.of(qualified(column)));
+      }
+      case UnaryExpression unary ->
+          new UnaryExpression(unary.operator(), qualify(unary.operand(), scope));
       case InSubqueryExpression in ->
           new InSubqueryExpression(
               qualify(in.operand(), scope), bindSubquery(in.query()), in.plan(), in.negated());
+      case ExistsSubqueryExpression exists ->
+          new ExistsSubqueryExpression(
+              bindExistsSubquery(exists.query()), exists.plan(), exists.negated());
+      case ScalarSubqueryExpression scalar -> {
+        SelectStatement query = bindSubquery(scalar.query());
+        yield new ScalarSubqueryExpression(query, scalar.plan());
+      }
     };
   }
 
@@ -425,6 +571,13 @@ public class Binder {
       case LiteralExpression literal -> kindOf(literal.value());
       case ColumnExpression column -> kindOf(resolve(column.column(), scope).dataType());
       case BinaryExpression binary -> binaryKind(binary, scope);
+      case AggregateExpression aggregate -> aggregateKind(aggregate, scope);
+      case UnaryExpression unary -> {
+        if (!kind(unary.operand(), scope).equals(BOOLEAN)) {
+          throw error("NOT needs a boolean operand");
+        }
+        yield BOOLEAN;
+      }
       case InSubqueryExpression in -> {
         String operand = kind(in.operand(), scope);
         String column = kindOf(outputSchema(in.query()).columns().get(0).dataType());
@@ -433,22 +586,32 @@ public class Binder {
         }
         yield BOOLEAN;
       }
+      case ExistsSubqueryExpression exists -> {
+        bindExistsSubquery(exists.query());
+        yield BOOLEAN;
+      }
+      case ScalarSubqueryExpression scalar -> {
+        SelectStatement query = bindSubquery(scalar.query());
+        yield kindOf(outputSchema(query).columns().get(0).dataType());
+      }
     };
   }
 
-  /** Subquery di-bind dengan scope sendiri; kolom query luar tidak terlihat (tanpa korelasi). */
   private SelectStatement bindSubquery(SelectStatement query) {
-    SelectStatement bound;
-    try {
-      bound = bindSelect(query);
-    } catch (DbmsException e) {
-      if (!e.getMessage().startsWith("Unknown column")) throw e;
-      throw error(e.getMessage() + " (correlated subqueries are not supported)");
-    }
+    SelectStatement bound = bindExistsSubquery(query);
     if (bound.projection().size() != 1) {
       throw error("Subquery must select exactly one column, got " + bound.projection().size());
     }
     return bound;
+  }
+
+  private SelectStatement bindExistsSubquery(SelectStatement query) {
+    try {
+      return bindSelect(query);
+    } catch (DbmsException e) {
+      if (!e.getMessage().startsWith("Unknown column")) throw e;
+      throw error(e.getMessage() + " (correlated subqueries are not supported)");
+    }
   }
 
   private String binaryKind(BinaryExpression binary, Schema scope) {
@@ -457,7 +620,7 @@ public class Binder {
     boolean valid =
         switch (binary.operator()) {
           case ADD, SUB, MUL, DIV -> fits(left, NUMBER) && fits(right, NUMBER);
-          case AND -> fits(left, BOOLEAN) && fits(right, BOOLEAN);
+          case AND, OR -> fits(left, BOOLEAN) && fits(right, BOOLEAN);
           case IS, IS_NOT -> right.equals(NULL);
           case EQ, NEQ, LT, LTE, GT, GTE ->
               !left.equals(BOOLEAN)
@@ -473,13 +636,28 @@ public class Binder {
     };
   }
 
-  // Mirrors QP arithmetic: INTEGER op INTEGER stays INTEGER, any FLOAT operand yields FLOAT.
+  private String aggregateKind(AggregateExpression aggregate, Schema scope) {
+    if (aggregate.function() == AggregateFunction.COUNT) return NUMBER;
+    ColumnRef ref = aggregate.argument().orElseThrow();
+    String argument = kindOf(resolve(ref, scope).dataType());
+    return aggregate.function() == AggregateFunction.AVG ? NUMBER : argument;
+  }
+
   private boolean isFloat(Expression expression, Schema scope) {
     return switch (expression) {
       case LiteralExpression literal -> literal.value() instanceof FloatValue;
       case ColumnExpression column -> resolve(column.column(), scope).dataType() == DataType.FLOAT;
       case BinaryExpression binary ->
           isFloat(binary.left(), scope) || isFloat(binary.right(), scope);
+      case AggregateExpression aggregate ->
+          aggregate.function() == AggregateFunction.AVG
+              || aggregate
+                  .argument()
+                  .map(ref -> resolve(ref, scope).dataType() == DataType.FLOAT)
+                  .orElse(false);
+      case UnaryExpression unary -> isFloat(unary.operand(), scope);
+      case ExistsSubqueryExpression exists -> false;
+      case ScalarSubqueryExpression scalar -> false;
       case InSubqueryExpression in -> false;
     };
   }
@@ -493,7 +671,7 @@ public class Binder {
           case NullValue n -> column.nullable();
           case IntValue i -> kindOf(column.dataType()).equals(NUMBER);
           case FloatValue f -> column.dataType() == DataType.FLOAT;
-          // Storage limits CHAR/VARCHAR by UTF-8 bytes, not Java chars.
+
           case TextValue t ->
               kindOf(column.dataType()).equals(TEXT)
                   && t.value().getBytes(StandardCharsets.UTF_8).length <= column.maxLength();
@@ -531,6 +709,43 @@ public class Binder {
 
   private static boolean inRelation(ColumnRef ref, Column column) {
     return ref.relation().map(column.relation()::equalsIgnoreCase).orElse(true);
+  }
+
+  private static boolean containsAggregate(Expression expression) {
+    return switch (expression) {
+      case AggregateExpression aggregate -> true;
+      case BinaryExpression binary ->
+          containsAggregate(binary.left()) || containsAggregate(binary.right());
+      case UnaryExpression unary -> containsAggregate(unary.operand());
+      case InSubqueryExpression in -> containsAggregate(in.operand());
+      case ExistsSubqueryExpression exists -> false;
+      case ScalarSubqueryExpression scalar -> false;
+      case LiteralExpression literal -> false;
+      case ColumnExpression column -> false;
+    };
+  }
+
+  private static void validateGrouped(
+      Expression expression, Set<ColumnRef> groupKeys, boolean insideAggregate) {
+    switch (expression) {
+      case AggregateExpression aggregate -> {
+        if (insideAggregate) throw error("Nested aggregate functions are not supported");
+      }
+      case ColumnExpression column -> {
+        if (!insideAggregate && !groupKeys.contains(column.column())) {
+          throw error("Column is not grouped or aggregated: " + label(column.column()));
+        }
+      }
+      case BinaryExpression binary -> {
+        validateGrouped(binary.left(), groupKeys, insideAggregate);
+        validateGrouped(binary.right(), groupKeys, insideAggregate);
+      }
+      case UnaryExpression unary -> validateGrouped(unary.operand(), groupKeys, insideAggregate);
+      case InSubqueryExpression in -> validateGrouped(in.operand(), groupKeys, insideAggregate);
+      case ExistsSubqueryExpression exists -> {}
+      case ScalarSubqueryExpression scalar -> {}
+      case LiteralExpression literal -> {}
+    }
   }
 
   private static ColumnRef qualified(Column column) {

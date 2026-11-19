@@ -13,6 +13,7 @@ import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -20,12 +21,14 @@ import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.JoinPlan;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.query.SortDirection;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TableSource;
+import dynamitedb.contracts.query.UnaryExpression;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.IndexKind;
@@ -53,7 +56,6 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-/** Subquery IN / NOT IN di WHERE dari parse, bind, plan, sampai optimasi dan EXPLAIN. */
 class InSubqueryTest {
 
   private static final String SELECT = "SELECT sid FROM student WHERE ";
@@ -61,8 +63,6 @@ class InSubqueryTest {
 
   private final CatalogAccess catalog = new FakeCatalog();
   private final QueryOptimizerImpl optimizer = optimizer(catalog);
-
-  // ---- parser ----
 
   @Test
   void inBindsTighterThanAndOnEitherSide() {
@@ -117,7 +117,7 @@ class InSubqueryTest {
   }
 
   @Test
-  void rejectsMalformedAndUnsupportedFormsWithSyntaxErrors() {
+  void rejectsMalformedFormsAndSubqueryLimitsWithSyntaxErrors() {
     assertError(ErrorCode.SQL_SYNTAX, "Unclosed parenthesis", "sid IN (SELECT sid FROM enroll");
     assertError(ErrorCode.SQL_SYNTAX, "IN only supports a subquery", "sid IN ()");
     assertError(ErrorCode.SQL_SYNTAX, "IN only supports a subquery", "sid IN (1, 2)");
@@ -125,21 +125,21 @@ class InSubqueryTest {
     assertError(ErrorCode.SQL_SYNTAX, "Expected '(' after IN", "sid IN");
     assertError(ErrorCode.SQL_SYNTAX, "Expected IN after NOT", "sid NOT 1");
     assertError(ErrorCode.SQL_SYNTAX, "Expected IN after NOT", "sid NOT");
-    assertError(ErrorCode.SQL_SYNTAX, "Expected expression", "NOT sid IN (SELECT sid FROM enroll)");
     assertError(ErrorCode.SQL_SYNTAX, "Unexpected token", "sid IN (SELECT sid FROM enroll) gpa");
     assertError(
         ErrorCode.SQL_SYNTAX, "Unexpected token", "sid IN (SELECT sid FROM enroll) (SELECT 1)");
     assertError(ErrorCode.SQL_SYNTAX, "';' inside subquery", "sid IN (SELECT sid FROM enroll;)");
     assertError(ErrorCode.SQL_SYNTAX, "Expected FROM", "sid IN (SELECT sid)");
-    assertError(ErrorCode.SQL_SYNTAX, "Scalar subqueries", "sid = (SELECT sid FROM enroll)");
-    assertError(ErrorCode.SQL_SYNTAX, "EXISTS subqueries", "EXISTS (SELECT sid FROM enroll)");
+    Expression scalar = where("sid = (SELECT sid FROM enroll)");
+    assertInstanceOf(
+        ScalarSubqueryExpression.class, assertInstanceOf(BinaryExpression.class, scalar).right());
+    assertInstanceOf(ExistsSubqueryExpression.class, where("EXISTS (SELECT sid FROM enroll)"));
+    assertInstanceOf(UnaryExpression.class, where("NOT sid IN (SELECT sid FROM enroll)"));
     assertError(
         ErrorCode.SQL_SYNTAX,
         "LIMIT is not supported inside a subquery",
         "sid IN (SELECT sid FROM enroll ORDER BY sid LIMIT 1)");
   }
-
-  // ---- binder ----
 
   @Test
   void rejectsCorrelatedReferencesQualifiedOrNot() {
@@ -151,6 +151,14 @@ class InSubqueryTest {
         ErrorCode.SQL_BIND,
         "Unknown column: gpa (correlated subqueries are not supported)",
         "sid IN (SELECT sid FROM enroll WHERE cid = gpa)");
+    assertError(
+        ErrorCode.SQL_BIND,
+        "Unknown column: student.gpa (correlated subqueries are not supported)",
+        "sid = (SELECT sid FROM enroll WHERE cid = student.gpa)");
+    assertError(
+        ErrorCode.SQL_BIND,
+        "Unknown column: gpa (correlated subqueries are not supported)",
+        "EXISTS (SELECT sid FROM enroll WHERE cid = gpa)");
   }
 
   @Test
@@ -158,7 +166,7 @@ class InSubqueryTest {
     assertError(
         ErrorCode.SQL_BIND, "exactly one column, got 2", "sid IN (SELECT sid, cid FROM enroll)");
     assertError(ErrorCode.SQL_BIND, "exactly one column, got 2", "sid IN (SELECT * FROM enroll)");
-    // SELECT * yang mengembang jadi satu kolom tetap diterima
+
     optimizer.prepare(SELECT + "sid IN (SELECT * FROM single)");
   }
 
@@ -173,7 +181,7 @@ class InSubqueryTest {
         "IN cannot compare number with a text subquery",
         "sid IN (SELECT name FROM student)");
     assertError(ErrorCode.SQL_BIND, "IN cannot compare", "(sid = 1) IN (SELECT sid FROM enroll)");
-    // INTEGER dan FLOAT sama-sama number
+
     optimizer.prepare(SELECT + "gpa IN (SELECT sid FROM enroll)");
     optimizer.prepare(SELECT + "sid NOT IN (SELECT gpa FROM student)");
   }
@@ -210,8 +218,6 @@ class InSubqueryTest {
     assertTrue(optimizer.explain(delete).after().contains("(student.sid NOT IN subquery)"));
   }
 
-  // ---- plan dan optimasi ----
-
   @Test
   void pushesInPredicateBelowJoinToItsOwnSide() {
     String sql =
@@ -227,7 +233,7 @@ class InSubqueryTest {
 
   @Test
   void inIsNotAnIndexAccessPathButRidesAlongAsResidual() {
-    // sid punya index, tapi IN tidak dipakai sebagai akses index
+
     var alone = optimizer.prepare(SELECT + "sid IN (SELECT sid FROM enroll)").root();
     assertInstanceOf(InSubqueryExpression.class, find(alone, FilterPlan.class).predicate());
     assertInstanceOf(TableScanPlan.class, find(alone, FilterPlan.class).child());

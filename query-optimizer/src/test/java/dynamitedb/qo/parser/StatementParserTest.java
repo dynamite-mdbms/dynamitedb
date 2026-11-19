@@ -19,6 +19,7 @@ import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionStatement;
+import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -100,6 +101,29 @@ class StatementParserTest {
                 new BinaryExpression(
                     col("department"), BinaryOp.EQ, new LiteralExpression(new TextValue("RnD"))))),
         parse("update employee set employee.salary = salary * 1.05 where department = 'RnD';"));
+  }
+
+  @Test
+  void parsesMultipleUpdateAssignments() {
+    assertEquals(
+        new UpdateStatement(
+            "employee",
+            List.of(
+                new UpdateAssignment(new ColumnRef(Optional.empty(), "salary"), lit(10)),
+                new UpdateAssignment(
+                    new ColumnRef(Optional.empty(), "department"),
+                    new LiteralExpression(new TextValue("RnD")))),
+            Optional.of(new BinaryExpression(col("id"), BinaryOp.EQ, lit(1)))),
+        parse("UPDATE employee SET salary = 10, department = 'RnD' WHERE id = 1"));
+
+    UpdateStatement nested =
+        (UpdateStatement)
+            parse(
+                "UPDATE employee SET salary = (SELECT salary FROM employee WHERE id = 2), "
+                    + "department = 'RnD' WHERE id = 1");
+    assertEquals(2, nested.assignments().size());
+    assertEquals(
+        Optional.of(new BinaryExpression(col("id"), BinaryOp.EQ, lit(1))), nested.predicate());
   }
 
   @Test

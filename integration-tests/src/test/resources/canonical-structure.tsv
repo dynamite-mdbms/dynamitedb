@@ -191,19 +191,23 @@ component	dynamitedb.contracts.recovery.RecoveryMutation	0	rid	dynamitedb.contra
 component	dynamitedb.contracts.recovery.RecoveryMutation	1	targetImage	dynamitedb.contracts.storage.RecordImage
 type	dynamitedb.contracts.query.Statement	interface
 type	dynamitedb.contracts.query.SelectStatement	record
-component	dynamitedb.contracts.query.SelectStatement	0	projection	java.util.List<dynamitedb.contracts.query.ColumnRef>
+component	dynamitedb.contracts.query.SelectStatement	0	items	java.util.List<dynamitedb.contracts.query.SelectItem>
 component	dynamitedb.contracts.query.SelectStatement	1	from	dynamitedb.contracts.query.FromSource
 component	dynamitedb.contracts.query.SelectStatement	2	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
-component	dynamitedb.contracts.query.SelectStatement	3	orderBy	java.util.List<dynamitedb.contracts.query.SortKey>
-component	dynamitedb.contracts.query.SelectStatement	4	limit	java.util.Optional<java.lang.Long>
+component	dynamitedb.contracts.query.SelectStatement	3	groupBy	java.util.List<dynamitedb.contracts.query.ColumnRef>
+component	dynamitedb.contracts.query.SelectStatement	4	having	java.util.Optional<dynamitedb.contracts.query.Expression>
+component	dynamitedb.contracts.query.SelectStatement	5	orderBy	java.util.List<dynamitedb.contracts.query.SortKey>
+component	dynamitedb.contracts.query.SelectStatement	6	limit	java.util.Optional<java.lang.Long>
 type	dynamitedb.contracts.query.InsertStatement	record
 component	dynamitedb.contracts.query.InsertStatement	0	table	java.lang.String
 component	dynamitedb.contracts.query.InsertStatement	1	values	java.util.List<dynamitedb.contracts.query.Expression>
 type	dynamitedb.contracts.query.UpdateStatement	record
 component	dynamitedb.contracts.query.UpdateStatement	0	table	java.lang.String
-component	dynamitedb.contracts.query.UpdateStatement	1	target	dynamitedb.contracts.query.ColumnRef
-component	dynamitedb.contracts.query.UpdateStatement	2	expression	dynamitedb.contracts.query.Expression
-component	dynamitedb.contracts.query.UpdateStatement	3	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
+component	dynamitedb.contracts.query.UpdateStatement	1	assignments	java.util.List<dynamitedb.contracts.query.UpdateAssignment>
+component	dynamitedb.contracts.query.UpdateStatement	2	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
+type	dynamitedb.contracts.query.UpdateAssignment	record
+component	dynamitedb.contracts.query.UpdateAssignment	0	target	dynamitedb.contracts.query.ColumnRef
+component	dynamitedb.contracts.query.UpdateAssignment	1	expression	dynamitedb.contracts.query.Expression
 type	dynamitedb.contracts.query.DeleteStatement	record
 component	dynamitedb.contracts.query.DeleteStatement	0	table	java.lang.String
 component	dynamitedb.contracts.query.DeleteStatement	1	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
@@ -237,6 +241,12 @@ component	dynamitedb.contracts.query.JoinSource	1	right	dynamitedb.contracts.que
 component	dynamitedb.contracts.query.JoinSource	2	kind	dynamitedb.contracts.query.JoinKind
 component	dynamitedb.contracts.query.JoinSource	3	condition	java.util.Optional<dynamitedb.contracts.query.Expression>
 type	dynamitedb.contracts.query.Expression	interface
+type	dynamitedb.contracts.query.AggregateExpression	record
+component	dynamitedb.contracts.query.AggregateExpression	0	function	dynamitedb.contracts.query.AggregateFunction
+component	dynamitedb.contracts.query.AggregateExpression	1	argument	java.util.Optional<dynamitedb.contracts.query.ColumnRef>
+method	dynamitedb.contracts.query.AggregateExpression	outputName	java.lang.String
+type	dynamitedb.contracts.query.AggregateFunction	enum
+enum	dynamitedb.contracts.query.AggregateFunction	COUNT|SUM|AVG|MIN|MAX
 type	dynamitedb.contracts.query.LiteralExpression	record
 component	dynamitedb.contracts.query.LiteralExpression	0	value	dynamitedb.contracts.storage.Value
 type	dynamitedb.contracts.query.ColumnExpression	record
@@ -250,9 +260,28 @@ component	dynamitedb.contracts.query.InSubqueryExpression	0	operand	dynamitedb.c
 component	dynamitedb.contracts.query.InSubqueryExpression	1	query	dynamitedb.contracts.query.SelectStatement
 component	dynamitedb.contracts.query.InSubqueryExpression	2	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
 component	dynamitedb.contracts.query.InSubqueryExpression	3	negated	boolean
+type	dynamitedb.contracts.query.ExistsSubqueryExpression	record
+component	dynamitedb.contracts.query.ExistsSubqueryExpression	0	query	dynamitedb.contracts.query.SelectStatement
+component	dynamitedb.contracts.query.ExistsSubqueryExpression	1	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
+component	dynamitedb.contracts.query.ExistsSubqueryExpression	2	negated	boolean
+type	dynamitedb.contracts.query.ScalarSubqueryExpression	record
+component	dynamitedb.contracts.query.ScalarSubqueryExpression	0	query	dynamitedb.contracts.query.SelectStatement
+component	dynamitedb.contracts.query.ScalarSubqueryExpression	1	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
+type	dynamitedb.contracts.query.UnaryExpression	record
+component	dynamitedb.contracts.query.UnaryExpression	0	operator	dynamitedb.contracts.query.UnaryOp
+component	dynamitedb.contracts.query.UnaryExpression	1	operand	dynamitedb.contracts.query.Expression
+type	dynamitedb.contracts.query.UnaryOp	enum
+enum	dynamitedb.contracts.query.UnaryOp	NOT
 type	dynamitedb.contracts.query.BinaryOp	enum
-enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND|IS|IS_NOT
+enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND|OR|IS|IS_NOT
+type	dynamitedb.contracts.query.SelectItem	record
+component	dynamitedb.contracts.query.SelectItem	0	expression	dynamitedb.contracts.query.Expression
+component	dynamitedb.contracts.query.SelectItem	1	alias	java.util.Optional<java.lang.String>
 type	dynamitedb.contracts.query.PlanNode	interface
+type	dynamitedb.contracts.query.AggregatePlan	record
+component	dynamitedb.contracts.query.AggregatePlan	0	child	dynamitedb.contracts.query.PlanNode
+component	dynamitedb.contracts.query.AggregatePlan	1	groupBy	java.util.List<dynamitedb.contracts.query.ColumnRef>
+component	dynamitedb.contracts.query.AggregatePlan	2	aggregates	java.util.List<dynamitedb.contracts.query.AggregateExpression>
 type	dynamitedb.contracts.query.TableScanPlan	record
 component	dynamitedb.contracts.query.TableScanPlan	0	table	java.lang.String
 component	dynamitedb.contracts.query.TableScanPlan	1	alias	java.lang.String
@@ -265,9 +294,7 @@ component	dynamitedb.contracts.query.IndexScanPlan	4	residual	java.util.Optional
 type	dynamitedb.contracts.query.FilterPlan	record
 component	dynamitedb.contracts.query.FilterPlan	0	child	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.FilterPlan	1	predicate	dynamitedb.contracts.query.Expression
-type	dynamitedb.contracts.query.ProjectPlan	record
-component	dynamitedb.contracts.query.ProjectPlan	0	child	dynamitedb.contracts.query.PlanNode
-component	dynamitedb.contracts.query.ProjectPlan	1	columns	java.util.List<dynamitedb.contracts.query.ColumnRef>
+type	dynamitedb.contracts.query.ProjectPlan	class
 type	dynamitedb.contracts.query.JoinKind	enum
 enum	dynamitedb.contracts.query.JoinKind	CARTESIAN|THETA|NATURAL
 type	dynamitedb.contracts.query.JoinPlan	record
@@ -292,8 +319,7 @@ component	dynamitedb.contracts.query.InsertPlan	1	row	dynamitedb.contracts.stora
 type	dynamitedb.contracts.query.UpdatePlan	record
 component	dynamitedb.contracts.query.UpdatePlan	0	source	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.UpdatePlan	1	table	java.lang.String
-component	dynamitedb.contracts.query.UpdatePlan	2	target	dynamitedb.contracts.query.ColumnRef
-component	dynamitedb.contracts.query.UpdatePlan	3	value	dynamitedb.contracts.query.Expression
+component	dynamitedb.contracts.query.UpdatePlan	2	assignments	java.util.List<dynamitedb.contracts.query.UpdateAssignment>
 type	dynamitedb.contracts.query.DeletePlan	record
 component	dynamitedb.contracts.query.DeletePlan	0	source	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.DeletePlan	1	table	java.lang.String
@@ -432,6 +458,10 @@ type	dynamitedb.qp.operator.ProjectOperator	class
 method	dynamitedb.qp.operator.ProjectOperator	open	void
 method	dynamitedb.qp.operator.ProjectOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
 method	dynamitedb.qp.operator.ProjectOperator	close	void
+method	dynamitedb.qp.operator.ProjectOperator	schema	dynamitedb.contracts.storage.Schema	java.util.List<dynamitedb.contracts.query.SelectItem>|dynamitedb.contracts.storage.Schema
+method	dynamitedb.qp.operator.AggregateOperator	open	void
+method	dynamitedb.qp.operator.AggregateOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
+method	dynamitedb.qp.operator.AggregateOperator	close	void
 type	dynamitedb.qp.execution.DeleteExecutor	class
 method	dynamitedb.qp.execution.DeleteExecutor	execute	long	dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.transaction.TransactionId
 type	dynamitedb.qp.operator.BlockNestedLoopJoinOperator	class
@@ -492,6 +522,7 @@ method	dynamitedb.qo.binding.CostEstimator	estimate	double	dynamitedb.contracts.
 method	dynamitedb.qo.binding.CostEstimator	estimateRows	long	dynamitedb.contracts.query.PlanNode
 type	dynamitedb.qo.pipeline.OptimizerPipeline	class
 method	dynamitedb.qo.pipeline.OptimizerPipeline	optimize	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.PlanNode
+method	dynamitedb.qo.join.GeneticJoinOrderOptimizer	optimize	dynamitedb.qo.join.GeneticJoinOrderOptimizer$OptimizationResult	dynamitedb.contracts.query.PlanNode
 type	dynamitedb.qo.pipeline.PlanRewrite	interface
 method	dynamitedb.qo.pipeline.PlanRewrite	rewrite	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.PlanNode
 type	dynamitedb.qo.pushdown.SelectionPushdown	class
@@ -893,8 +924,8 @@ provider	dynamitedb.contracts.api.GenerationManifestStore	dynamitedb.frm.AtomicG
 sealed	dynamitedb.contracts.storage.Value	dynamitedb.contracts.storage.IntValue|dynamitedb.contracts.storage.FloatValue|dynamitedb.contracts.storage.TextValue|dynamitedb.contracts.storage.BooleanValue|dynamitedb.contracts.storage.NullValue
 sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.CreateTableStatement|dynamitedb.contracts.query.DropTableStatement|dynamitedb.contracts.query.TransactionStatement
 sealed	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource|dynamitedb.contracts.query.JoinSource
-sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression
-sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.CreateTablePlan|dynamitedb.contracts.query.DropTablePlan|dynamitedb.contracts.query.TransactionCommandPlan
+sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.AggregateExpression|dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression|dynamitedb.contracts.query.ExistsSubqueryExpression|dynamitedb.contracts.query.ScalarSubqueryExpression|dynamitedb.contracts.query.UnaryExpression
+sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.AggregatePlan|dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.CreateTablePlan|dynamitedb.contracts.query.DropTablePlan|dynamitedb.contracts.query.TransactionCommandPlan
 helper	dynamitedb.app.Main
 helper	dynamitedb.app.driver.DriverCli
 helper	dynamitedb.app.mock.MockRuntime
@@ -905,6 +936,14 @@ helper	dynamitedb.frm.LogFile$Scan
 helper	dynamitedb.frm.LogManager$Prepared
 helper	dynamitedb.frm.LogManager$TxState
 helper	dynamitedb.qp.operator.OperatorRows
+helper	dynamitedb.qp.operator.AggregateOperator
+helper	dynamitedb.qp.operator.AggregateOperator$Accumulator
+helper	dynamitedb.qp.operator.AggregateOperator$Group
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$Candidate
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$Config
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$FlatJoin
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$OptimizationResult
 helper	dynamitedb.app.client.RemoteQueryClient
 helper	dynamitedb.app.cli.ResultRenderer
 helper	dynamitedb.app.cli.SqlStatementReader
