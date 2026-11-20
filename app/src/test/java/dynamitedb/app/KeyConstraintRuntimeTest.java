@@ -84,6 +84,20 @@ class KeyConstraintRuntimeTest {
   }
 
   @Test
+  void multiAssignmentChecksReferencedPrimaryColumnsRegardlessOfAssignmentOrder() throws Exception {
+    start(ProtocolType.STRICT_2PL);
+    seedParents();
+    run("INSERT INTO child VALUES (1, 1, 10);");
+
+    rejects("UPDATE parent SET b = b, a = 4 WHERE a = 1;");
+
+    assertParentsUnchanged();
+    assertEquals(
+        List.of(new Row(List.of(new IntValue(1), new IntValue(1), new IntValue(10)))),
+        run("SELECT id, pa, pb FROM child;").rows());
+  }
+
+  @Test
   void selfReferenceUsesSurvivingRows() throws Exception {
     start(ProtocolType.STRICT_2PL);
     create(

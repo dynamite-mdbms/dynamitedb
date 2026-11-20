@@ -32,15 +32,33 @@ public class ExpressionEvaluator {
 
   // null berarti evaluator ini ga bisa jalanin subquery (dibikin per query sama PlanTranslator)
   private final Function<PlanNode, List<Value>> subqueries;
+  private final Function<PlanNode, Value> scalarSubqueries;
+  private final Function<PlanNode, Boolean> existsSubqueries;
   // subquery tak berkorelasi cukup dijalanin sekali, hasilnya dipake buat semua baris
   private final Map<InSubqueryExpression, TreeSet<Value>> materialized = new IdentityHashMap<>();
+  private final Map<ScalarSubqueryExpression, Value> scalarValues = new IdentityHashMap<>();
+  private final Map<ExistsSubqueryExpression, Boolean> existsValues = new IdentityHashMap<>();
 
   public ExpressionEvaluator() {
-    this(null);
+    this(null, null);
   }
 
   public ExpressionEvaluator(Function<PlanNode, List<Value>> subqueries) {
+    this(subqueries, null, null);
+  }
+
+  public ExpressionEvaluator(
+      Function<PlanNode, List<Value>> subqueries, Function<PlanNode, Boolean> existsSubqueries) {
+    this(subqueries, null, existsSubqueries);
+  }
+
+  public ExpressionEvaluator(
+      Function<PlanNode, List<Value>> subqueries,
+      Function<PlanNode, Value> scalarSubqueries,
+      Function<PlanNode, Boolean> existsSubqueries) {
     this.subqueries = subqueries;
+    this.scalarSubqueries = scalarSubqueries;
+    this.existsSubqueries = existsSubqueries;
   }
 
   public Value evaluate(Expression expr, OperatorRow row) {
@@ -53,18 +71,17 @@ public class ExpressionEvaluator {
               new dynamitedb.contracts.query.ColumnRef(Optional.empty(), aggregate.outputName()));
       case InSubqueryExpression in -> evaluateIn(in, row);
       case UnaryExpression unary -> evaluateUnary(unary, row);
-      case ExistsSubqueryExpression exists ->
-          throw new DbmsException(
-              ErrorCode.UNSUPPORTED_OPERATION, "EXISTS subqueries are not executable yet");
-      case ScalarSubqueryExpression scalar ->
-          throw new DbmsException(
-              ErrorCode.UNSUPPORTED_OPERATION, "Scalar subqueries are not executable yet");
+      case ExistsSubqueryExpression exists -> evaluateExists(exists);
+      case ScalarSubqueryExpression scalar -> evaluateScalar(scalar);
     };
   }
 
   public boolean evaluatePredicate(Expression expr, OperatorRow row) {
     // NULL sama FALSE sama-sama ga lolos
-    return evaluate(expr, row) instanceof BooleanValue result && result.value();
+    Value value = evaluate(expr, row);
+    if (value instanceof NullValue) return false;
+    if (value instanceof BooleanValue result) return result.value();
+    throw typeError("Predicate must be boolean", value);
   }
 
   private Value evaluateBinary(BinaryExpression expr, OperatorRow row) {
@@ -88,13 +105,12 @@ public class ExpressionEvaluator {
 
   private Value evaluateUnary(UnaryExpression expression, OperatorRow row) {
     Value value = evaluate(expression.operand(), row);
-    if (expression.operator() == dynamitedb.contracts.query.UnaryOp.NOT) {
-      Optional<Boolean> truth = truth(value);
-      return truth.<Value>map(result -> new BooleanValue(!result)).orElse(NullValue.INSTANCE);
-    }
-    throw new DbmsException(
-        ErrorCode.UNSUPPORTED_OPERATION,
-        "Unary " + expression.operator() + " expressions are not executable yet");
+    return switch (expression.operator()) {
+      case NOT -> {
+        Optional<Boolean> truth = truth(value);
+        yield truth.<Value>map(result -> new BooleanValue(!result)).orElse(NullValue.INSTANCE);
+      }
+    };
   }
 
   // logika tiga nilai SQL: ga ketemu tapi subquery ada NULL hasilnya NULL
@@ -109,13 +125,69 @@ public class ExpressionEvaluator {
         : new BooleanValue(expr.negated());
   }
 
-  private TreeSet<Value> materialize(InSubqueryExpression expr) {
-    if (subqueries == null || expr.plan().isEmpty()) {
-      throw new DbmsException(ErrorCode.INVALID_PLAN, "IN subquery has no executable plan");
+  private Value evaluateScalar(ScalarSubqueryExpression expression) {
+    return scalarValues.computeIfAbsent(
+        expression,
+        scalar -> {
+          PlanNode plan = requirePlan(scalar.plan(), "Scalar subquery");
+          if (scalarSubqueries != null) {
+            Value value = scalarSubqueries.apply(plan);
+            if (value == null) {
+              throw new DbmsException(ErrorCode.INVALID_PLAN, "Scalar subquery returned no result");
+            }
+            return value;
+          }
+          List<Value> values = executeSubquery(plan);
+          if (values.size() > 1) {
+            throw new DbmsException(
+                ErrorCode.INVALID_STATE,
+                "Scalar subquery returned more than one row (" + values.size() + " rows)");
+          }
+          return values.isEmpty() ? NullValue.INSTANCE : values.getFirst();
+        });
+  }
+
+  private Value evaluateExists(ExistsSubqueryExpression expression) {
+    boolean exists =
+        existsValues.computeIfAbsent(
+            expression,
+            subquery -> {
+              PlanNode plan = requirePlan(subquery.plan(), "EXISTS subquery");
+              if (existsSubqueries != null) {
+                Boolean result = existsSubqueries.apply(plan);
+                if (result == null) {
+                  throw new DbmsException(
+                      ErrorCode.INVALID_PLAN, "EXISTS runner returned no result");
+                }
+                return result;
+              }
+              // Keep the existing function-based test/runtime seam usable without a second runner.
+              return !executeSubquery(plan).isEmpty();
+            });
+    return new BooleanValue(expression.negated() != exists);
+  }
+
+  private List<Value> executeSubquery(PlanNode plan) {
+    if (subqueries == null) {
+      throw new DbmsException(ErrorCode.INVALID_PLAN, "Subquery has no executable plan runner");
     }
+    List<Value> values = subqueries.apply(plan);
+    if (values == null) {
+      throw new DbmsException(ErrorCode.INVALID_PLAN, "Subquery runner returned no result");
+    }
+    return values;
+  }
+
+  private static PlanNode requirePlan(Optional<PlanNode> plan, String kind) {
+    return plan.orElseThrow(
+        () -> new DbmsException(ErrorCode.INVALID_PLAN, kind + " has no executable plan"));
+  }
+
+  private TreeSet<Value> materialize(InSubqueryExpression expr) {
+    PlanNode plan = requirePlan(expr.plan(), "IN subquery");
     // compare() dipake supaya 1 = 1.0 dan padding CHAR tetap dianggap sama
     TreeSet<Value> values = new TreeSet<>(ExpressionEvaluator::compareNullsFirst);
-    values.addAll(subqueries.apply(expr.plan().get()));
+    values.addAll(executeSubquery(plan));
     return values;
   }
 
@@ -154,7 +226,7 @@ public class ExpressionEvaluator {
     return switch (value) {
       case BooleanValue bool -> Optional.of(bool.value());
       case NullValue ignored -> Optional.empty();
-      default -> throw typeError("AND needs boolean operands", value);
+      default -> throw typeError("Boolean operators need boolean operands", value);
     };
   }
 

@@ -178,12 +178,6 @@ class InSubqueryRuntimeTest {
       assertCode(c, ErrorCode.SQL_SYNTAX, select + "student_id IN SELECT student_id FROM course;");
       assertCode(
           c,
-          ErrorCode.UNSUPPORTED_OPERATION,
-          select + "student_id = (SELECT course_id FROM course);");
-      assertCode(
-          c, ErrorCode.UNSUPPORTED_OPERATION, select + "EXISTS (SELECT course_id FROM course);");
-      assertCode(
-          c,
           ErrorCode.SQL_BIND,
           select + "student_id IN (SELECT course_id FROM course WHERE credits = gpa);");
       assertCode(c, ErrorCode.SQL_BIND, select + "student_id IN (SELECT * FROM course);");
