@@ -58,10 +58,27 @@ class OptionalExecutionRuntimeTest {
       assertEquals(
           List.of(new IntValue(0), new IntValue(0), NullValue.INSTANCE),
           empty.rows().getFirst().values());
+      assertEquals(
+          0,
+          client
+              .execute(
+                  "SELECT group_id, COUNT(*) FROM optional_metrics GROUP BY group_id"
+                      + " HAVING COUNT(*) > 0;")
+              .rows()
+              .size());
 
       client.execute("INSERT INTO optional_metrics VALUES (1, 1, 10);");
       client.execute("INSERT INTO optional_metrics VALUES (2, 1, NULL);");
       client.execute("INSERT INTO optional_metrics VALUES (3, 2, 20);");
+
+      var having =
+          client.execute(
+              "SELECT group_id, COUNT(*) AS row_count, SUM(val) AS total"
+                  + " FROM optional_metrics GROUP BY group_id HAVING COUNT(*) > 1"
+                  + " ORDER BY group_id;");
+      assertEquals(
+          List.of(List.of(new IntValue(1), new IntValue(2), new IntValue(10))),
+          having.rows().stream().map(row -> row.values()).toList());
 
       var grouped =
           client.execute(
