@@ -26,6 +26,7 @@ public final class RealRecoveryDriver {
             runScenario("checkpoint-recovery"),
             runScenario("restart-twice"),
             runScenario("crash"),
+            runScenario("crash-with-checkpoint"),
             runScenario("historical")));
   }
 
@@ -42,17 +43,23 @@ public final class RealRecoveryDriver {
         case "checkpoint-recovery" -> scenarios.checkpointRecovery();
         case "restart-twice" -> scenarios.restartTwice();
         case "crash" -> scenarios.crash();
+        case "crash-with-checkpoint" -> scenarios.crashWithCheckpoint();
         case "historical" -> scenarios.historical();
-        default -> new TestResult(false, "skenario nggak dikenal: " + name);
+        default -> new TestResult(false, "expected=known scenario; actual=" + name);
       };
     } catch (RuntimeException failure) {
-      return new TestResult(false, name + ": " + message(failure));
+      return new TestResult(
+          false, name + " expected=scenario passes; actual=failed: " + message(failure));
     }
   }
 
   public static void main(String[] args) {
-    if (args.length == 2 && args[0].equals("crash-child")) {
-      CrashChild.run(Path.of(args[1]));
+    if (args.length >= 2 && args.length <= 3 && args[0].equals("crash-child")) {
+      boolean checkpointed = args.length == 3 && args[2].equals("with-checkpoint");
+      if (args.length == 3 && !checkpointed) {
+        throw new IllegalArgumentException("mode crash-child harus with-checkpoint");
+      }
+      CrashChild.run(Path.of(args[1]), checkpointed);
       return;
     }
 
