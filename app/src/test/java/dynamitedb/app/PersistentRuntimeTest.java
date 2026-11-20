@@ -1,6 +1,7 @@
 package dynamitedb.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,6 +23,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -127,6 +131,45 @@ class PersistentRuntimeTest {
 
         client.execute("INSERT INTO student VALUES (99001, 'After restore', 3.0, 'A');");
         assertEquals(1, count(client, "SELECT student_id FROM student WHERE student_id = 99001;"));
+      }
+    }
+  }
+
+  @Test
+  void persistentCcmKeepsConflictingWriterOutUntilFrmRollbackCompletes() throws Exception {
+    DbmsConfig config = new DbmsConfig(0, directory.resolve("conflict"), ProtocolType.STRICT_2PL);
+    try (PersistentRuntime runtime = new PersistentRuntime(config)) {
+      runtime.bootstrap().start(config);
+      try (RemoteQueryClient first =
+              new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port());
+          RemoteQueryClient second =
+              new RemoteQueryClient("127.0.0.1", runtime.bootstrap().port())) {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+          first.execute("BEGIN;");
+          first.execute("UPDATE student SET gpa = 2.0 WHERE student_id = 1;");
+          Future<?> conflictingWrite =
+              executor.submit(
+                  () -> second.execute("UPDATE student SET gpa = 3.0 WHERE student_id = 1;"));
+
+          Thread.sleep(300);
+          assertFalse(
+              conflictingWrite.isDone(),
+              "writer kedua tidak boleh melewati perubahan transaksi pertama yang belum commit");
+
+          first.execute("ABORT;");
+          conflictingWrite.get(10, TimeUnit.SECONDS);
+          assertEquals(
+              new FloatValue(3.0),
+              second
+                  .execute("SELECT gpa FROM student WHERE student_id = 1;")
+                  .rows()
+                  .getFirst()
+                  .values()
+                  .getFirst());
+        } finally {
+          executor.shutdownNow();
+        }
       }
     }
   }
