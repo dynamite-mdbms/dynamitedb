@@ -8,6 +8,10 @@ import dynamitedb.contracts.api.RowCursor;
 import dynamitedb.contracts.api.TupleReader;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
+import dynamitedb.contracts.query.AggregatePlan;
+import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateTablePlan;
@@ -22,6 +26,7 @@ import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.SelectItem;
 import dynamitedb.contracts.query.SortDirection;
 import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.query.SortPlan;
@@ -43,6 +48,7 @@ import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.FakeComponents;
 import dynamitedb.qp.expression.ExpressionEvaluator;
+import dynamitedb.qp.operator.AggregateOperator;
 import dynamitedb.qp.operator.BlockNestedLoopJoinOperator;
 import dynamitedb.qp.operator.FilterOperator;
 import dynamitedb.qp.operator.IndexScanOperator;
@@ -113,6 +119,22 @@ class PlanTranslatorTest {
     translate(plan);
 
     assertEquals(List.of("TableScanPlan", "FilterPlan", "ProjectPlan"), translated);
+  }
+
+  @Test
+  void translatesAggregateAndExpressionProjection() {
+    assertInstanceOf(
+        AggregateOperator.class,
+        translate(
+            new AggregatePlan(
+                SCAN,
+                List.of(),
+                List.of(new AggregateExpression(AggregateFunction.COUNT, Optional.empty())))));
+
+    ProjectPlan expressionProject =
+        ProjectPlan.fromItems(
+            SCAN, List.of(new SelectItem(new ColumnExpression(ID), Optional.of("employee_id"))));
+    assertInstanceOf(ProjectOperator.class, translate(expressionProject));
   }
 
   // join harus nerjemahin kiri dan kanan sebelum join-nya sendiri

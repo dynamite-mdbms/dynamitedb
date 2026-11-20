@@ -7,17 +7,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TableSource;
+import dynamitedb.contracts.query.UnaryExpression;
+import dynamitedb.contracts.query.UnaryOp;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -189,6 +195,33 @@ class ExpressionEvaluatorTest {
     assertEquals(new BooleanValue(false), eval(bin(nul(), BinaryOp.AND, bool(false))));
     assertEquals(NullValue.INSTANCE, eval(bin(bool(true), BinaryOp.AND, nul())));
     assertEquals(new BooleanValue(true), eval(bin(bool(true), BinaryOp.AND, bool(true))));
+  }
+
+  @Test
+  void evaluatesNotOrAndAggregateReferencesButRejectsSubqueriesOutsideIn() {
+    SelectStatement query =
+        new SelectStatement(
+            List.of(new ColumnRef(Optional.of("d"), "id")),
+            new TableSource("dept", "d"),
+            Optional.empty(),
+            List.of());
+
+    assertEquals(new BooleanValue(false), eval(new UnaryExpression(UnaryOp.NOT, bool(true))));
+    assertEquals(new BooleanValue(true), eval(bin(bool(true), BinaryOp.OR, bool(false))));
+    assertEquals(NullValue.INSTANCE, eval(bin(nul(), BinaryOp.OR, bool(false))));
+    assertCode(
+        ErrorCode.UNSUPPORTED_OPERATION,
+        new ExistsSubqueryExpression(query, Optional.of(new TableScanPlan("dept", "d")), false));
+    assertCode(
+        ErrorCode.UNSUPPORTED_OPERATION,
+        new ScalarSubqueryExpression(query, Optional.of(new TableScanPlan("dept", "d"))));
+    AggregateExpression count = new AggregateExpression(AggregateFunction.COUNT, Optional.empty());
+    OperatorRow aggregateRow =
+        new OperatorRow(
+            new Row(List.of(new IntValue(2))),
+            new Schema(List.of(new Column("", count.outputName(), DataType.INTEGER, 0, false))),
+            Map.of());
+    assertEquals(new IntValue(2), evaluator.evaluate(count, aggregateRow));
   }
 
   // WHERE cuma lolos kalau TRUE, FALSE dan NULL dibuang

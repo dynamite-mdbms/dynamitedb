@@ -1,12 +1,16 @@
 package dynamitedb.qo.join;
 
+import dynamitedb.contracts.query.AggregateExpression;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
+import dynamitedb.contracts.query.UnaryExpression;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -51,13 +55,17 @@ final class PlanExpressions {
   private static void collectColumns(Expression expression, List<ColumnRef> result) {
     switch (expression) {
       case ColumnExpression column -> result.add(column.column());
+      case AggregateExpression aggregate -> aggregate.argument().ifPresent(result::add);
       case BinaryExpression binary -> {
         collectColumns(binary.left(), result);
         collectColumns(binary.right(), result);
       }
+      case UnaryExpression unary -> collectColumns(unary.operand(), result);
       case LiteralExpression literal -> {}
-      // kolom di dalam subquery milik scope subquery, bukan query luar
+
       case InSubqueryExpression in -> collectColumns(in.operand(), result);
+      case ExistsSubqueryExpression exists -> {}
+      case ScalarSubqueryExpression scalar -> {}
     }
   }
 }

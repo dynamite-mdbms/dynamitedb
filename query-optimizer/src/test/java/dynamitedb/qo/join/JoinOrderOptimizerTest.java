@@ -152,7 +152,6 @@ class JoinOrderOptimizerTest {
 
     List<PlanNode> candidates = optimizer().enumerate(original);
 
-    // QP drops the right-hand student_id, so after the swap only e.student_id exists.
     assertEquals(List.of(original, selectAbove(natural(enrollment, student), "e")), candidates);
   }
 
@@ -181,7 +180,7 @@ class JoinOrderOptimizerTest {
 
   @Test
   void doesNotSwapNaturalJoinWhenSharedNameRepeatsOnOneSide() {
-    // s.student_id and e1.student_id both match e2.student_id: QP would add an equality if swapped.
+
     JoinPlan both =
         new JoinPlan(
             scan("student", "s"), scan("enrollment", "e1"), JoinKind.CARTESIAN, Optional.empty());
@@ -200,7 +199,6 @@ class JoinOrderOptimizerTest {
 
     List<PlanNode> candidates = optimizer().enumerate(chain);
 
-    // Only the inner six-table chain is reordered: 2^5 orders.
     assertEquals(32, candidates.size());
     assertTrue(candidates.stream().allMatch(c -> ((JoinPlan) c).right().equals(last)));
   }
@@ -221,7 +219,6 @@ class JoinOrderOptimizerTest {
         new BestPlanSelector(new CostEstimator(catalog))
             .choose(new JoinOrderOptimizer(catalog).enumerate(original));
 
-    // 1 + ceil(10/100) * 100 = 101 blocks beat 100 + ceil(1000/100) * 1 = 110.
     assertEquals(selectAbove(natural(enrollment, student), "e"), best);
   }
 
@@ -275,7 +272,6 @@ class JoinOrderOptimizerTest {
     return new JoinPlan(left, right, JoinKind.NATURAL, Optional.empty());
   }
 
-  /** SELECT with WHERE and ORDER BY over student_id, read through {@code relation}. */
   private static PlanNode selectAbove(PlanNode join, String relation) {
     Expression filter =
         compare(

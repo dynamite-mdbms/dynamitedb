@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
@@ -28,6 +31,8 @@ import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionCommandPlan;
+import dynamitedb.contracts.query.UnaryExpression;
+import dynamitedb.contracts.query.UnaryOp;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.ComparisonOp;
 import dynamitedb.contracts.storage.DataType;
@@ -75,6 +80,37 @@ class CostEstimatorTest {
   }
 
   @Test
+  void estimatesOrByIndependenceAndNotAsComplement() {
+    Expression sidIsOne = compare("s", "sid", BinaryOp.EQ, 1);
+    Expression gpaIsThree = compare("s", "gpa", BinaryOp.EQ, 3.0);
+    assertEquals(
+        21, cost.estimateRows(filter(new BinaryExpression(sidIsOne, BinaryOp.OR, gpaIsThree))));
+    assertEquals(999, cost.estimateRows(filter(new UnaryExpression(UnaryOp.NOT, sidIsOne))));
+  }
+
+  @Test
+  void estimatesGroupCountFromDistinctValuesAndCapsItAtInputRows() {
+    var byGpa =
+        new AggregatePlan(
+            STUDENT,
+            List.of(new ColumnRef(Optional.of("s"), "gpa")),
+            List.of(new AggregateExpression(AggregateFunction.COUNT, Optional.empty())));
+    var bySidAndGpa =
+        new AggregatePlan(
+            STUDENT,
+            List.of(new ColumnRef(Optional.of("s"), "sid"), new ColumnRef(Optional.of("s"), "gpa")),
+            List.of());
+    var global =
+        new AggregatePlan(
+            STUDENT,
+            List.of(),
+            List.of(new AggregateExpression(AggregateFunction.COUNT, Optional.empty())));
+
+    assertEquals(50, cost.estimateRows(byGpa));
+    assertEquals(1000, cost.estimateRows(bySidAndGpa));
+    assertEquals(1, cost.estimateRows(global));
+  }
+
   void limitCapsRowsButKeepsChildCost() {
     assertEquals(5, cost.estimateRows(new LimitPlan(STUDENT, 5)));
     assertEquals(0, cost.estimateRows(new LimitPlan(STUDENT, 0)));

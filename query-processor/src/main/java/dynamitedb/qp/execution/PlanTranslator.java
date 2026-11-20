@@ -4,6 +4,7 @@ import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.api.TupleReader;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateTablePlan;
@@ -26,6 +27,7 @@ import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.expression.ExpressionEvaluator;
+import dynamitedb.qp.operator.AggregateOperator;
 import dynamitedb.qp.operator.BlockNestedLoopJoinOperator;
 import dynamitedb.qp.operator.FilterOperator;
 import dynamitedb.qp.operator.IndexScanOperator;
@@ -81,8 +83,9 @@ public class PlanTranslator {
               translate(filter.child(), tx),
               filter.predicate(),
               evaluatorFor(Optional.of(filter.predicate()), tx));
-      case ProjectPlan project ->
-          new ProjectOperator(translate(project.child(), tx), project.columns());
+      case ProjectPlan project -> translateProject(project, tx);
+      case AggregatePlan aggregate ->
+          new AggregateOperator(translate(aggregate.child(), tx), aggregate);
       case JoinPlan join ->
           new BlockNestedLoopJoinOperator(
               translate(join.left(), tx),
@@ -101,6 +104,10 @@ public class PlanTranslator {
       case DropTablePlan drop -> throw notRelational(plan);
       case TransactionCommandPlan command -> throw notRelational(plan);
     };
+  }
+
+  private Operator translateProject(ProjectPlan project, TransactionId tx) {
+    return new ProjectOperator(translate(project.child(), tx), project.items(), evaluator);
   }
 
   // evaluator per operator supaya hasil subquery ga kebagi antar query/transaksi

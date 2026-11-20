@@ -1,10 +1,13 @@
 package dynamitedb.qo.join;
 
 import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -15,9 +18,11 @@ import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
 import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
+import dynamitedb.contracts.query.UnaryExpression;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.qo.binding.CostEstimator;
 import java.util.ArrayList;
@@ -32,7 +37,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
 
-/** Membangkitkan kandidat urutan dan pengelompokan join (QO-12). */
 public class JoinOrderOptimizer {
 
   private static final int MAX_LEAVES = 6;
@@ -49,10 +53,6 @@ public class JoinOrderOptimizer {
     return variants(plan, MAX_CANDIDATES).stream().map(Map.Entry::getKey).toList();
   }
 
-  /**
-   * Each candidate subtree, paired with the column references it moved. Swapping a NATURAL JOIN
-   * makes the new left side emit the shared columns, so every reference above must follow them.
-   */
   private List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> variants(PlanNode plan, int limit) {
     return switch (plan) {
       case JoinPlan join when join.kind() == JoinKind.NATURAL -> naturalVariants(join, limit);
@@ -65,8 +65,14 @@ public class JoinOrderOptimizer {
               project.child(),
               limit,
               (child, renamed) ->
-                  new ProjectPlan(
-                      child, project.columns().stream().map(c -> rename(c, renamed)).toList()));
+                  ProjectPlan.fromItems(
+                      child,
+                      project.items().stream()
+                          .map(
+                              item ->
+                                  new dynamitedb.contracts.query.SelectItem(
+                                      rename(item.expression(), renamed), item.alias()))
+                          .toList()));
       case SortPlan sort ->
           map(
               sort.child(),
@@ -84,23 +90,33 @@ public class JoinOrderOptimizer {
               filter.child(),
               limit,
               (child, renamed) -> new FilterPlan(child, rename(filter.predicate(), renamed)));
-      // UPDATE and DELETE read a single table, so no NATURAL JOIN below them can rename a column.
+      case AggregatePlan aggregate ->
+          map(
+              aggregate.child(),
+              limit,
+              (child, renamed) ->
+                  new AggregatePlan(
+                      child,
+                      aggregate.groupBy().stream().map(column -> rename(column, renamed)).toList(),
+                      aggregate.aggregates().stream()
+                          .map(
+                              call ->
+                                  new AggregateExpression(
+                                      call.function(),
+                                      call.argument().map(c -> rename(c, renamed))))
+                          .toList()));
+
       case UpdatePlan update ->
           map(
               update.source(),
               limit,
-              (source, renamed) ->
-                  new UpdatePlan(source, update.table(), update.target(), update.value()));
+              (source, renamed) -> new UpdatePlan(source, update.table(), update.assignments()));
       case DeletePlan delete ->
           map(delete.source(), limit, (source, renamed) -> new DeletePlan(source, delete.table()));
       default -> List.of(Map.entry(plan, Map.of()));
     };
   }
 
-  /**
-   * Every child variant in both input orders. A NATURAL JOIN is kept whole (never flattened into a
-   * Cartesian product with explicit conditions), because its equalities come from column names.
-   */
   private List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> naturalVariants(
       JoinPlan join, int limit) {
     boolean swappable = CostEstimator.scans(join).size() <= MAX_LEAVES;
@@ -127,11 +143,6 @@ public class JoinOrderOptimizer {
     return result;
   }
 
-  /**
-   * QP emits each shared column once, from the left input. After a swap it comes from the other
-   * side, so the left reference maps to the right one; the inner join keeps them equal. Empty when
-   * a shared name repeats on one side: QP would then match a different set of columns.
-   */
   private Optional<Map<ColumnRef, ColumnRef>> swapRenames(PlanNode left, PlanNode right) {
     Map<String, List<ColumnRef>> rightByName = byName(outputs(right));
     Map<ColumnRef, ColumnRef> renamed = new HashMap<>();
@@ -144,12 +155,12 @@ public class JoinOrderOptimizer {
     return Optional.of(renamed);
   }
 
-  /** The columns QP emits for {@code node}, in order. */
   private List<ColumnRef> outputs(PlanNode node) {
     return switch (node) {
       case TableScanPlan scan -> tableColumns(scan.table(), scan.alias());
       case IndexScanPlan scan -> tableColumns(scan.table(), scan.alias());
       case FilterPlan filter -> outputs(filter.child());
+      case AggregatePlan aggregate -> aggregate.groupBy();
       case SortPlan sort -> outputs(sort.child());
       case LimitPlan cap -> outputs(cap.child());
       case ProjectPlan project -> project.columns();
@@ -173,7 +184,6 @@ public class JoinOrderOptimizer {
         .toList();
   }
 
-  // QP and Binder match NATURAL JOIN columns case-insensitively.
   private static Map<String, List<ColumnRef>> byName(List<ColumnRef> columns) {
     Map<String, List<ColumnRef>> byName = new LinkedHashMap<>();
     for (ColumnRef column : columns) {
@@ -186,7 +196,6 @@ public class JoinOrderOptimizer {
     return column.column().toLowerCase(Locale.ROOT);
   }
 
-  /** Applies {@code first}, then {@code second}. */
   private static Map<ColumnRef, ColumnRef> then(
       Map<ColumnRef, ColumnRef> first, Map<ColumnRef, ColumnRef> second) {
     Map<ColumnRef, ColumnRef> composed = new HashMap<>(second);
@@ -201,9 +210,16 @@ public class JoinOrderOptimizer {
   private static Expression rename(Expression expression, Map<ColumnRef, ColumnRef> renamed) {
     return switch (expression) {
       case ColumnExpression column -> new ColumnExpression(rename(column.column(), renamed));
+      case AggregateExpression aggregate ->
+          new AggregateExpression(
+              aggregate.function(), aggregate.argument().map(column -> rename(column, renamed)));
       case BinaryExpression binary ->
           new BinaryExpression(
               rename(binary.left(), renamed), binary.operator(), rename(binary.right(), renamed));
+      case UnaryExpression unary ->
+          new UnaryExpression(unary.operator(), rename(unary.operand(), renamed));
+      case ExistsSubqueryExpression exists -> exists;
+      case ScalarSubqueryExpression scalar -> scalar;
       case InSubqueryExpression in ->
           new InSubqueryExpression(
               rename(in.operand(), renamed), in.query(), in.plan(), in.negated());
@@ -234,7 +250,6 @@ public class JoinOrderOptimizer {
     return candidates;
   }
 
-  /** Generates every ordered binary grouping for one table order, bounded before cross products. */
   private static List<PlanNode> groupings(List<PlanNode> leaves, int start, int end, int limit) {
     if (end - start == 1) return List.of(leaves.get(start));
     List<PlanNode> result = new ArrayList<>();
@@ -257,7 +272,6 @@ public class JoinOrderOptimizer {
     return result;
   }
 
-  /** Places a predicate at the lowest subtree that contains every referenced relation. */
   private static PlanNode attachCondition(PlanNode node, Expression condition) {
     Set<String> used = new LinkedHashSet<>();
     boolean qualified = true;
@@ -300,7 +314,6 @@ public class JoinOrderOptimizer {
     return new Flat(leaves, conditions);
   }
 
-  /** Rebuilds the parent over each child variant, passing the child's renames up. */
   private List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> map(
       PlanNode plan, int limit, BiFunction<PlanNode, Map<ColumnRef, ColumnRef>, PlanNode> parent) {
     List<Map.Entry<PlanNode, Map<ColumnRef, ColumnRef>>> mapped = new ArrayList<>();
@@ -327,6 +340,7 @@ public class JoinOrderOptimizer {
         add(names, scan.table());
       }
       case FilterPlan filter -> collectRelations(filter.child(), names);
+      case AggregatePlan aggregate -> collectRelations(aggregate.child(), names);
       case ProjectPlan project -> collectRelations(project.child(), names);
       case SortPlan sort -> collectRelations(sort.child(), names);
       case LimitPlan cap -> collectRelations(cap.child(), names);

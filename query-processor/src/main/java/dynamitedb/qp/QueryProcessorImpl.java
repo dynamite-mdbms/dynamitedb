@@ -28,13 +28,18 @@ public final class QueryProcessorImpl implements QueryProcessor {
   private final SessionManager sessions;
   private final BiFunction<PreparedQuery, SessionContext, QueryResult> execution;
   private final TransactionCoordinator txCoordinator;
+  private final ExecutionEngine engine;
 
   public QueryProcessorImpl(
       QueryOptimizer optimizer,
       SessionManager sessions,
       ExecutionEngine engine,
       TransactionCoordinator txCoordinator) {
-    this(optimizer, sessions, Objects.requireNonNull(engine, "engine")::execute, txCoordinator);
+    this.optimizer = Objects.requireNonNull(optimizer, "optimizer");
+    this.sessions = Objects.requireNonNull(sessions, "sessions");
+    this.engine = Objects.requireNonNull(engine, "engine");
+    this.execution = engine::execute;
+    this.txCoordinator = Objects.requireNonNull(txCoordinator, "txCoordinator");
   }
 
   /** Injection seam for isolated drivers while QP2's implementation is still a stub. */
@@ -47,6 +52,7 @@ public final class QueryProcessorImpl implements QueryProcessor {
     this.sessions = Objects.requireNonNull(sessions, "sessions");
     this.execution = Objects.requireNonNull(execution, "execution");
     this.txCoordinator = Objects.requireNonNull(txCoordinator, "txCoordinator");
+    this.engine = null;
   }
 
   @Override
@@ -73,7 +79,8 @@ public final class QueryProcessorImpl implements QueryProcessor {
       if (session.rollbackRequired() && !abortCommand) {
         throw new DbmsException(
             ErrorCode.INVALID_STATE,
-            "Previous rollback failed. Retry ABORT or close this session before running another command.");
+            "Previous rollback failed. Retry ABORT or close this session before running another"
+                + " command.");
       }
       if (prepared.root() instanceof TransactionCommandPlan command) {
         try {
@@ -91,10 +98,26 @@ public final class QueryProcessorImpl implements QueryProcessor {
           throw failure;
         }
       }
-      // Temporary until #102 executes table DDL; rejected before any transaction work.
       if (prepared.root() instanceof CreateTablePlan || prepared.root() instanceof DropTablePlan) {
-        throw new DbmsException(
-            ErrorCode.UNSUPPORTED_OPERATION, "CREATE TABLE and DROP TABLE cannot be executed yet");
+        if (session.activeTx().isPresent()) {
+          throw new DbmsException(
+              ErrorCode.INVALID_STATE,
+              "CREATE TABLE and DROP TABLE are not allowed in a transaction");
+        }
+        if (engine == null) {
+          throw new DbmsException(ErrorCode.UNSUPPORTED_OPERATION, "Table DDL is not configured");
+        }
+        QueryResult result =
+            engine.executeTableDdl(
+                () -> {
+                  PreparedQuery fresh = optimizer.prepare(sql);
+                  if (fresh == null || fresh.root() == null || fresh.outputSchema() == null) {
+                    throw new DbmsException(
+                        ErrorCode.INVALID_PLAN, "Optimizer returned an incomplete DDL plan");
+                  }
+                  return fresh;
+                });
+        return checkedResult(result);
       }
       if (prepared.root() instanceof CreateIndexPlan && session.activeTx().isPresent()) {
         throw new DbmsException(
@@ -104,6 +127,11 @@ public final class QueryProcessorImpl implements QueryProcessor {
       try {
         if (implicit) {
           txCoordinator.begin(session);
+          prepared = optimizer.prepare(sql);
+          if (prepared == null || prepared.root() == null || prepared.outputSchema() == null) {
+            throw new DbmsException(
+                ErrorCode.INVALID_PLAN, "Optimizer returned an incomplete plan");
+          }
         }
         QueryResult result = executePrepared(prepared, session);
         if (implicit) {
@@ -118,7 +146,10 @@ public final class QueryProcessorImpl implements QueryProcessor {
   }
 
   private QueryResult executePrepared(PreparedQuery prepared, SessionContext session) {
-    QueryResult result = execution.apply(prepared, session);
+    return checkedResult(execution.apply(prepared, session));
+  }
+
+  private QueryResult checkedResult(QueryResult result) {
     if (result == null || result.schema() == null || result.rows() == null) {
       throw new DbmsException(ErrorCode.INVALID_PLAN, "Execution returned an incomplete result");
     }

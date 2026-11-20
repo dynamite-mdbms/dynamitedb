@@ -1,5 +1,7 @@
 package dynamitedb.qo.plan;
 
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
@@ -7,6 +9,7 @@ import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.DropTablePlan;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
@@ -17,9 +20,11 @@ import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TransactionCommandPlan;
+import dynamitedb.contracts.query.UnaryExpression;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.FloatValue;
@@ -30,7 +35,6 @@ import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import java.util.stream.Collectors;
 
-/** Menampilkan plan dalam bentuk pohon teks (QO-15). */
 public class PlanVisualizer {
 
   public String render(PlanNode plan) {
@@ -50,6 +54,8 @@ public class PlanVisualizer {
     if (plan instanceof FilterPlan filter) renderNode(filter.child(), depth + 1, output);
     else if (plan instanceof ProjectPlan project) renderNode(project.child(), depth + 1, output);
     else if (plan instanceof SortPlan sort) renderNode(sort.child(), depth + 1, output);
+    else if (plan instanceof AggregatePlan aggregate)
+      renderNode(aggregate.child(), depth + 1, output);
     else if (plan instanceof LimitPlan limit) renderNode(limit.child(), depth + 1, output);
     else if (plan instanceof JoinPlan join) {
       renderNode(join.left(), depth + 1, output);
@@ -65,6 +71,14 @@ public class PlanVisualizer {
     } else if (expression instanceof InSubqueryExpression in && in.plan().isPresent()) {
       output.append("  ".repeat(depth)).append("Subquery").append(System.lineSeparator());
       renderNode(in.plan().get(), depth + 1, output);
+    } else if (expression instanceof ExistsSubqueryExpression exists && exists.plan().isPresent()) {
+      output.append("  ".repeat(depth)).append("Subquery").append(System.lineSeparator());
+      renderNode(exists.plan().get(), depth + 1, output);
+    } else if (expression instanceof ScalarSubqueryExpression scalar && scalar.plan().isPresent()) {
+      output.append("  ".repeat(depth)).append("Subquery").append(System.lineSeparator());
+      renderNode(scalar.plan().get(), depth + 1, output);
+    } else if (expression instanceof UnaryExpression unary) {
+      renderSubqueries(unary.operand(), depth, output);
     }
   }
 
@@ -91,7 +105,21 @@ public class PlanVisualizer {
       return "Filter [predicate=" + expression(filter.predicate()) + "]";
     }
     if (plan instanceof ProjectPlan project) {
-      return "Project [columns=" + columns(project.columns()) + "]";
+      String items =
+          project.items().stream()
+              .map(
+                  item ->
+                      expression(item.expression())
+                          + item.alias().map(alias -> " AS " + alias).orElse(""))
+              .collect(Collectors.joining(", "));
+      return "Project [columns=" + items + "]";
+    }
+    if (plan instanceof AggregatePlan aggregate) {
+      String calls =
+          aggregate.aggregates().stream()
+              .map(PlanVisualizer::expression)
+              .collect(Collectors.joining(", "));
+      return "Aggregate [groupBy=" + columns(aggregate.groupBy()) + ", calls=" + calls + "]";
     }
     if (plan instanceof SortPlan sort) {
       String keys =
@@ -116,13 +144,20 @@ public class PlanVisualizer {
       return "Insert [table=" + insert.table() + ", values=(" + values + ")]";
     }
     if (plan instanceof UpdatePlan update) {
-      return "Update [table="
-          + update.table()
-          + ", target="
-          + column(update.target())
-          + ", value="
-          + expression(update.value())
-          + "]";
+      if (update.assignments().size() == 1) {
+        return "Update [table="
+            + update.table()
+            + ", target="
+            + column(update.target())
+            + ", value="
+            + expression(update.value())
+            + "]";
+      }
+      String assignments =
+          update.assignments().stream()
+              .map(a -> column(a.target()) + "=" + expression(a.expression()))
+              .collect(Collectors.joining(", "));
+      return "Update [table=" + update.table() + ", set=" + assignments + "]";
     }
     if (plan instanceof DeletePlan delete) return "Delete [table=" + delete.table() + "]";
     if (plan instanceof CreateIndexPlan create) {
@@ -183,6 +218,12 @@ public class PlanVisualizer {
 
   private static String expression(Expression expression) {
     if (expression instanceof ColumnExpression column) return column(column.column());
+    if (expression instanceof AggregateExpression aggregate) {
+      return aggregate.function()
+          + "("
+          + aggregate.argument().map(PlanVisualizer::column).orElse("*")
+          + ")";
+    }
     if (expression instanceof LiteralExpression literal) return value(literal.value());
     if (expression instanceof BinaryExpression binary) {
       return "("
@@ -196,6 +237,13 @@ public class PlanVisualizer {
     if (expression instanceof InSubqueryExpression in) {
       return "(" + expression(in.operand()) + (in.negated() ? " NOT IN" : " IN") + " subquery)";
     }
+    if (expression instanceof UnaryExpression unary) {
+      return "(" + unary.operator() + " " + expression(unary.operand()) + ")";
+    }
+    if (expression instanceof ExistsSubqueryExpression exists) {
+      return (exists.negated() ? "NOT EXISTS" : "EXISTS") + " (subquery)";
+    }
+    if (expression instanceof ScalarSubqueryExpression) return "(scalar subquery)";
     return expression.toString();
   }
 

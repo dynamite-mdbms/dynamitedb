@@ -12,6 +12,7 @@ import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionStatement;
+import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdateStatement;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -40,7 +41,7 @@ public class StatementParser {
 
   public Statement parseStatement(List<Token> tokens) {
     if (tokens == null || tokens.isEmpty()) throw syntax("Expected an SQL statement", null);
-    // Satu titik koma terminal boleh ada; token setelah titik koma lain tetap ditolak.
+
     int end = tokens.size();
     if (is(tokens.get(end - 1), ";")) end--;
     List<Token> body = tokens.subList(0, end);
@@ -77,7 +78,6 @@ public class StatementParser {
     return statement;
   }
 
-  /** INSERT INTO table VALUES (expr, ...) */
   private InsertStatement parseInsert(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "INTO");
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
@@ -104,26 +104,43 @@ public class StatementParser {
     throw syntax("Expected ')' to close VALUES list opened at offset " + open.offset(), null);
   }
 
-  /** UPDATE table SET column = expr [WHERE condition] */
   private UpdateStatement parseUpdate(List<Token> tokens, int[] cursor) {
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
     expect(tokens, cursor, "SET");
-    ColumnRef target = parseColumn(tokens, cursor);
-    expect(tokens, cursor, "=");
-    int where = indexOf(tokens, cursor[0], "WHERE");
-    Expression value = parseSegment(tokens, cursor[0], where);
+    int where = indexOfTopLevel(tokens, cursor[0], "WHERE");
+    List<UpdateAssignment> assignments = new ArrayList<>();
+    int start = cursor[0];
+    int depth = 0;
+    for (int index = start; index <= where; index++) {
+      boolean boundary = index == where;
+      if (!boundary) {
+        Token token = tokens.get(index);
+        if (is(token, "(")) depth++;
+        else if (is(token, ")")) depth--;
+        boundary = depth == 0 && is(token, ",");
+      }
+      if (!boundary) continue;
+      assignments.add(parseAssignment(tokens, start, index));
+      start = index + 1;
+    }
     cursor[0] = where;
-    return new UpdateStatement(table, target, value, parseOptionalWhere(tokens, cursor));
+    return new UpdateStatement(table, assignments, parseOptionalWhere(tokens, cursor));
   }
 
-  /** DELETE FROM table [WHERE condition] */
+  private UpdateAssignment parseAssignment(List<Token> tokens, int start, int end) {
+    int[] cursor = {start};
+    ColumnRef target = parseColumn(tokens, cursor);
+    expect(tokens, cursor, "=");
+    Expression expression = parseSegment(tokens, cursor[0], end);
+    return new UpdateAssignment(target, expression);
+  }
+
   private DeleteStatement parseDelete(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "FROM");
     String table = requireIdentifier(tokens, cursor, "Expected a table name").lexeme();
     return new DeleteStatement(table, parseOptionalWhere(tokens, cursor));
   }
 
-  /** CREATE INDEX name ON table(column) [USING HASH | USING B_PLUS_TREE]; default HASH. */
   private static CreateIndexStatement parseCreateIndex(List<Token> tokens, int[] cursor) {
     expect(tokens, cursor, "INDEX");
     String index = requireIdentifier(tokens, cursor, "Expected an index name").lexeme();
@@ -254,9 +271,13 @@ public class StatementParser {
     return new ColumnRef(Optional.of(first.lexeme()), column.lexeme());
   }
 
-  private static int indexOf(List<Token> tokens, int start, String lexeme) {
+  private static int indexOfTopLevel(List<Token> tokens, int start, String lexeme) {
+    int depth = 0;
     for (int index = start; index < tokens.size(); index++) {
-      if (is(tokens.get(index), lexeme)) return index;
+      Token token = tokens.get(index);
+      if (depth == 0 && is(token, lexeme)) return index;
+      if (is(token, "(")) depth++;
+      else if (is(token, ")")) depth--;
     }
     return tokens.size();
   }
