@@ -935,6 +935,12 @@ helper	dynamitedb.frm.mock.MockRecoveryEnvironment
 helper	dynamitedb.frm.LogFile$Scan
 helper	dynamitedb.frm.LogManager$Prepared
 helper	dynamitedb.frm.LogManager$TxState
+helper	dynamitedb.qp.execution.KeyConstraints
+helper	dynamitedb.qp.execution.KeyConstraints$Change
+helper	dynamitedb.qp.execution.KeyConstraints$Projection
+helper	dynamitedb.qp.execution.KeyConstraints$RowMatch
+helper	dynamitedb.qp.execution.KeyConstraints$Statement
+helper	dynamitedb.qp.execution.TableDdlExecutor
 helper	dynamitedb.qp.operator.OperatorRows
 helper	dynamitedb.qp.operator.AggregateOperator
 helper	dynamitedb.qp.operator.AggregateOperator$Accumulator

@@ -56,6 +56,7 @@ import dynamitedb.qp.execution.DeleteExecutor;
 import dynamitedb.qp.execution.ExecutionEngine;
 import dynamitedb.qp.execution.PlanTranslator;
 import dynamitedb.qp.execution.ReadExecutor;
+import dynamitedb.qp.execution.TableDdlExecutor;
 import dynamitedb.qp.execution.TransactionCommandExecutor;
 import dynamitedb.qp.execution.WriteCoordinator;
 import dynamitedb.qp.execution.WriteExecutor;
@@ -188,7 +189,11 @@ public final class PersistentRuntime implements AutoCloseable {
             storage, writes, translator, evaluator, coordinator, storage, delete, catalogAccess);
     var engine =
         new ExecutionEngine(
-            translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));
+            translator,
+            new ReadExecutor(),
+            writer,
+            new TransactionCommandExecutor(coordinator),
+            new TableDdlExecutor(storage, concurrency));
     var processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
 
     bootstrap =

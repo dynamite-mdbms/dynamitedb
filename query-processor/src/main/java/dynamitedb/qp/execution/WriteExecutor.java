@@ -43,6 +43,7 @@ public class WriteExecutor {
   private final IndexAdmin indexAdmin;
   private final DeleteExecutor delete;
   private final CatalogAccess catalog;
+  private final KeyConstraints keys;
 
   public WriteExecutor(
       WriteStore store,
@@ -61,11 +62,13 @@ public class WriteExecutor {
     this.indexAdmin = Objects.requireNonNull(indexAdmin, "indexAdmin");
     this.delete = Objects.requireNonNull(delete, "delete");
     this.catalog = Objects.requireNonNull(catalog, "catalog");
+    this.keys = new KeyConstraints(catalog, translator, coordinator);
   }
 
   public long insert(InsertPlan plan, TransactionId tx) {
-    coordinator.authorizeTable(tx, plan.table(), AccessMode.WRITE);
+    var constraints = keys.insert(plan.table(), tx);
     Row row = fitRow(plan.row(), catalog.getSchema(plan.table()));
+    constraints.validateInsert(row);
     writes.execute(store.prepareInsert(tx, plan.table(), row));
     return 1;
   }
@@ -76,17 +79,17 @@ public class WriteExecutor {
           ErrorCode.UNSUPPORTED_OPERATION,
           "Multi-assignment UPDATE is not supported by the query processor yet");
     }
-    // izin WRITE diminta sebelum scan supaya tidak ada upgrade lock READ -> WRITE
-    coordinator.authorizeTable(tx, plan.table(), AccessMode.WRITE);
-    Map<RecordId, Row> targets = collectTargets(plan, tx);
-    for (Map.Entry<RecordId, Row> target : targets.entrySet()) {
-      writes.execute(store.prepareUpdate(tx, target.getKey(), target.getValue()));
+    var constraints = keys.update(plan.table(), plan.target().column(), tx);
+    Map<RecordId, KeyConstraints.Change> targets = collectTargets(plan, tx);
+    constraints.validateChanges(targets);
+    for (var target : targets.entrySet()) {
+      writes.execute(store.prepareUpdate(tx, target.getKey(), target.getValue().after()));
     }
     return targets.size();
   }
 
   public long delete(DeletePlan plan, TransactionId tx) {
-    return delete.execute(plan, tx);
+    return delete.execute(plan, tx, keys);
   }
 
   // tx dari transaksi implisit QueryProcessorImpl; CREATE INDEX di dalam BEGIN sudah ditolak QP1
@@ -96,14 +99,16 @@ public class WriteExecutor {
   }
 
   // semua baris target dikumpulkan dulu sebelum ada yang ditulis (Halloween problem)
-  private Map<RecordId, Row> collectTargets(UpdatePlan plan, TransactionId tx) {
-    Map<RecordId, Row> targets = new LinkedHashMap<>();
+  private Map<RecordId, KeyConstraints.Change> collectTargets(UpdatePlan plan, TransactionId tx) {
+    Map<RecordId, KeyConstraints.Change> targets = new LinkedHashMap<>();
     Operator source = translator.translate(plan.source(), tx);
     source.open();
     try {
       for (Optional<OperatorRow> next = source.next(); next.isPresent(); next = source.next()) {
         OperatorRow row = next.get();
-        targets.putIfAbsent(targetRid(plan, row), updatedRow(plan, row));
+        targets.computeIfAbsent(
+            targetRid(plan, row),
+            rid -> new KeyConstraints.Change(row.row(), updatedRow(plan, row)));
       }
     } finally {
       source.close();

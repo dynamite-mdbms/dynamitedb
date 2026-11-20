@@ -63,6 +63,48 @@ class QueryProcessorImplTest {
   }
 
   @Test
+  void implicitQueryIsRepreparedAfterTransactionAdmission() {
+    SessionManager localSessions = new SessionManager();
+    var coordinator = new TransactionCoordinator(ports, ports, ports);
+    int[] preparations = {0};
+    QueryOptimizer optimizer =
+        new QueryOptimizer() {
+          @Override
+          public PreparedQuery prepare(String sql) {
+            preparations[0]++;
+            String table = ports.begun ? "new" : "old";
+            return new PreparedQuery(new TableScanPlan(table, "t"), SCHEMA);
+          }
+
+          @Override
+          public double estimateCost(dynamitedb.contracts.query.PlanNode plan) {
+            return 0;
+          }
+
+          @Override
+          public PlanExplanation explain(String sql) {
+            return new PlanExplanation("", "", 0);
+          }
+        };
+    var evaluator = new ExpressionEvaluator();
+    var translator = new PlanTranslator(evaluator, ports, ports, coordinator);
+    var writes = new WriteCoordinator(ports, ports);
+    var delete = new DeleteExecutor(ports, writes, translator, evaluator, coordinator);
+    var writer =
+        new WriteExecutor(ports, writes, translator, evaluator, coordinator, ports, delete, ports);
+    var engine =
+        new ExecutionEngine(
+            translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));
+    var qp = new QueryProcessorImpl(optimizer, localSessions, engine, coordinator);
+
+    SessionId session = qp.openSession("client");
+    qp.execute(session, "SELECT");
+
+    assertEquals(2, preparations[0]);
+    assertEquals(List.of("new"), ports.scannedTables);
+  }
+
+  @Test
   void explicitTransactionsRemainAttachedToTheirOwnSessions() {
     SessionId first = processor.openSession("first");
     SessionId second = processor.openSession("second");
@@ -98,7 +140,7 @@ class QueryProcessorImplTest {
   }
 
   @Test
-  void tableDdlIsRejectedWithoutTouchingTransactions() {
+  void tableDdlRequiresWiringAndExplicitTransactionsRejectItWithoutEndingTransaction() {
     SessionId session = processor.openSession("client");
     for (String sql : List.of("CREATE_TABLE", "DROP_TABLE")) {
       assertEquals(
@@ -110,7 +152,7 @@ class QueryProcessorImplTest {
     processor.execute(session, "BEGIN");
     TransactionId tx = sessions.get(session).activeTx().orElseThrow();
     assertEquals(
-        ErrorCode.UNSUPPORTED_OPERATION,
+        ErrorCode.INVALID_STATE,
         assertThrows(DbmsException.class, () -> processor.execute(session, "DROP_TABLE"))
             .getCode());
     assertEquals(TransactionStatus.ACTIVE, ports.status(tx));
@@ -232,7 +274,9 @@ class QueryProcessorImplTest {
   private static final class Ports extends FakeComponents implements TupleReader {
     private boolean readFailure;
     private boolean abortFailure;
+    private boolean begun;
     private int readCalls;
+    private final List<String> scannedTables = new java.util.ArrayList<>();
 
     @Override
     public Schema getSchema(String table) {
@@ -246,8 +290,16 @@ class QueryProcessorImplTest {
     }
 
     @Override
+    public TransactionId begin() {
+      TransactionId tx = super.begin();
+      begun = true;
+      return tx;
+    }
+
+    @Override
     public RowCursor openTableScan(String table, TransactionId tx) {
       readCalls++;
+      scannedTables.add(table);
       if (readFailure) throw new DbmsException(ErrorCode.STORAGE_FAILURE, "read failed");
       var rows =
           List.of(new StoredRow(new RecordId(7, 0, 0, 0), new Row(List.of(new IntValue(7)))))

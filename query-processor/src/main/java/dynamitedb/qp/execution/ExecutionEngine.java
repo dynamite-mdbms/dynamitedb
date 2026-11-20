@@ -3,7 +3,9 @@ package dynamitedb.qp.execution;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.PreparedQuery;
@@ -14,6 +16,7 @@ import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.session.SessionContext;
 import java.util.List;
+import java.util.function.Supplier;
 
 /** Arahin query: baca ke ReadExecutor, DML/DDL ke WriteExecutor, BEGIN/COMMIT/ABORT ke QP5. */
 public class ExecutionEngine {
@@ -24,22 +27,44 @@ public class ExecutionEngine {
   private final ReadExecutor reader;
   private final WriteExecutor writer;
   private final TransactionCommandExecutor transactionExecutor;
+  private final TableDdlExecutor tableDdlExecutor;
 
   public ExecutionEngine(
       PlanTranslator translator,
       ReadExecutor reader,
       WriteExecutor writer,
       TransactionCommandExecutor transactionExecutor) {
+    this(translator, reader, writer, transactionExecutor, null);
+  }
+
+  public ExecutionEngine(
+      PlanTranslator translator,
+      ReadExecutor reader,
+      WriteExecutor writer,
+      TransactionCommandExecutor transactionExecutor,
+      TableDdlExecutor tableDdlExecutor) {
     this.translator = translator;
     this.reader = reader;
     this.writer = writer;
     this.transactionExecutor = transactionExecutor;
+    this.tableDdlExecutor = tableDdlExecutor;
+  }
+
+  public QueryResult executeTableDdl(Supplier<PreparedQuery> prepare) {
+    if (tableDdlExecutor == null) {
+      throw new DbmsException(ErrorCode.UNSUPPORTED_OPERATION, "Table DDL is not configured");
+    }
+    return tableDdlExecutor.execute(prepare);
   }
 
   public QueryResult execute(PreparedQuery plan, SessionContext session) {
     PlanNode root = plan.root();
     if (root instanceof TransactionCommandPlan command) {
       return transactionExecutor.execute(command.command(), session);
+    }
+    if (root instanceof CreateTablePlan || root instanceof DropTablePlan) {
+      throw new DbmsException(
+          ErrorCode.INVALID_STATE, "Table DDL requires the QP maintenance path");
     }
     TransactionId tx = activeTx(session);
     return switch (root) {
