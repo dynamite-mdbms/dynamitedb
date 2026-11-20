@@ -472,6 +472,10 @@ type	dynamitedb.qp.operator.SortOperator	class
 method	dynamitedb.qp.operator.SortOperator	open	void
 method	dynamitedb.qp.operator.SortOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
 method	dynamitedb.qp.operator.SortOperator	close	void
+type	dynamitedb.qp.operator.LimitOperator	class
+method	dynamitedb.qp.operator.LimitOperator	open	void
+method	dynamitedb.qp.operator.LimitOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
+method	dynamitedb.qp.operator.LimitOperator	close	void
 type	dynamitedb.qp.execution.WriteExecutor	class
 method	dynamitedb.qp.execution.WriteExecutor	insert	long	dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.transaction.TransactionId
 method	dynamitedb.qp.execution.WriteExecutor	update	long	dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.transaction.TransactionId
@@ -883,6 +887,7 @@ provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.FilterOperator
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.ProjectOperator
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.BlockNestedLoopJoinOperator
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.SortOperator
+provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.LimitOperator
 provider	dynamitedb.contracts.api.QueryOptimizer	dynamitedb.qo.facade.QueryOptimizerImpl
 provider	dynamitedb.qo.pipeline.PlanRewrite	dynamitedb.qo.pushdown.SelectionPushdown
 provider	dynamitedb.qo.pipeline.PlanRewrite	dynamitedb.qo.pushdown.ProjectionPushdown

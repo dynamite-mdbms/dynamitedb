@@ -31,6 +31,7 @@ import dynamitedb.qp.operator.AggregateOperator;
 import dynamitedb.qp.operator.BlockNestedLoopJoinOperator;
 import dynamitedb.qp.operator.FilterOperator;
 import dynamitedb.qp.operator.IndexScanOperator;
+import dynamitedb.qp.operator.LimitOperator;
 import dynamitedb.qp.operator.Operator;
 import dynamitedb.qp.operator.ProjectOperator;
 import dynamitedb.qp.operator.ScanOperator;
@@ -93,10 +94,7 @@ public class PlanTranslator {
               join.condition(),
               evaluatorFor(join.condition(), tx));
       case SortPlan sort -> new SortOperator(translate(sort.child(), tx), sort.keys());
-      // LIMIT operator belum ada (#104), jadi ditolak daripada dieksekusi tanpa batas
-      case LimitPlan limit ->
-          throw new DbmsException(
-              ErrorCode.UNSUPPORTED_OPERATION, "LIMIT is not supported by the query processor yet");
+      case LimitPlan limit -> new LimitOperator(translate(limit.child(), tx), limit.count());
       // DML, DDL, sama perintah transaksi udah diarahin ExecutionEngine, ga boleh sampe sini
       case InsertPlan insert -> throw notRelational(plan);
       case UpdatePlan update -> throw notRelational(plan);
