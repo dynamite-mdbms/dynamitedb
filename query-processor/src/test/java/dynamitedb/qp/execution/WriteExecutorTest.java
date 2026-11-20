@@ -113,7 +113,7 @@ class WriteExecutorTest {
   }
 
   @Test
-  void updateRejectsMultiAssignmentUntilProcessorSupportIsImplemented() {
+  void updateWritesOneUpdatedRowForMultipleAssignments() {
     UpdatePlan plan =
         new UpdatePlan(
             new TableScanPlan("t", "t"),
@@ -126,9 +126,19 @@ class WriteExecutorTest {
                     new ColumnRef(Optional.empty(), "salary"),
                     new ColumnExpression(new ColumnRef(Optional.empty(), "salary")))));
 
-    DbmsException error =
-        assertThrows(DbmsException.class, () -> executor(List.of()).update(plan, TX));
-    assertEquals(ErrorCode.UNSUPPORTED_OPERATION, error.getCode());
+    WriteExecutor executor = executor(List.of(sourceRow(1, 10.0)));
+
+    assertEquals(1, executor.update(plan, TX));
+    assertEquals(1, fake.applied.size());
+    assertEquals(
+        List.of(
+            "access WRITE",
+            "source open",
+            "source close",
+            "prepareUpdate 1 [IntValue[value=100], FloatValue[value=100.0]]",
+            "log",
+            "apply 1"),
+        fake.events);
   }
 
   @Test

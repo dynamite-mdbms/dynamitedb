@@ -44,9 +44,11 @@ final class KeyConstraints {
         table, tx, primaryColumns(table), catalog.listForeignKeys(table), List.of());
   }
 
-  Statement update(String table, String column, TransactionId tx) {
+  Statement update(String table, List<String> columns, TransactionId tx) {
     List<String> primary = primaryColumns(table);
-    boolean changesPrimary = primary.stream().anyMatch(column::equalsIgnoreCase);
+    boolean changesPrimary =
+        primary.stream()
+            .anyMatch(primaryColumn -> columns.stream().anyMatch(primaryColumn::equalsIgnoreCase));
     return new Statement(
         table,
         tx,
