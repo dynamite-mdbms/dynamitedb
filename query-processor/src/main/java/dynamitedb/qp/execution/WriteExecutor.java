@@ -74,6 +74,11 @@ public class WriteExecutor {
   }
 
   public long update(UpdatePlan plan, TransactionId tx) {
+    if (plan.assignments().size() != 1) {
+      throw new DbmsException(
+          ErrorCode.UNSUPPORTED_OPERATION,
+          "Multi-assignment UPDATE is not supported by the query processor yet");
+    }
     var constraints = keys.update(plan.table(), plan.target().column(), tx);
     Map<RecordId, KeyConstraints.Change> targets = collectTargets(plan, tx);
     constraints.validateChanges(targets);

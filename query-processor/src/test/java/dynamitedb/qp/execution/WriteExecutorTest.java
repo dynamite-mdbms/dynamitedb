@@ -113,6 +113,25 @@ class WriteExecutorTest {
   }
 
   @Test
+  void updateRejectsMultiAssignmentUntilProcessorSupportIsImplemented() {
+    UpdatePlan plan =
+        new UpdatePlan(
+            new TableScanPlan("t", "t"),
+            "t",
+            List.of(
+                new dynamitedb.contracts.query.UpdateAssignment(
+                    new ColumnRef(Optional.empty(), "id"),
+                    new ColumnExpression(new ColumnRef(Optional.empty(), "id"))),
+                new dynamitedb.contracts.query.UpdateAssignment(
+                    new ColumnRef(Optional.empty(), "salary"),
+                    new ColumnExpression(new ColumnRef(Optional.empty(), "salary")))));
+
+    DbmsException error =
+        assertThrows(DbmsException.class, () -> executor(List.of()).update(plan, TX));
+    assertEquals(ErrorCode.UNSUPPORTED_OPERATION, error.getCode());
+  }
+
+  @Test
   void updateRejectsUnknownColumn() {
     WriteExecutor executor = executor(List.of(sourceRow(1, 10.0)));
     UpdatePlan plan =

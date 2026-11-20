@@ -2,14 +2,18 @@ package dynamitedb.qp.expression;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.query.PlanNode;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
+import dynamitedb.contracts.query.UnaryExpression;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IntValue;
@@ -44,7 +48,17 @@ public class ExpressionEvaluator {
       case LiteralExpression literal -> literal.value();
       case ColumnExpression column -> row.getValue(column.column());
       case BinaryExpression binary -> evaluateBinary(binary, row);
+      case AggregateExpression aggregate ->
+          row.getValue(
+              new dynamitedb.contracts.query.ColumnRef(Optional.empty(), aggregate.outputName()));
       case InSubqueryExpression in -> evaluateIn(in, row);
+      case UnaryExpression unary -> evaluateUnary(unary, row);
+      case ExistsSubqueryExpression exists ->
+          throw new DbmsException(
+              ErrorCode.UNSUPPORTED_OPERATION, "EXISTS subqueries are not executable yet");
+      case ScalarSubqueryExpression scalar ->
+          throw new DbmsException(
+              ErrorCode.UNSUPPORTED_OPERATION, "Scalar subqueries are not executable yet");
     };
   }
 
@@ -59,6 +73,7 @@ public class ExpressionEvaluator {
     if (expr.operator() == BinaryOp.AND) {
       return and(left, right);
     }
+    if (expr.operator() == BinaryOp.OR) return or(left, right);
     // IS [NOT] NULL selalu TRUE/FALSE, tidak ikut propagasi NULL
     if (expr.operator() == BinaryOp.IS) return new BooleanValue(left instanceof NullValue);
     if (expr.operator() == BinaryOp.IS_NOT) return new BooleanValue(!(left instanceof NullValue));
@@ -69,6 +84,17 @@ public class ExpressionEvaluator {
       case ADD, SUB, MUL, DIV -> arithmetic(expr.operator(), left, right);
       default -> new BooleanValue(holds(expr.operator(), compare(left, right)));
     };
+  }
+
+  private Value evaluateUnary(UnaryExpression expression, OperatorRow row) {
+    Value value = evaluate(expression.operand(), row);
+    if (expression.operator() == dynamitedb.contracts.query.UnaryOp.NOT) {
+      Optional<Boolean> truth = truth(value);
+      return truth.<Value>map(result -> new BooleanValue(!result)).orElse(NullValue.INSTANCE);
+    }
+    throw new DbmsException(
+        ErrorCode.UNSUPPORTED_OPERATION,
+        "Unary " + expression.operator() + " expressions are not executable yet");
   }
 
   // logika tiga nilai SQL: ga ketemu tapi subquery ada NULL hasilnya NULL
@@ -111,6 +137,17 @@ public class ExpressionEvaluator {
       return NullValue.INSTANCE;
     }
     return new BooleanValue(true);
+  }
+
+  // OR truth table: any TRUE wins; otherwise NULL propagates unless both sides are FALSE.
+  private static Value or(Value left, Value right) {
+    Optional<Boolean> l = truth(left);
+    Optional<Boolean> r = truth(right);
+    if (l.equals(Optional.of(true)) || r.equals(Optional.of(true))) {
+      return new BooleanValue(true);
+    }
+    if (l.isEmpty() || r.isEmpty()) return NullValue.INSTANCE;
+    return new BooleanValue(false);
   }
 
   private static Optional<Boolean> truth(Value value) {

@@ -32,7 +32,7 @@ is an initial coordination decision, not a transfer of component requirements.
 | `query` | QP4 | `SortDirection`, `SortKey`, `SortPlan` |
 | `query` | QP5 | `CreateIndexPlan`, `InsertPlan`, `TransactionCommand`, `TransactionCommandPlan`, `UpdatePlan` |
 | `query` | QO1 | `PlanExplanation`, `PlanNode`, `PreparedQuery`, `TableScanPlan` |
-| `query` | QO2 | `BinaryExpression`, `BinaryOp`, `ColumnExpression`, `ColumnRef`, `CreateIndexStatement`, `DeleteStatement`, `Expression`, `FromSource`, `InsertStatement`, `JoinKind`, `JoinSource`, `LiteralExpression`, `SelectStatement`, `Statement`, `TableSource`, `TransactionStatement`, `UpdateStatement` |
+| `query` | QO2 | `AggregateExpression`, `AggregateFunction`, `AggregatePlan`, `BinaryExpression`, `BinaryOp`, `ColumnExpression`, `ColumnRef`, `CreateIndexStatement`, `DeleteStatement`, `ExistsSubqueryExpression`, `Expression`, `FromSource`, `InsertStatement`, `JoinKind`, `JoinSource`, `LiteralExpression`, `ScalarSubqueryExpression`, `SelectItem`, `SelectStatement`, `Statement`, `TableSource`, `TransactionStatement`, `UnaryExpression`, `UnaryOp`, `UpdateAssignment`, `UpdateStatement` |
 | `query` | QO4 | `FilterPlan`, `ProjectPlan` |
 | `query` | QO5 | `IndexScanPlan`, `JoinPlan` |
 | `recovery` | FRM2 | `ChangeRecord`, `LogFilter`, `LogSequenceNumber`, `LogView` |

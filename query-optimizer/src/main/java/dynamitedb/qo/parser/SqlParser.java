@@ -2,11 +2,13 @@ package dynamitedb.qo.parser;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FromSource;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinSource;
+import dynamitedb.contracts.query.SelectItem;
 import dynamitedb.contracts.query.SelectStatement;
 import dynamitedb.contracts.query.SortDirection;
 import dynamitedb.contracts.query.SortKey;
@@ -18,7 +20,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
-/** Mengarahkan token ke parser statement dan parser ekspresi (QO-01). */
 public class SqlParser {
 
   private static final Set<String> NON_SELECT_STATEMENTS =
@@ -43,17 +44,35 @@ public class SqlParser {
 
   private SelectStatement parseSelect(List<Token> tokens) {
     int[] cursor = {1};
-    List<ColumnRef> projection = parseColumnList(tokens, cursor, "FROM", false);
+    List<SelectItem> items = parseSelectItems(tokens, cursor);
     expect(tokens, cursor, "FROM");
     FromSource from = parseFrom(tokens, cursor);
 
     Optional<Expression> predicate = Optional.empty();
     if (peek(tokens, cursor, "WHERE")) {
       cursor[0]++;
-      int end = findClause(tokens, cursor[0], true);
+      int end = findNextClause(tokens, cursor[0]);
       if (end == cursor[0])
         throw syntax("Expected a condition after WHERE", tokenAt(tokens, cursor[0]));
       predicate = Optional.of(expressions.parseExpression(tokens.subList(cursor[0], end)));
+      cursor[0] = end;
+    }
+
+    List<ColumnRef> groupBy = List.of();
+    if (peek(tokens, cursor, "GROUP")) {
+      cursor[0]++;
+      expect(tokens, cursor, "BY");
+      int end = findNextClause(tokens, cursor[0]);
+      groupBy = parseColumnSegment(tokens, cursor[0], end);
+      cursor[0] = end;
+    }
+
+    Optional<Expression> having = Optional.empty();
+    if (peek(tokens, cursor, "HAVING")) {
+      cursor[0]++;
+      int end = findNextClause(tokens, cursor[0]);
+      if (end == cursor[0]) throw syntax("Expected a condition after HAVING", tokenAt(tokens, end));
+      having = Optional.of(expressions.parseExpression(tokens.subList(cursor[0], end)));
       cursor[0] = end;
     }
 
@@ -74,7 +93,78 @@ public class SqlParser {
     if (cursor[0] != tokens.size()) {
       throw syntax("Unexpected token after SELECT statement", tokens.get(cursor[0]));
     }
-    return new SelectStatement(projection, from, predicate, orderBy, limit);
+    return new SelectStatement(items, from, predicate, groupBy, having, orderBy, limit);
+  }
+
+  private List<SelectItem> parseSelectItems(List<Token> tokens, int[] cursor) {
+    int end = findTopLevel(tokens, cursor[0], "FROM");
+    if (end == cursor[0]) throw syntax("Expected a projection before FROM", tokenAt(tokens, end));
+    List<SelectItem> items = new ArrayList<>();
+    int start = cursor[0];
+    int depth = 0;
+    for (int index = start; index <= end; index++) {
+      boolean boundary = index == end;
+      if (!boundary) {
+        Token token = tokens.get(index);
+        if (is(token, "(")) depth++;
+        else if (is(token, ")")) depth--;
+        boundary = depth == 0 && is(token, ",");
+      }
+      if (!boundary) continue;
+      items.add(parseSelectItem(tokens, start, index));
+      start = index + 1;
+    }
+    cursor[0] = end;
+    return List.copyOf(items);
+  }
+
+  private SelectItem parseSelectItem(List<Token> tokens, int start, int end) {
+    int aliasIndex = findTopLevel(tokens.subList(start, end), 0, "AS");
+    Optional<String> alias = Optional.empty();
+    int expressionEnd = end;
+    if (aliasIndex < end - start) {
+      Token name = tokenAt(tokens, start + aliasIndex + 1);
+      if (name == null || name.kind() != TokenKind.IDENTIFIER || start + aliasIndex + 2 != end) {
+        throw syntax("Expected an output alias after AS", name);
+      }
+      alias = Optional.of(name.lexeme());
+      expressionEnd = start + aliasIndex;
+    }
+
+    List<Token> expressionTokens = tokens.subList(start, expressionEnd);
+    Expression expression;
+    if (expressionTokens.size() == 1 && is(expressionTokens.get(0), "*")) {
+      expression = new ColumnExpression(new ColumnRef(Optional.empty(), "*"));
+    } else if (expressionTokens.size() == 3
+        && expressionTokens.get(1).lexeme().equals(".")
+        && is(expressionTokens.get(2), "*")) {
+      expression =
+          new ColumnExpression(new ColumnRef(Optional.of(expressionTokens.get(0).lexeme()), "*"));
+    } else {
+      expression = expressions.parseExpression(expressionTokens);
+    }
+    if (expression instanceof ColumnExpression column && column.column().column().equals("*")) {
+      if (alias.isPresent())
+        throw syntax("A wildcard cannot have an output alias", tokens.get(start));
+    }
+    return new SelectItem(expression, alias);
+  }
+
+  private static List<ColumnRef> parseColumnSegment(List<Token> tokens, int start, int end) {
+    List<ColumnRef> columns = new ArrayList<>();
+    int cursor = start;
+    while (cursor < end) {
+      int[] current = {cursor};
+      columns.add(parseColumn(tokens, current));
+      cursor = current[0];
+      if (cursor < end) {
+        if (!is(tokens.get(cursor), ","))
+          throw syntax("Expected ',' in GROUP BY", tokens.get(cursor));
+        cursor++;
+      }
+    }
+    if (columns.isEmpty()) throw syntax("Expected a column after GROUP BY", tokenAt(tokens, end));
+    return List.copyOf(columns);
   }
 
   /** {@code LIMIT n}: n is an unsigned integer literal from 0 to {@link Long#MAX_VALUE}. */
@@ -133,21 +223,6 @@ public class SqlParser {
     return new TableSource(table.lexeme(), alias);
   }
 
-  private static List<ColumnRef> parseColumnList(
-      List<Token> tokens, int[] cursor, String endKeyword, boolean allowEmpty) {
-    List<ColumnRef> columns = new ArrayList<>();
-    if (allowEmpty && peek(tokens, cursor, endKeyword)) return List.of();
-    columns.add(parseColumn(tokens, cursor));
-    while (peek(tokens, cursor, ",")) {
-      cursor[0]++;
-      columns.add(parseColumn(tokens, cursor));
-    }
-    if (!peek(tokens, cursor, endKeyword)) {
-      throw syntax("Expected " + endKeyword + " after column list", tokenAt(tokens, cursor[0]));
-    }
-    return List.copyOf(columns);
-  }
-
   private static List<SortKey> parseSortKeys(List<Token> tokens, int[] cursor) {
     List<SortKey> keys = new ArrayList<>();
     while (true) {
@@ -182,7 +257,7 @@ public class SqlParser {
     return new ColumnRef(Optional.of(first.lexeme()), column.lexeme());
   }
 
-  private static int findClause(List<Token> tokens, int start, boolean stopAtOrder) {
+  private static int findNextClause(List<Token> tokens, int start) {
     int depth = 0;
     for (int index = start; index < tokens.size(); index++) {
       Token token = tokens.get(index);
@@ -192,12 +267,26 @@ public class SqlParser {
       if (depth == 0
           && (is(token, ";")
               || is(token, "LIMIT")
-              || (stopAtOrder
-                  && is(token, "ORDER")
+              || is(token, "HAVING")
+              || (is(token, "GROUP")
+                  && index + 1 < tokens.size()
+                  && is(tokens.get(index + 1), "BY"))
+              || (is(token, "ORDER")
                   && index + 1 < tokens.size()
                   && is(tokens.get(index + 1), "BY")))) return index;
     }
     if (depth != 0) throw syntax("Unclosed parenthesis", tokenAt(tokens, tokens.size()));
+    return tokens.size();
+  }
+
+  private static int findTopLevel(List<Token> tokens, int start, String keyword) {
+    int depth = 0;
+    for (int index = start; index < tokens.size(); index++) {
+      Token token = tokens.get(index);
+      if (depth == 0 && is(token, keyword)) return index;
+      if (is(token, "(")) depth++;
+      else if (is(token, ")")) depth--;
+    }
     return tokens.size();
   }
 
