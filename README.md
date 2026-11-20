@@ -72,6 +72,18 @@ Connect from a second terminal:
 ./gradlew :app:run --args='cli --host 127.0.0.1 --port 7777'
 ```
 
+### Table DDL
+
+The persistent server supports `CREATE TABLE` with `INTEGER`, `FLOAT`, `CHAR(n)`, and
+`VARCHAR(n)` columns, plus primary and foreign key declarations. A foreign key must
+reference the complete primary key of its target table. Primary key columns are non-null
+and unique, and foreign key values must reference an existing primary key.
+
+`DROP TABLE` defaults to `RESTRICT` and fails while another table references it. `CASCADE`
+removes those foreign key constraints while keeping the referencing tables and their rows.
+`CREATE TABLE` and `DROP TABLE` are rejected inside an explicit transaction because table
+catalog changes are not part of transaction rollback.
+
 The explicit stub server remains available to inspect application composition
 without relying on operational behavior:
 
