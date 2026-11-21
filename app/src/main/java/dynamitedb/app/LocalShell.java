@@ -41,7 +41,7 @@ final class LocalShell {
       }
       if (Files.notExists(data.resolve("active-generation.properties"))) {
         try (Stream<Path> entries = Files.list(data)) {
-          if (entries.findAny().isPresent()) {
+          if (entries.anyMatch(entry -> !RuntimeRootLock.isLockFile(entry))) {
             throw new IllegalArgumentException(
                 "Refusing nonempty directory without a database manifest: " + data);
           }

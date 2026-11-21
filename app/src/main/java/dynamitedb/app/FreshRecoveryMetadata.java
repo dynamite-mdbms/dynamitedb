@@ -18,7 +18,7 @@ final class FreshRecoveryMetadata {
   }
 
   private static boolean validate(Path entry, Path manifest, Path wal, SnapshotMetadata snapshot) {
-    if (entry.equals(manifest)) return true;
+    if (entry.equals(manifest) || RuntimeRootLock.isLockFile(entry)) return true;
     if (entry.equals(wal)) {
       try {
         return Files.size(wal) == 36;
