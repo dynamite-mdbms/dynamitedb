@@ -1,0 +1,8 @@
+#!/bin/sh
+
+wrapper_dir=$(CDPATH= cd -P "$(dirname "$0")" && pwd) || exit 1
+if ! (cd "$wrapper_dir" && ./gradlew --quiet :app:installDist); then
+  echo "dynamitedb: Gradle installDist failed" >&2
+  exit 1
+fi
+exec "$wrapper_dir/app/build/install/app/bin/app" shell "$@"

@@ -927,6 +927,8 @@ sealed	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSou
 sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.AggregateExpression|dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression|dynamitedb.contracts.query.ExistsSubqueryExpression|dynamitedb.contracts.query.ScalarSubqueryExpression|dynamitedb.contracts.query.UnaryExpression
 sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.AggregatePlan|dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.CreateTablePlan|dynamitedb.contracts.query.DropTablePlan|dynamitedb.contracts.query.TransactionCommandPlan
 helper	dynamitedb.app.Main
+helper	dynamitedb.app.LocalShell
+helper	dynamitedb.app.LocalShell$Options
 helper	dynamitedb.app.driver.DriverCli
 helper	dynamitedb.app.mock.MockRuntime
 helper	dynamitedb.frm.mock.MockRecoveryContext
