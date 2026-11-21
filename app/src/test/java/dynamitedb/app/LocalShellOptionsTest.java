@@ -64,7 +64,12 @@ class LocalShellOptionsTest {
     LocalShell.run(
         new String[] {"--help", "--data-dir", database.toString()},
         new java.io.PrintWriter(output, true));
-    assertTrue(output.toString().contains("default: ./data"));
+    assertTrue(output.toString().contains("database folder"));
+    assertTrue(output.toString().contains(":read PATH"));
+    assertTrue(output.toString().contains("compatible UTF-8 SQL script"));
+    assertTrue(output.toString().contains("relative to the current directory"));
+    assertTrue(output.toString().contains("stops at the first error"));
+    assertTrue(output.toString().contains("Up/Down"));
     assertFalse(Files.exists(database));
   }
 }

@@ -22,4 +22,15 @@ class SqlStatementReaderTest {
     assertEquals("SELECT", new Lexer().tokenize(statement).get(0).lexeme());
     assertNull(reader.next());
   }
+
+  @Test
+  void pastedMultilineSqlKeepsTheCurrentStatementAndFollowingStatement() throws Exception {
+    SqlStatementReader reader =
+        new SqlStatementReader(new StringReader("SELECT 'existing';\nSELECT\n  2;\nSELECT 3;"));
+
+    assertEquals("SELECT 'existing';", reader.next());
+    assertEquals("SELECT\n  2;", reader.next());
+    assertEquals("SELECT 3;", reader.next());
+    assertNull(reader.next());
+  }
 }

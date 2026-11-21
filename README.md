@@ -21,8 +21,15 @@ time to reopen it:
 ./dynamitedb --data-dir "$HOME/dynamitedb-practice"
 ```
 
+In a supported interactive terminal, press any key on the splash screen to open
+the SQL prompt. Use Up and Down to recall commands from the current session.
+You can paste multiple SQL statements; terminals that support bracketed paste
+let you review the pasted text before pressing Enter. Piped input skips the
+splash and line editor.
+
 At the database prompt, end SQL with `;`. Try `SELECT * FROM student;`.
-Shell commands go on their own line without a semicolon:
+Type `:help` for usage and examples. Shell commands go on their own line without
+a semicolon:
 
 ```text
 :help
