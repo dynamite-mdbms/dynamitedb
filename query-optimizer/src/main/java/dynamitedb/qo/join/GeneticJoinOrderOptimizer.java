@@ -56,15 +56,10 @@ public final class GeneticJoinOrderOptimizer {
 
   private PlanNode rewrite(PlanNode node) {
     return switch (node) {
-      case JoinPlan join -> {
-        PlanNode rewritten =
-            new JoinPlan(
-                rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition());
-        if (join.kind() == JoinKind.CARTESIAN || join.kind() == JoinKind.THETA) {
-          yield optimizeJoin(rewritten).bestPlan();
-        }
-        yield rewritten;
-      }
+      // One search covers the whole CARTESIAN/THETA tree, since flatten() collects all of it.
+      case JoinPlan join when join.kind() != JoinKind.NATURAL -> optimizeJoin(join).bestPlan();
+      case JoinPlan join ->
+          new JoinPlan(rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition());
       case FilterPlan filter -> new FilterPlan(rewrite(filter.child()), filter.predicate());
       case ProjectPlan project -> ProjectPlan.fromItems(rewrite(project.child()), project.items());
       case SortPlan sort -> new SortPlan(rewrite(sort.child()), sort.keys());
@@ -93,16 +88,11 @@ public final class GeneticJoinOrderOptimizer {
           original, baselineCost, original, baselineCost, List.of(original));
     }
 
-    List<Integer> naturalOrder = new ArrayList<>();
-    for (int index = 0; index < flat.leaves().size(); index++) naturalOrder.add(index);
-    List<List<Integer>> allOrders = new ArrayList<>();
-    permute(new ArrayList<>(naturalOrder), 0, allOrders);
-    Collections.shuffle(allOrders, random);
-    int targetSize = Math.min(config.populationSize(), allOrders.size());
+    long orders = 1;
+    for (int n = 2; n <= flat.leaves().size() && orders < config.populationSize(); n++) orders *= n;
+    int targetSize = (int) Math.min(config.populationSize(), orders);
     Map<List<Integer>, Candidate> population = new LinkedHashMap<>();
-    for (int index = 0; index < targetSize; index++) {
-      add(population, allOrders.get(index), flat);
-    }
+    fillRandomly(population, targetSize, flat);
 
     for (int generation = 0; generation < config.generations(); generation++) {
       List<Candidate> ranked = ranked(population);
@@ -121,10 +111,7 @@ public final class GeneticJoinOrderOptimizer {
         add(next, child, flat);
       }
 
-      int fill = 0;
-      while (next.size() < targetSize) {
-        add(next, allOrders.get(fill++), flat);
-      }
+      fillRandomly(next, targetSize, flat);
       population = next;
     }
 
@@ -135,6 +122,16 @@ public final class GeneticJoinOrderOptimizer {
       return new OptimizationResult(original, baselineCost, original, baselineCost, plans(ranked));
     }
     return new OptimizationResult(original, baselineCost, best.plan(), best.cost(), plans(ranked));
+  }
+
+  /** Tops the population up with random join orders; {@code size} never exceeds n!. */
+  private void fillRandomly(Map<List<Integer>, Candidate> population, int size, FlatJoin flat) {
+    List<Integer> order = new ArrayList<>();
+    for (int index = 0; index < flat.leaves().size(); index++) order.add(index);
+    while (population.size() < size) {
+      Collections.shuffle(order, random);
+      add(population, order, flat);
+    }
   }
 
   private void add(Map<List<Integer>, Candidate> population, List<Integer> order, FlatJoin flat) {
@@ -198,18 +195,6 @@ public final class GeneticJoinOrderOptimizer {
     return candidates.stream().map(Candidate::plan).toList();
   }
 
-  private static void permute(List<Integer> order, int start, List<List<Integer>> result) {
-    if (start == order.size()) {
-      result.add(List.copyOf(order));
-      return;
-    }
-    for (int index = start; index < order.size(); index++) {
-      Collections.swap(order, start, index);
-      permute(order, start + 1, result);
-      Collections.swap(order, start, index);
-    }
-  }
-
   private static FlatJoin flatten(PlanNode node) {
     if (!(node instanceof JoinPlan join)) return null;
     List<PlanNode> leaves = new ArrayList<>();
@@ -233,24 +218,15 @@ public final class GeneticJoinOrderOptimizer {
       return false;
     }
     if (!(join.right() instanceof JoinPlan)) leaves.add(join.right());
-    join.condition().ifPresent(conditions::add);
+    join.condition().ifPresent(c -> conditions.addAll(PlanExpressions.conjuncts(c)));
     return true;
   }
 
+  /** Left-deep tree in chromosome order, each conjunct on the first join that can evaluate it. */
   private static PlanNode rebuild(FlatJoin flat, List<Integer> order) {
-    PlanNode plan = flat.leaves().get(order.get(0));
-    for (int index = 1; index < order.size(); index++) {
-      plan =
-          new JoinPlan(
-              plan,
-              flat.leaves().get(order.get(index)),
-              JoinKind.CARTESIAN,
-              java.util.Optional.empty());
-    }
-    if (flat.conditions().isEmpty()) return plan;
-    Expression condition = PlanExpressions.and(flat.conditions());
-    JoinPlan top = (JoinPlan) plan;
-    return new JoinPlan(top.left(), top.right(), JoinKind.THETA, java.util.Optional.of(condition));
+    List<PlanNode> leaves = order.stream().map(flat.leaves()::get).toList();
+    return JoinOrderOptimizer.attachConditions(
+        JoinOrderOptimizer.leftDeep(leaves), flat.conditions());
   }
 
   public record Config(
