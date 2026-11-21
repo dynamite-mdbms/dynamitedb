@@ -237,4 +237,43 @@ class BlockNestedLoopJoinOperatorTest {
     BlockNestedLoopJoinOperator op = join(table(STUDENTS), table(TAKES), JoinKind.CARTESIAN);
     assertThrows(DbmsException.class, op::next);
   }
+
+  @Test
+  @DisplayName("open() ulang saat masih terbuka menutup anak lebih dulu dan mulai dari awal")
+  void reopenWhileOpenClosesChildrenAndStartsOver() {
+    ListOperator left = table(STUDENTS, r(1, "A"), r(2, "B"));
+    ListOperator right = table(TAKES, r(1, "SBD"));
+    BlockNestedLoopJoinOperator op = join(left, right, JoinKind.CARTESIAN);
+
+    op.open();
+    op.next();
+    op.open();
+
+    assertEquals(1, left.closeCount);
+    assertEquals(1, right.closeCount);
+    int count = 0;
+    while (op.next().isPresent()) {
+      count++;
+    }
+    assertEquals(2, count);
+    op.close();
+  }
+
+  @Test
+  @DisplayName("close() sebelum open() dan close() dua kali tidak menutup anak berulang")
+  void closeIsSafeBeforeOpenAndTwice() {
+    ListOperator left = table(STUDENTS, r(1, "A"));
+    ListOperator right = table(TAKES, r(1, "SBD"));
+    BlockNestedLoopJoinOperator op = join(left, right, JoinKind.CARTESIAN);
+
+    op.close();
+    assertEquals(0, left.closeCount);
+
+    op.open();
+    op.next();
+    op.close();
+    op.close();
+    assertEquals(1, left.closeCount);
+    assertEquals(1, right.closeCount);
+  }
 }
