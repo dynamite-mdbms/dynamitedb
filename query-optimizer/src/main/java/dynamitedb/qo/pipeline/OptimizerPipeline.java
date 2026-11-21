@@ -20,6 +20,7 @@ import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.qo.join.BestPlanSelector;
 import dynamitedb.qo.join.GeneticJoinOrderOptimizer;
 import dynamitedb.qo.join.JoinOrderOptimizer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -49,10 +50,11 @@ public class OptimizerPipeline {
   public PlanNode optimize(PlanNode plan) {
     PlanNode rewritten = withOptimizedSubqueries(plan);
     for (PlanRewrite rewrite : rewrites) rewritten = rewrite.rewrite(rewritten);
+    List<PlanNode> candidates = new ArrayList<>(joinEnumerator.enumerate(rewritten));
+    // QO-18: the genetic plan competes with the heuristic ones on the same QO-08 cost.
     if (geneticJoinOrderOptimizer != null) {
-      return geneticJoinOrderOptimizer.optimize(rewritten).bestPlan();
+      candidates.add(geneticJoinOrderOptimizer.optimize(rewritten).bestPlan());
     }
-    List<PlanNode> candidates = joinEnumerator.enumerate(rewritten);
     return candidates.isEmpty() ? rewritten : selector.choose(candidates);
   }
 

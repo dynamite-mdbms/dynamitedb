@@ -19,6 +19,7 @@ import dynamitedb.qo.binding.CostEstimator;
 import dynamitedb.qo.facade.QueryOptimizerImpl;
 import dynamitedb.qo.join.AccessPathOptimizer;
 import dynamitedb.qo.join.BestPlanSelector;
+import dynamitedb.qo.join.GeneticJoinOrderOptimizer;
 import dynamitedb.qo.join.JoinOrderOptimizer;
 import dynamitedb.qo.join.JoinRewriter;
 import dynamitedb.qo.parser.ExpressionParser;
@@ -223,7 +224,9 @@ public class QueryOptimizerDriver {
                 new JoinRewriter(),
                 new AccessPathOptimizer(catalog)),
             new JoinOrderOptimizer(catalog),
-            new BestPlanSelector(cost)),
+            new BestPlanSelector(cost),
+            // Fixed seed keeps the driver's report repeatable.
+            new GeneticJoinOrderOptimizer(cost, GeneticJoinOrderOptimizer.Config.defaults(), 1L)),
         cost,
         new PlanVisualizer());
   }
