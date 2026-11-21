@@ -16,9 +16,11 @@ final class LocalShell {
   static Options parse(String[] args) {
     Path dataDirectory = DbmsConfig.defaults().dataDirectory();
     boolean help = false;
+    boolean geneticOptimizer = false;
     for (int index = 0; index < args.length; index++) {
       switch (args[index]) {
         case "--help" -> help = true;
+        case "--genetic-optimizer" -> geneticOptimizer = true;
         case "--data-dir" -> {
           if (index + 1 == args.length || args[index + 1].startsWith("--")) {
             throw new IllegalArgumentException("--data-dir requires a path");
@@ -30,7 +32,7 @@ final class LocalShell {
         default -> throw new IllegalArgumentException("Unknown shell option: " + args[index]);
       }
     }
-    return new Options(dataDirectory, help);
+    return new Options(dataDirectory, help, geneticOptimizer);
   }
 
   static Path prepareDataDirectory(Path dataDirectory) throws IOException {
@@ -56,8 +58,11 @@ final class LocalShell {
   static void run(String[] args, PrintWriter output) throws Exception {
     Options options = parse(args);
     if (options.help()) {
-      output.println("shell [--data-dir PATH] [--help]");
+      output.println("shell [--data-dir PATH] [--genetic-optimizer] [--help]");
       output.println("  --data-dir PATH selects the database folder (default: ./data).");
+      output.println(
+          "  --genetic-optimizer lets the genetic algorithm (QO-18) propose join orders"
+              + " (default: off).");
       output.println(
           "  :read PATH runs a compatible UTF-8 SQL script; paths are relative to the current directory.");
       output.println("  Example: :read scripts/setup.sql");
@@ -70,7 +75,7 @@ final class LocalShell {
 
     Path dataDirectory = prepareDataDirectory(options.dataDirectory());
     DbmsConfig config = new DbmsConfig(0, dataDirectory, ProtocolType.STRICT_2PL);
-    PersistentRuntime runtime = new PersistentRuntime(config);
+    PersistentRuntime runtime = new PersistentRuntime(config, options.geneticOptimizer());
     AtomicBoolean closed = new AtomicBoolean();
     Runnable closeOnce =
         () -> {
@@ -93,5 +98,5 @@ final class LocalShell {
     }
   }
 
-  record Options(Path dataDirectory, boolean help) {}
+  record Options(Path dataDirectory, boolean help, boolean geneticOptimizer) {}
 }
