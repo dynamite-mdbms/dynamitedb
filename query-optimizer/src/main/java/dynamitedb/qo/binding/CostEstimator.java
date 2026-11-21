@@ -12,8 +12,10 @@ import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.DropTablePlan;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
@@ -21,6 +23,7 @@ import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TransactionCommandPlan;
@@ -49,9 +52,12 @@ public class CostEstimator {
     return switch (plan) {
       case TableScanPlan scan -> stats(scan.table()).blockCount();
 
-      case IndexScanPlan scan -> 1 + indexRows(scan);
-      case FilterPlan filter -> estimate(filter.child());
-      case ProjectPlan project -> estimate(project.child());
+      case IndexScanPlan scan ->
+          1 + indexRows(scan) + scan.residual().map(this::subqueryCost).orElse(0.0);
+      case FilterPlan filter -> estimate(filter.child()) + subqueryCost(filter.predicate());
+      case ProjectPlan project ->
+          estimate(project.child())
+              + project.items().stream().mapToDouble(item -> subqueryCost(item.expression())).sum();
       case AggregatePlan aggregate -> estimate(aggregate.child());
 
       case SortPlan sort -> estimate(sort.child());
@@ -59,9 +65,15 @@ public class CostEstimator {
       case LimitPlan limit -> estimate(limit.child());
       case JoinPlan join ->
           estimate(join.left())
-              + Math.ceil(rows(join.left()) / JOIN_BLOCK_ROWS) * estimate(join.right());
+              + Math.ceil(rows(join.left()) / JOIN_BLOCK_ROWS) * estimate(join.right())
+              + join.condition().map(this::subqueryCost).orElse(0.0);
       case InsertPlan insert -> 1;
-      case UpdatePlan update -> estimate(update.source()) + rows(update.source());
+      case UpdatePlan update ->
+          estimate(update.source())
+              + rows(update.source())
+              + update.assignments().stream()
+                  .mapToDouble(assignment -> subqueryCost(assignment.expression()))
+                  .sum();
       case DeletePlan delete -> estimate(delete.source()) + rows(delete.source());
       case CreateIndexPlan create -> stats(create.table()).blockCount();
       // DDL rewrites catalog metadata only; one write each, like a single-row INSERT.
@@ -125,6 +137,23 @@ public class CostEstimator {
       if (groups >= inputRows) return inputRows;
     }
     return Math.min(inputRows, groups);
+  }
+
+  /**
+   * QP runs each uncorrelated subquery once per query and reuses the result for every row.
+   * shortcut: a subquery filter on a BNLJ inner side is counted again on every rescan although QP
+   * runs it once; split scan and subquery costs if such plans need exact numbers.
+   */
+  private double subqueryCost(Expression expression) {
+    return switch (expression) {
+      case InSubqueryExpression in ->
+          subqueryCost(in.operand()) + in.plan().map(this::estimate).orElse(0.0);
+      case ExistsSubqueryExpression exists -> exists.plan().map(this::estimate).orElse(0.0);
+      case ScalarSubqueryExpression scalar -> scalar.plan().map(this::estimate).orElse(0.0);
+      case BinaryExpression binary -> subqueryCost(binary.left()) + subqueryCost(binary.right());
+      case UnaryExpression unary -> subqueryCost(unary.operand());
+      default -> 0.0;
+    };
   }
 
   private double selectivity(Expression predicate, PlanNode scope) {
