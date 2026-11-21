@@ -19,6 +19,7 @@ import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.storage.ComparisonOp;
+import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
@@ -59,6 +60,24 @@ class AccessPathOptimizerTest {
     assertEquals("s", indexScan.alias());
     assertEquals(new IndexPredicate(ComparisonOp.EQ, new IntValue(42)), indexScan.predicate());
     assertEquals(Optional.empty(), indexScan.residual());
+  }
+
+  @Test
+  void probesHashIndexWithTheColumnTypeAndSkipsItForFractionalLiterals() {
+    // SM hash buckets compare Value records exactly: FloatValue(42.0) never finds IntValue(42).
+    PlanNode whole =
+        new FilterPlan(
+            scan("student", "s"),
+            compare(columnExpression("s", "id"), BinaryOp.EQ, literal(new FloatValue(42.0))));
+    IndexScanPlan indexScan =
+        assertInstanceOf(IndexScanPlan.class, new AccessPathOptimizer(catalog).rewrite(whole));
+    assertEquals(new IndexPredicate(ComparisonOp.EQ, new IntValue(42)), indexScan.predicate());
+
+    PlanNode fractional =
+        new FilterPlan(
+            scan("student", "s"),
+            compare(columnExpression("s", "id"), BinaryOp.EQ, literal(new FloatValue(42.5))));
+    assertEquals(fractional, new AccessPathOptimizer(catalog).rewrite(fractional));
   }
 
   @Test
