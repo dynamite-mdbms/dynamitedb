@@ -88,41 +88,72 @@ public final class PersistentRuntime implements AutoCloseable {
   private static final TransactionId ZERO_TX = new TransactionId(0);
   private static final LogSequenceNumber ZERO_LSN = new LogSequenceNumber(0);
 
+  private final RuntimeRootLock rootLock;
   private final LogManager log;
   private final DbmsBootstrap bootstrap;
   private final RecoveryManagerImpl recovery;
-  private final HistoryCatalog history;
   private final CheckpointManager checkpoint;
 
+  @SuppressWarnings("try")
   public PersistentRuntime(DbmsConfig config) {
     Objects.requireNonNull(config, "config");
     Path data = config.dataDirectory().toAbsolutePath().normalize();
-    Path manifestPath = data.resolve("active-generation.properties");
-    boolean fresh = Files.notExists(manifestPath);
-    UUID initialId = identity("active:", data);
-    UUID initialLineage = identity("lineage:", data);
-    RecoveryHighWater zero = new RecoveryHighWater(ZERO_LSN, ZERO_TX, 0, Optional.empty());
-    GenerationManifest initial = new GenerationManifest(initialId, initialLineage, ZERO_LSN, zero);
-    var manifests = new AtomicGenerationManifestStore(data, initial);
-    GenerationManifest active = manifests.readActive();
-    Path walPath = LogFile.path(data, active.walLineage());
-    if (fresh && Files.exists(walPath)) {
-      throw new DbmsException(
-          ErrorCode.RECOVERY_FAILURE, "WAL exists without an active generation manifest");
+    rootLock = RuntimeRootLock.acquire(data);
+    LogManager opened = null;
+    try {
+      Path manifestPath = data.resolve("active-generation.properties");
+      boolean fresh = Files.notExists(manifestPath);
+      UUID initialId = identity("active:", data);
+      UUID initialLineage = identity("lineage:", data);
+      RecoveryHighWater zero = new RecoveryHighWater(ZERO_LSN, ZERO_TX, 0, Optional.empty());
+      GenerationManifest initial =
+          new GenerationManifest(initialId, initialLineage, ZERO_LSN, zero);
+      var manifests = new AtomicGenerationManifestStore(data, initial);
+      GenerationManifest active = manifests.readActive();
+      Path walPath = LogFile.path(data, active.walLineage());
+      if (fresh && Files.exists(walPath)) {
+        throw new DbmsException(
+            ErrorCode.RECOVERY_FAILURE, "WAL exists without an active generation manifest");
+      }
+      if (!fresh && Files.notExists(walPath)) {
+        throw new DbmsException(
+            ErrorCode.RECOVERY_FAILURE, "Active generation manifest has no WAL");
+      }
+      opened =
+          fresh
+              ? LogManager.createNew(data, active.walLineage(), active.highWater())
+              : LogManager.openExisting(data, active);
+      if (!fresh) {
+        // Validate the selected WAL first; do not overwrite live files on corrupt WAL.
+        GenerationStore.installPublishedGenerationAtStartup(data, active);
+      }
+      SnapshotMetadata baseSnapshot =
+          new SnapshotMetadata(initialId, initialLineage, ZERO_LSN, Instant.EPOCH);
+      var components = compose(config, data, fresh, manifests, opened, walPath, baseSnapshot);
+      log = opened;
+      bootstrap = components.bootstrap();
+      recovery = components.recovery();
+      checkpoint = components.checkpoint();
+    } catch (RuntimeException | Error failure) {
+      try (var lock = rootLock;
+          var wal = opened) {
+        throw failure;
+      }
     }
-    if (!fresh && Files.notExists(walPath)) {
-      throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Active generation manifest has no WAL");
-    }
-    log =
-        fresh
-            ? LogManager.createNew(data, active.walLineage(), active.highWater())
-            : LogManager.openExisting(data, active);
+  }
 
+  private static Components compose(
+      DbmsConfig config,
+      Path data,
+      boolean fresh,
+      AtomicGenerationManifestStore manifests,
+      LogManager log,
+      Path walPath,
+      SnapshotMetadata baseSnapshot) {
+    Path manifestPath = data.resolve("active-generation.properties");
     var wal = new WalService(new CommitClock(), log);
     var disk = new DiskManager(data);
     var buffer = new BufferPool(disk, wal);
-    SnapshotMetadata baseSnapshot =
-        new SnapshotMetadata(initialId, initialLineage, ZERO_LSN, Instant.EPOCH);
     var catalog =
         new CatalogManager(
             data, null, FreshRecoveryMetadata.predicate(manifestPath, walPath, baseSnapshot));
@@ -153,12 +184,12 @@ public final class PersistentRuntime implements AutoCloseable {
 
     var crash =
         new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
-    checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
-    history = new HistoryCatalog(manifests, log, baseSnapshot);
+    var checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
+    var history = new HistoryCatalog(manifests, log, baseSnapshot);
     var historical =
         new HistoricalRecoveryManager(
             storageRecovery, history, storageRecovery, log, wal, manifests, concurrency);
-    recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
+    var recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
     var initializer = new RecoveryInitializer(manifests, recovery, concurrency);
 
     var cost = new CostEstimator(catalogAccess);
@@ -196,7 +227,7 @@ public final class PersistentRuntime implements AutoCloseable {
             new TableDdlExecutor(storage, concurrency));
     var processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
 
-    bootstrap =
+    var bootstrap =
         new DbmsBootstrap(
             processor,
             () -> {
@@ -225,7 +256,11 @@ public final class PersistentRuntime implements AutoCloseable {
                 history.replaceWithSnapshot(seededSnapshot);
               }
             });
+    return new Components(bootstrap, recovery, checkpoint);
   }
+
+  private record Components(
+      DbmsBootstrap bootstrap, RecoveryManagerImpl recovery, CheckpointManager checkpoint) {}
 
   public DbmsBootstrap bootstrap() {
     return bootstrap;
@@ -251,10 +286,16 @@ public final class PersistentRuntime implements AutoCloseable {
   }
 
   @Override
+  @SuppressWarnings("try")
   public void close() {
-    bootstrap.shutdown();
-    checkpoint.stopPeriodic();
-    log.close();
+    try (var lock = rootLock;
+        var wal = log) {
+      try {
+        bootstrap.shutdown();
+      } finally {
+        checkpoint.stopPeriodic();
+      }
+    }
   }
 
   private static UUID identity(String prefix, Path data) {

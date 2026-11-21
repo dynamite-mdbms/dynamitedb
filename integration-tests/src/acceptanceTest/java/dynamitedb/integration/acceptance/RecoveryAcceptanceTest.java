@@ -145,7 +145,7 @@ class RecoveryAcceptanceTest extends PackagedServerAcceptanceSupport {
     Path data = directory.resolve("exclusive-data");
     try (PackagedServerProcess owner = startServer(data, ProtocolType.STRICT_2PL);
         AcceptanceClient client = connect(owner)) {
-      assertStartupRefused(data, ProtocolType.STRICT_2PL, "WAL");
+      assertStartupRefused(data, ProtocolType.STRICT_2PL, "Database root already in use");
       assertEquals(50, client.execute("SELECT student_id FROM student;").rows().size());
     }
   }
