@@ -149,4 +149,18 @@ class SortOperatorTest {
     SortOperator sort = sortBy(table(STUDENTS), "gpa", SortDirection.ASC);
     assertThrows(DbmsException.class, sort::next);
   }
+
+  @Test
+  @DisplayName("open() ulang saat masih terbuka menutup anak lebih dulu")
+  void reopenWhileOpenClosesChildFirst() {
+    ListOperator child = table(STUDENTS, r("A", 1.0));
+    SortOperator sort = sortBy(child, "gpa", SortDirection.ASC);
+    sort.open();
+    sort.open();
+    assertEquals(2, child.openCount);
+    assertEquals(1, child.closeCount);
+    sort.close();
+    sort.close();
+    assertEquals(2, child.closeCount);
+  }
 }

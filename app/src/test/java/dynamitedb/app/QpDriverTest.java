@@ -9,7 +9,10 @@ import dynamitedb.app.cli.ResultRenderer;
 import dynamitedb.app.driver.DriverCli;
 import dynamitedb.app.mock.MockRuntime;
 import dynamitedb.app.server.TcpServer;
+import dynamitedb.contracts.api.QueryProcessor;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.QueryResult;
+import dynamitedb.contracts.query.SessionId;
 import dynamitedb.qp.driver.QueryProcessorTestDriver;
 import dynamitedb.qp.driver.QueryProcessorTestDriver.Scenario;
 import java.io.PrintWriter;
@@ -17,6 +20,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -28,9 +32,62 @@ class QpDriverTest {
     DriverCli driver = new DriverCli(new MockRuntime().processor());
     for (int run = 0; run < 2; run++) {
       var report = driver.runDemoSuite();
-      assertEquals(24, report.results().size());
+      assertEquals(27, report.results().size());
       assertTrue(report.passed(), report.results().toString());
+      assertEquals(
+          2,
+          report.results().stream().filter(result -> result.message().startsWith("Join:")).count());
+      assertEquals(
+          1,
+          report.results().stream().filter(result -> result.message().startsWith("Sort:")).count());
     }
+  }
+
+  @Test
+  void suiteRejectsWrongJoinRowsAndWrongSortOrder() {
+    QueryProcessor delegate = new MockRuntime().processor();
+    QueryProcessor incorrect =
+        new QueryProcessor() {
+          @Override
+          public SessionId openSession(String clientId) {
+            return delegate.openSession(clientId);
+          }
+
+          @Override
+          public QueryResult execute(SessionId session, String sql) {
+            QueryResult result = delegate.execute(session, sql);
+            if (sql.equals("SELECT * FROM demo, demo;")) {
+              return new QueryResult(
+                  result.schema(),
+                  Collections.nCopies(result.rows().size(), result.rows().getFirst()),
+                  result.affectedRows(),
+                  result.message());
+            }
+            if (sql.equals("SELECT * FROM demo ORDER BY id DESC;")) {
+              return new QueryResult(
+                  result.schema(),
+                  result.rows().reversed(),
+                  result.affectedRows(),
+                  result.message());
+            }
+            return result;
+          }
+
+          @Override
+          public void closeSession(SessionId session) {
+            delegate.closeSession(session);
+          }
+        };
+    var report = new DriverCli(incorrect).runDemoSuite();
+    assertFalse(report.passed());
+    assertEquals(
+        2,
+        report.results().stream()
+            .filter(result -> !result.passed())
+            .filter(
+                result ->
+                    result.message().startsWith("Join:") || result.message().startsWith("Sort:"))
+            .count());
   }
 
   @Test

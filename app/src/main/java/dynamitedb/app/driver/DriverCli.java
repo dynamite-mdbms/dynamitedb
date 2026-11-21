@@ -8,6 +8,7 @@ import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.QueryResult;
 import dynamitedb.contracts.query.SessionId;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.testing.TestReport;
@@ -22,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /** Interactive standalone driver; does not start a server or require the main CLI. */
 public final class DriverCli {
@@ -66,6 +68,23 @@ public final class DriverCli {
                     "Filter: only Ayu",
                     "SELECT * FROM demo WHERE id = 1;",
                     result -> result.rows().equals(List.of(demoRow(1, "Ayu")))),
+                success(
+                    "Join: all nine row combinations with qualified columns",
+                    "SELECT * FROM demo, demo;",
+                    DriverCli::hasCartesianRows),
+                success(
+                    "Join: empty input retains qualified headers",
+                    "SELECT * FROM demo, empty;",
+                    result ->
+                        result.rows().isEmpty()
+                            && qualifiedColumns(result)
+                                .equals(List.of("demo.id", "demo.name", "empty.id", "empty.name"))),
+                success(
+                    "Sort: complete rows ordered by id descending",
+                    "SELECT * FROM demo ORDER BY id DESC;",
+                    result ->
+                        qualifiedColumns(result).equals(List.of("demo.id", "demo.name"))
+                            && result.rows().equals(demoRows().reversed())),
                 success("Begin", "BEGIN;", result -> result.message().equals("BEGIN")),
                 success(
                     "Insert in transaction: 1 affected",
@@ -138,6 +157,37 @@ public final class DriverCli {
 
   private static Row demoRow(int id, String name) {
     return new Row(List.of(new IntValue(id), new TextValue(name)));
+  }
+
+  private static List<Row> demoRows() {
+    return List.of(
+        demoRow(1, "Ayu"),
+        demoRow(2, "Ishak 東京 😀"),
+        new Row(List.of(new IntValue(3), NullValue.INSTANCE)));
+  }
+
+  private static List<String> qualifiedColumns(QueryResult result) {
+    return result.schema().columns().stream()
+        .map(column -> column.relation() + "." + column.name())
+        .toList();
+  }
+
+  private static boolean hasCartesianRows(QueryResult result) {
+    List<Row> expected =
+        demoRows().stream()
+            .flatMap(
+                left ->
+                    demoRows().stream()
+                        .map(
+                            right ->
+                                new Row(
+                                    Stream.concat(left.values().stream(), right.values().stream())
+                                        .toList())))
+            .toList();
+    return qualifiedColumns(result)
+            .equals(List.of("demo.id", "demo.name", "other.id", "other.name"))
+        && result.rows().size() == expected.size()
+        && result.rows().containsAll(expected);
   }
 
   private static Scenario success(
