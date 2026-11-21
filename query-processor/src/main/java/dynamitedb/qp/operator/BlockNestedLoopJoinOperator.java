@@ -117,7 +117,9 @@ public class BlockNestedLoopJoinOperator implements Operator {
 
   @Override
   public void close() {
-    left.close();
+    if (isOpen) {
+      left.close();
+    }
     closeRight();
     block.clear();
     curRight = null;

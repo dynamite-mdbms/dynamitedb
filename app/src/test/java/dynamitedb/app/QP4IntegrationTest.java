@@ -318,7 +318,437 @@ class QP4IntegrationTest {
     assertEquals(4, result.schema().columns().size());
   }
 
+  // LIMIT + ORDER BY + JOIN
+  @Test
+  @DisplayName("ORDER BY gpa DESC LIMIT 5 mengambil lima gpa tertinggi (4.0)")
+  void limitAfterDescendingSortTakesHighestGpa() {
+    QueryResult result = sql("SELECT student_id, gpa FROM student ORDER BY gpa DESC LIMIT 5");
+
+    Set<Integer> expected = new HashSet<>();
+    for (int i = 1; i <= 50; i++) {
+      if (sampleGpa(i) != null && sampleGpa(i) == 4.0) {
+        expected.add(i);
+      }
+    }
+    assertEquals(5, result.rows().size());
+    Set<Integer> actual = new HashSet<>();
+    for (Row row : result.rows()) {
+      actual.add(intAt(row, 0));
+      assertEquals(4.0, number(row.values().get(1)));
+    }
+    assertEquals(expected, actual);
+  }
+
+  @Test
+  @DisplayName("ORDER BY gpa ASC LIMIT 5 dan ORDER BY tanpa arah LIMIT 5 mengambil kelima NULL")
+  void limitAfterAscendingSortTakesNullsFirst() {
+    QueryResult ascending = sql("SELECT student_id, gpa FROM student ORDER BY gpa ASC LIMIT 5");
+    QueryResult byDefault = sql("SELECT student_id, gpa FROM student ORDER BY gpa LIMIT 5");
+
+    Set<Integer> nullGpa = Set.of(10, 20, 30, 40, 50);
+    for (QueryResult result : List.of(ascending, byDefault)) {
+      assertEquals(5, result.rows().size());
+      Set<Integer> ids = new HashSet<>();
+      for (Row row : result.rows()) {
+        ids.add(intAt(row, 0));
+        assertTrue(row.values().get(1) instanceof NullValue, "NULL harus lebih dulu: " + row);
+      }
+      assertEquals(nullGpa, ids);
+    }
+  }
+
+  @Test
+  @DisplayName("ORDER BY name LIMIT 3 mengikuti urutan leksikografis teks")
+  void limitAfterTextSort() {
+    QueryResult result = sql("SELECT student_id, name FROM student ORDER BY name LIMIT 3");
+
+    List<String> names = new ArrayList<>();
+    for (int i = 1; i <= 50; i++) {
+      names.add("Student " + i);
+    }
+    java.util.Collections.sort(names);
+    assertEquals(
+        names.subList(0, 3), column(result, 1).stream().map(QP4IntegrationTest::text).toList());
+  }
+
+  @Test
+  @DisplayName("Conditional Join + ORDER BY DESC, ASC + LIMIT 3")
+  void limitAfterConditionalJoinWithMixedDirections() {
+    QueryResult result =
+        sql(
+            "SELECT student.student_id, enrollment.course_id FROM student JOIN enrollment"
+                + " ON student.student_id = enrollment.student_id"
+                + " ORDER BY student.student_id DESC, enrollment.course_id ASC LIMIT 3");
+
+    List<String> expected =
+        sampleEnrollments().stream()
+            .sorted(
+                java.util.Comparator.<int[]>comparingInt(e -> -e[0]).thenComparingInt(e -> e[1]))
+            .limit(3)
+            .map(e -> e[0] + "-" + e[1])
+            .toList();
+    assertEquals(List.of("50-25", "50-50", "49-24"), expected);
+    assertEquals(expected, pairs(result, 0, 1));
+  }
+
+  @Test
+  @DisplayName("Natural Join + ORDER BY ASC + LIMIT 5")
+  void limitAfterNaturalJoinAscending() {
+    QueryResult result =
+        sql(
+            "SELECT student_id, course_id, name FROM student NATURAL JOIN enrollment"
+                + " ORDER BY student_id ASC, course_id ASC LIMIT 5");
+
+    List<String> expected =
+        sampleEnrollments().stream()
+            .sorted(java.util.Comparator.<int[]>comparingInt(e -> e[0]).thenComparingInt(e -> e[1]))
+            .limit(5)
+            .map(e -> e[0] + "-" + e[1])
+            .toList();
+    assertEquals(3, result.schema().columns().size());
+    assertEquals(expected, pairs(result, 0, 1));
+    for (Row row : result.rows()) {
+      assertEquals("Student " + intAt(row, 0), text(row.values().get(2)));
+    }
+  }
+
+  @Test
+  @DisplayName("Join tiga tabel + ORDER BY DESC + LIMIT 4")
+  void limitAfterThreeTableJoinDescending() {
+    QueryResult result =
+        sql(
+            "SELECT student.student_id, course.course_id, course.credits FROM student"
+                + " JOIN enrollment ON student.student_id = enrollment.student_id"
+                + " JOIN course ON enrollment.course_id = course.course_id"
+                + " ORDER BY course.course_id DESC, student.student_id DESC LIMIT 4");
+
+    List<String> expected =
+        sampleEnrollments().stream()
+            .sorted(
+                java.util.Comparator.<int[]>comparingInt(e -> -e[1]).thenComparingInt(e -> -e[0]))
+            .limit(4)
+            .map(e -> e[0] + "-" + e[1])
+            .toList();
+    assertEquals(expected, pairs(result, 0, 1));
+    for (Row row : result.rows()) {
+      assertEquals(2 + intAt(row, 1) % 3, intAt(row, 2), "credits = 2 + course_id % 3");
+    }
+  }
+
+  @Test
+  @DisplayName("Join + WHERE + ORDER BY DESC, ASC + LIMIT 4")
+  void limitAfterJoinWhereAndSort() {
+    QueryResult result =
+        sql(
+            "SELECT student.student_id, enrollment.course_id, student.gpa FROM student"
+                + " JOIN enrollment ON student.student_id = enrollment.student_id"
+                + " WHERE student.gpa >= 3.5"
+                + " ORDER BY student.gpa DESC, enrollment.course_id ASC LIMIT 4");
+
+    List<String> expected =
+        sampleEnrollments().stream()
+            .filter(e -> sampleGpa(e[0]) != null && sampleGpa(e[0]) >= 3.5)
+            .sorted(
+                java.util.Comparator.<int[]>comparingDouble(e -> -sampleGpa(e[0]))
+                    .thenComparingInt(e -> e[1]))
+            .limit(4)
+            .map(e -> e[0] + "-" + e[1])
+            .toList();
+    assertEquals(expected, pairs(result, 0, 1));
+    for (Row row : result.rows()) {
+      assertTrue(number(row.values().get(2)) >= 3.5);
+    }
+  }
+
+  @Test
+  @DisplayName("LIMIT 0, LIMIT melebihi jumlah baris, dan LIMIT pada hasil kosong di atas join")
+  void limitBoundariesOnJoin() {
+    String join =
+        "SELECT student.student_id, enrollment.course_id FROM student JOIN enrollment"
+            + " ON student.student_id = enrollment.student_id";
+
+    QueryResult zero = sql(join + " ORDER BY student.student_id LIMIT 0");
+    assertEquals(0, zero.rows().size());
+    assertEquals(2, zero.schema().columns().size());
+
+    QueryResult all = sql(join + " ORDER BY student.student_id DESC, enrollment.course_id DESC");
+    QueryResult larger =
+        sql(join + " ORDER BY student.student_id DESC, enrollment.course_id DESC LIMIT 1000");
+    assertEquals(100, larger.rows().size());
+    assertEquals(all.rows(), larger.rows());
+
+    QueryResult empty =
+        sql(join + " WHERE student.student_id > 1000 ORDER BY student.student_id LIMIT 5");
+    assertEquals(0, empty.rows().size());
+    assertEquals(2, empty.schema().columns().size());
+  }
+
+  @Test
+  @DisplayName("COUNT(*), COUNT(gpa), SUM, AVG, MIN, MAX pada student.gpa (NULL diabaikan)")
+  void aggregatesOnStudentGpa() {
+    Row row =
+        single(
+            sql(
+                "SELECT COUNT(*), COUNT(gpa), SUM(gpa), AVG(gpa), MIN(gpa), MAX(gpa)"
+                    + " FROM student"));
+
+    int count = 0;
+    double sum = 0;
+    double min = Double.MAX_VALUE;
+    double max = -Double.MAX_VALUE;
+    for (int i = 1; i <= 50; i++) {
+      Double gpa = sampleGpa(i);
+      if (gpa != null) {
+        count++;
+        sum += gpa;
+        min = Math.min(min, gpa);
+        max = Math.max(max, gpa);
+      }
+    }
+    assertEquals(new IntValue(50), row.values().get(0));
+    assertEquals(new IntValue(count), row.values().get(1)); // 45
+    assertEquals(sum, number(row.values().get(2)), 1e-9); // 135.0
+    assertEquals(sum / count, number(row.values().get(3)), 1e-9); // 3.0
+    assertEquals(min, number(row.values().get(4)));
+    assertEquals(max, number(row.values().get(5)));
+  }
+
+  @Test
+  @DisplayName("Agregat di atas Conditional Join dan Natural Join")
+  void aggregatesOverJoin() {
+    Row conditional =
+        single(
+            sql(
+                "SELECT COUNT(*), COUNT(enrollment.score), SUM(enrollment.score),"
+                    + " MIN(enrollment.score), MAX(student.gpa) FROM student JOIN enrollment"
+                    + " ON student.student_id = enrollment.student_id"));
+    Row natural = single(sql("SELECT COUNT(*), COUNT(score) FROM student NATURAL JOIN enrollment"));
+
+    int count = 0;
+    double sum = 0;
+    double min = Double.MAX_VALUE;
+    for (int i = 0; i < 100; i++) {
+      Double score = sampleScore(i);
+      if (score != null) {
+        count++;
+        sum += score;
+        min = Math.min(min, score);
+      }
+    }
+    assertEquals(new IntValue(100), conditional.values().get(0));
+    assertEquals(new IntValue(count), conditional.values().get(1)); // 88
+    assertEquals(sum, number(conditional.values().get(2)), 1e-9); // 6810.0
+    assertEquals(min, number(conditional.values().get(3))); // 60.5
+    assertEquals(4.0, number(conditional.values().get(4)));
+    assertEquals(List.of(new IntValue(100), new IntValue(count)), natural.values());
+  }
+
+  @Test
+  @DisplayName("GROUP BY + HAVING + ORDER BY DESC + LIMIT, termasuk agregat di atas Natural Join")
+  void groupedAggregatesWithSortAndLimit() {
+    QueryResult byGrade =
+        sql(
+            "SELECT grade, COUNT(*) AS n, COUNT(gpa) AS ng FROM student"
+                + " GROUP BY grade HAVING COUNT(*) > 12 ORDER BY grade DESC LIMIT 1");
+    int n = 0;
+    int ng = 0;
+    for (int i = 1; i <= 50; i++) {
+      if (i % 4 == 2) {
+        n++;
+        if (sampleGpa(i) != null) {
+          ng++;
+        }
+      }
+    }
+    assertEquals(1, byGrade.rows().size());
+    Row grade = byGrade.rows().get(0);
+    assertEquals("C", text(grade.values().get(0)));
+    assertEquals(List.of(new IntValue(n), new IntValue(ng)), grade.values().subList(1, 3));
+
+    QueryResult perStudent =
+        sql(
+            "SELECT student_id, COUNT(*) AS n FROM student NATURAL JOIN enrollment"
+                + " GROUP BY student_id ORDER BY student_id DESC LIMIT 3");
+    List<String> expected = new ArrayList<>();
+    for (int student = 50; student > 47; student--) {
+      int s = student;
+      expected.add(s + "-" + sampleEnrollments().stream().filter(e -> e[0] == s).count());
+    }
+    assertEquals(expected, pairs(perStudent, 0, 1));
+  }
+
+  @Test
+  @DisplayName("JOIN ... ON langsung diikuti GROUP BY dan HAVING, lalu ORDER BY dan LIMIT")
+  void joinOnFollowedByGroupByAndHaving() {
+    String join = " FROM student JOIN enrollment ON student.student_id = enrollment.student_id";
+
+    QueryResult perStudent =
+        sql(
+            "SELECT student.student_id, COUNT(*) AS n"
+                + join
+                + " GROUP BY student.student_id HAVING COUNT(*) > 1"
+                + " ORDER BY student.student_id DESC LIMIT 3");
+    List<String> expected = new ArrayList<>();
+    for (int student = 50; student > 47; student--) {
+      int s = student;
+      expected.add(s + "-" + sampleEnrollments().stream().filter(e -> e[0] == s).count());
+    }
+    assertEquals(expected, pairs(perStudent, 0, 1));
+
+    assertEquals(
+        List.of(new IntValue(100)),
+        single(sql("SELECT COUNT(*)" + join + " HAVING COUNT(*) > 1")).values());
+
+    QueryResult byGrade =
+        sql(
+            "SELECT student.grade, SUM(enrollment.course_id) AS total"
+                + join
+                + " GROUP BY student.grade ORDER BY student.grade");
+    int[] totals = new int[4];
+    for (int[] e : sampleEnrollments()) {
+      totals[e[0] % 4] += e[1];
+    }
+    List<String> expectedTotals = new ArrayList<>();
+    for (int g = 0; g < 4; g++) {
+      expectedTotals.add((char) ('A' + g) + "-" + totals[g]);
+    }
+    List<String> actualTotals = new ArrayList<>();
+    for (Row row : byGrade.rows()) {
+      actualTotals.add(text(row.values().get(0)) + "-" + intAt(row, 1));
+    }
+    assertEquals(expectedTotals, actualTotals);
+  }
+
+  @Test
+  @DisplayName(
+      "Agregat atas WHERE yang tidak cocok: 1 baris (COUNT 0, lainnya NULL); GROUP BY 0 baris")
+  void aggregatesOnEmptyFilteredInput() {
+    Row global =
+        single(
+            sql(
+                "SELECT COUNT(*), COUNT(gpa), SUM(gpa), AVG(gpa), MIN(gpa), MAX(gpa) FROM student"
+                    + " WHERE student_id > 1000"));
+    assertEquals(new IntValue(0), global.values().get(0));
+    assertEquals(new IntValue(0), global.values().get(1));
+    for (int i = 2; i < 6; i++) {
+      assertTrue(global.values().get(i) instanceof NullValue, "kolom ke-" + i);
+    }
+
+    Row overJoin =
+        single(
+            sql(
+                "SELECT COUNT(*), SUM(enrollment.score) FROM student JOIN enrollment"
+                    + " ON student.student_id = enrollment.student_id"
+                    + " WHERE student.student_id > 1000"));
+    assertEquals(List.of(new IntValue(0), NullValue.INSTANCE), overJoin.values());
+
+    assertEquals(
+        0,
+        sql("SELECT grade, COUNT(*) FROM student WHERE student_id > 1000 GROUP BY grade")
+            .rows()
+            .size());
+  }
+
+  @Test
+  @DisplayName("Kolom yang seluruhnya NULL: COUNT(kolom) 0, SUM/AVG/MIN/MAX NULL")
+  void aggregatesOnAllNullColumn() {
+    sql("CREATE TABLE qp4_nulls (id INTEGER PRIMARY KEY, val INTEGER, f FLOAT)");
+    for (int id = 1; id <= 3; id++) {
+      assertEquals(1, sql("INSERT INTO qp4_nulls VALUES (" + id + ", NULL, NULL)").affectedRows());
+    }
+
+    Row row =
+        single(
+            sql(
+                "SELECT COUNT(*), COUNT(val), SUM(val), AVG(val), MIN(val), MAX(val), SUM(f)"
+                    + " FROM qp4_nulls"));
+    assertEquals(new IntValue(3), row.values().get(0));
+    assertEquals(new IntValue(0), row.values().get(1));
+    for (int i = 2; i < 7; i++) {
+      assertTrue(row.values().get(i) instanceof NullValue, "kolom ke-" + i);
+    }
+  }
+
+  @Test
+  @DisplayName(
+      "SUM INTEGER: 2147483647 dua kali overflow (INVALID_STATE), batas tepat tidak overflow")
+  void integerSumOverflowAndExactBoundary() {
+    sql("CREATE TABLE qp4_sum (id INTEGER PRIMARY KEY, val INTEGER)");
+    sql("INSERT INTO qp4_sum VALUES (1, 2147483647)");
+    sql("INSERT INTO qp4_sum VALUES (2, 2147483647)");
+
+    DbmsException overflow =
+        assertThrows(DbmsException.class, () -> sql("SELECT SUM(val) FROM qp4_sum"));
+    assertEquals(ErrorCode.INVALID_STATE, overflow.getCode());
+    assertEquals(
+        (double) Integer.MAX_VALUE,
+        number(single(sql("SELECT AVG(val) FROM qp4_sum")).values().get(0)));
+
+    sql("INSERT INTO qp4_sum VALUES (3, 2147483640)");
+    sql("INSERT INTO qp4_sum VALUES (4, 7)");
+    assertEquals(
+        new IntValue(Integer.MAX_VALUE),
+        single(sql("SELECT SUM(val) FROM qp4_sum WHERE id >= 3")).values().get(0));
+
+    sql("INSERT INTO qp4_sum VALUES (5, -2147483647)");
+    sql("INSERT INTO qp4_sum VALUES (6, -1)");
+    assertEquals(
+        new IntValue(Integer.MIN_VALUE),
+        single(sql("SELECT SUM(val) FROM qp4_sum WHERE id >= 5")).values().get(0));
+  }
+
+  @Test
+  @DisplayName("SUM INTEGER boleh melewati batas di tengah penjumlahan bila total akhirnya muat")
+  void integerSumMayLeaveTheRangeWhileAccumulating() {
+    sql("CREATE TABLE qp4_running (id INTEGER PRIMARY KEY, val INTEGER)");
+    sql("INSERT INTO qp4_running VALUES (1, 2147483647)");
+    sql("INSERT INTO qp4_running VALUES (2, 7)");
+    sql("INSERT INTO qp4_running VALUES (3, -2147483647)");
+    sql("INSERT INTO qp4_running VALUES (4, 2147483647)");
+
+    assertEquals(
+        new IntValue(7),
+        single(sql("SELECT SUM(val) FROM qp4_running WHERE id <= 3")).values().get(0));
+    assertEquals(
+        new IntValue(Integer.MAX_VALUE),
+        single(sql("SELECT SUM(val) FROM qp4_running WHERE id = 1 OR id = 3 OR id = 4"))
+            .values()
+            .get(0));
+
+    DbmsException overflow =
+        assertThrows(DbmsException.class, () -> sql("SELECT SUM(val) FROM qp4_running"));
+    assertEquals(ErrorCode.INVALID_STATE, overflow.getCode());
+  }
+
   // Helper
+  private static List<int[]> sampleEnrollments() {
+    List<int[]> rows = new ArrayList<>();
+    for (int i = 0; i < 100; i++) {
+      rows.add(new int[] {i % 50 + 1, (i % 50 + (i / 50) * 25) % 50 + 1});
+    }
+    return rows;
+  }
+
+  private static Double sampleGpa(int i) {
+    return i % 10 == 0 ? null : 2.0 + (i % 9) * 0.25;
+  }
+
+  private static Double sampleScore(int i) {
+    return i % 9 == 0 ? null : 60.0 + (i % 81) * 0.5;
+  }
+
+  private static List<String> pairs(QueryResult result, int first, int second) {
+    List<String> pairs = new ArrayList<>();
+    for (Row row : result.rows()) {
+      pairs.add(intAt(row, first) + "-" + intAt(row, second));
+    }
+    return pairs;
+  }
+
+  private static Row single(QueryResult result) {
+    assertEquals(1, result.rows().size(), "agregat tanpa GROUP BY harus menghasilkan 1 baris");
+    return result.rows().get(0);
+  }
 
   private void start(ProtocolType protocol, String dataDirectory) throws Exception {
     DbmsConfig config = new DbmsConfig(0, directory.resolve(dataDirectory), protocol);
