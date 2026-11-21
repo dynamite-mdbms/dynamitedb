@@ -278,6 +278,7 @@ class BinderTest {
     assertTrue(failure.getMessage().contains("Duplicate UPDATE target"));
   }
 
+  @Test
   void bindsCreateTableKeysToCanonicalNames() {
     var create =
         (CreateTableStatement)
