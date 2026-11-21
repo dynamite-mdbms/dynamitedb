@@ -1,10 +1,12 @@
 package dynamitedb.app.cli;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.app.mock.MockRuntime;
 import dynamitedb.app.server.TcpServer;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -13,9 +15,44 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.jline.terminal.impl.DumbTerminal;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class CliClientTest {
+  @ParameterizedTest
+  @ValueSource(strings = {"\033[A\033[A\033[B", "\033OA\033OA\033OB"})
+  void historyWorksInBothXtermCursorModes(String arrows) throws IOException {
+    try (DumbTerminal terminal = editorTerminal("SELECT 1;\rSELECT 2;\r" + arrows + "\r")) {
+      var editor = CliClient.createLineReader(terminal);
+      assertEquals("SELECT 1;", editor.readLine());
+      assertEquals("SELECT 2;", editor.readLine());
+      assertEquals("SELECT 2;", editor.readLine());
+    }
+  }
+
+  @Test
+  void editorPreservesSqlAndLeavesMultilineStatementsToSqlReader() throws IOException {
+    try (DumbTerminal terminal =
+        editorTerminal("SELECT 1;\rSELECT 'a\\b!!\r''c';\r:read folder\\\r")) {
+      var editor = CliClient.createLineReader(terminal);
+      assertEquals("SELECT 1;", editor.readLine());
+      assertEquals("SELECT 'a\\b!!", editor.readLine());
+      assertEquals("''c';", editor.readLine());
+      assertEquals(":read folder\\", editor.readLine());
+    }
+  }
+
+  private static DumbTerminal editorTerminal(String input) throws IOException {
+    return new DumbTerminal(
+        "shell-test",
+        "xterm",
+        new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)),
+        new ByteArrayOutputStream(),
+        StandardCharsets.UTF_8);
+  }
+
   @Test
   void localEntryDisplaysBannerAndNormalizedDirectoryBeforeConnecting() throws Exception {
     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -34,6 +71,8 @@ class CliClientTest {
     assertTrue(output.contains(directory.normalize().toString()));
     assertTrue(output.contains("End SQL with ';'"));
     assertTrue(output.contains(":read PATH"));
+    assertTrue(!output.contains("\u001b["));
+    assertTrue(!output.contains("Press any key"));
   }
 
   @Test
@@ -121,6 +160,11 @@ class CliClientTest {
     assertTrue(text.toString().contains("CREATE TABLE and DROP TABLE outside a transaction"));
     assertTrue(text.toString().contains("CREATE VIEW is not supported"));
     assertTrue(text.toString().contains("quoted or unquoted paths with spaces"));
+    assertTrue(text.toString().contains("compatible UTF-8 SQL script"));
+    assertTrue(text.toString().contains("relative to the current directory"));
+    assertTrue(text.toString().contains("stops at the first error"));
+    assertTrue(text.toString().contains("Up/Down"));
+    assertTrue(text.toString().contains("Paste SQL, then press Enter"));
     assertTrue(!text.toString().contains("INSERT INTO"));
   }
 

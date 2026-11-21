@@ -57,7 +57,14 @@ final class LocalShell {
     Options options = parse(args);
     if (options.help()) {
       output.println("shell [--data-dir PATH] [--help]");
-      output.println("  Opens a persistent local database in PATH (default: ./data).");
+      output.println("  --data-dir PATH selects the database folder (default: ./data).");
+      output.println(
+          "  :read PATH runs a compatible UTF-8 SQL script; paths are relative to the current directory.");
+      output.println("  Example: :read scripts/setup.sql");
+      output.println(
+          "  :read stops at the first error; earlier statements may already have committed.");
+      output.println(
+          "  Interactive keys: Up/Down browse this session's command history; paste SQL, then press Enter.");
       return;
     }
 

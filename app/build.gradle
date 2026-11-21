@@ -9,6 +9,7 @@ application {
 }
 
 dependencies {
+    implementation 'org.jline:jline:3.28.0'
     implementation project(':contracts')
     implementation project(':query-processor')
     implementation project(':query-optimizer')
