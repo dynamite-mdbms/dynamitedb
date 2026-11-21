@@ -8,17 +8,25 @@ import dynamitedb.contracts.api.RowCursor;
 import dynamitedb.contracts.api.TupleReader;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
+import dynamitedb.contracts.query.AggregatePlan;
+import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.SelectItem;
 import dynamitedb.contracts.query.SortDirection;
 import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.query.SortPlan;
@@ -28,18 +36,23 @@ import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.ComparisonOp;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
+import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.qp.FakeComponents;
 import dynamitedb.qp.expression.ExpressionEvaluator;
+import dynamitedb.qp.operator.AggregateOperator;
 import dynamitedb.qp.operator.BlockNestedLoopJoinOperator;
 import dynamitedb.qp.operator.FilterOperator;
 import dynamitedb.qp.operator.IndexScanOperator;
+import dynamitedb.qp.operator.LimitOperator;
 import dynamitedb.qp.operator.Operator;
 import dynamitedb.qp.operator.ProjectOperator;
 import dynamitedb.qp.operator.ScanOperator;
@@ -95,6 +108,7 @@ class PlanTranslatorTest {
     assertInstanceOf(
         SortOperator.class,
         translate(new SortPlan(SCAN, List.of(new SortKey(ID, SortDirection.ASC)))));
+    assertInstanceOf(LimitOperator.class, translate(new LimitPlan(SCAN, 1)));
   }
 
   // Project(Filter(Scan)) harus selesai dari Scan dulu, terakhir Project
@@ -105,6 +119,22 @@ class PlanTranslatorTest {
     translate(plan);
 
     assertEquals(List.of("TableScanPlan", "FilterPlan", "ProjectPlan"), translated);
+  }
+
+  @Test
+  void translatesAggregateAndExpressionProjection() {
+    assertInstanceOf(
+        AggregateOperator.class,
+        translate(
+            new AggregatePlan(
+                SCAN,
+                List.of(),
+                List.of(new AggregateExpression(AggregateFunction.COUNT, Optional.empty())))));
+
+    ProjectPlan expressionProject =
+        ProjectPlan.fromItems(
+            SCAN, List.of(new SelectItem(new ColumnExpression(ID), Optional.of("employee_id"))));
+    assertInstanceOf(ProjectOperator.class, translate(expressionProject));
   }
 
   // join harus nerjemahin kiri dan kanan sebelum join-nya sendiri
@@ -126,6 +156,9 @@ class PlanTranslatorTest {
             new UpdatePlan(SCAN, "employee", ID, truth()),
             new DeletePlan(SCAN, "employee"),
             new CreateIndexPlan("employee_id", "employee", "id", IndexKind.HASH),
+            new CreateTablePlan(
+                new TableDefinition("t", new Schema(List.of()), Optional.empty(), List.of())),
+            new DropTablePlan("employee", DropBehavior.CASCADE),
             new TransactionCommandPlan(TransactionCommand.BEGIN));
 
     for (PlanNode plan : plans) {

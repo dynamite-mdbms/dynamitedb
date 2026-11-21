@@ -106,6 +106,22 @@ public final class FileRecoveryStorage
   }
 
   @Override
+  public synchronized void materializeSnapshot(
+      SealedGeneration generation, SnapshotMetadata snapshot) {
+    Objects.requireNonNull(generation, "generation");
+    Objects.requireNonNull(snapshot, "snapshot");
+    if (!generation.id().equals(snapshot.id())
+        || snapshot.baseLsn().value() < generation.boundary().inclusiveLsn().value()) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "Driver snapshot does not match its sealed generation");
+    }
+    if (!Files.isDirectory(snapshots.resolve(snapshot.id().toString()))) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "Sealed driver snapshot was not materialized");
+    }
+  }
+
+  @Override
   public synchronized GenerationManifest readActiveManifest() {
     return manifests.readActive();
   }

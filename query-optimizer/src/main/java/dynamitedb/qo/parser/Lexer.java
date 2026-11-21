@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/** Memecah teks SQL menjadi token (QO-01). */
 public class Lexer {
 
   private static final Set<String> KEYWORDS =
@@ -19,10 +18,16 @@ public class Lexer {
           "BY",
           "ASC",
           "DESC",
+          "LIMIT",
           "JOIN",
           "ON",
           "NATURAL",
           "AND",
+          "OR",
+          "NOT",
+          "NULL",
+          "IS",
+          "IN",
           "INSERT",
           "INTO",
           "VALUES",
@@ -37,7 +42,15 @@ public class Lexer {
           "INDEX",
           "AS",
           "HASH",
-          "B_PLUS_TREE");
+          "B_PLUS_TREE",
+          "TABLE",
+          "PRIMARY",
+          "KEY",
+          "FOREIGN",
+          "REFERENCES",
+          "DROP",
+          "RESTRICT",
+          "CASCADE");
 
   public List<Token> tokenize(String sql) {
     if (sql == null) {
@@ -54,6 +67,27 @@ public class Lexer {
       }
 
       int start = cursor;
+      if (current == '-' && cursor + 1 < sql.length() && sql.charAt(cursor + 1) == '-') {
+        cursor += 2;
+        while (cursor < sql.length() && sql.charAt(cursor) != '\n') cursor++;
+        continue;
+      }
+
+      if (current == '/' && cursor + 1 < sql.length() && sql.charAt(cursor + 1) == '*') {
+        cursor += 2;
+        boolean closed = false;
+        while (cursor + 1 < sql.length()) {
+          if (sql.charAt(cursor) == '*' && sql.charAt(cursor + 1) == '/') {
+            cursor += 2;
+            closed = true;
+            break;
+          }
+          cursor++;
+        }
+        if (!closed) throw syntax("Unterminated block comment", start);
+        continue;
+      }
+
       if (Character.isLetter(current) || current == '_') {
         cursor++;
         while (cursor < sql.length()) {
@@ -70,15 +104,15 @@ public class Lexer {
         continue;
       }
 
-      if (Character.isDigit(current)) {
+      if (isAsciiDigit(current)) {
         cursor++;
-        while (cursor < sql.length() && Character.isDigit(sql.charAt(cursor))) cursor++;
+        while (cursor < sql.length() && isAsciiDigit(sql.charAt(cursor))) cursor++;
         if (cursor < sql.length() && sql.charAt(cursor) == '.') {
           int dot = cursor++;
-          if (cursor >= sql.length() || !Character.isDigit(sql.charAt(cursor))) {
+          if (cursor >= sql.length() || !isAsciiDigit(sql.charAt(cursor))) {
             throw syntax("Expected digits after decimal point", dot);
           }
-          while (cursor < sql.length() && Character.isDigit(sql.charAt(cursor))) cursor++;
+          while (cursor < sql.length() && isAsciiDigit(sql.charAt(cursor))) cursor++;
         }
         tokens.add(new Token(TokenKind.LITERAL, sql.substring(start, cursor), start));
         continue;
@@ -124,6 +158,10 @@ public class Lexer {
       throw syntax("Unexpected character '" + current + "'", start);
     }
     return List.copyOf(tokens);
+  }
+
+  private static boolean isAsciiDigit(char value) {
+    return value >= '0' && value <= '9';
   }
 
   private static DbmsException syntax(String message, int offset) {

@@ -11,9 +11,14 @@ import dynamitedb.ccm.timestamp.TimestampOrderingProtocol;
 import dynamitedb.ccm.timestamp.TimestampRegistry;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.recovery.CheckpointResult;
 import dynamitedb.contracts.recovery.GenerationManifest;
+import dynamitedb.contracts.recovery.LogFilter;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.recovery.LogView;
 import dynamitedb.contracts.recovery.RecoveryHighWater;
+import dynamitedb.contracts.recovery.RecoveryResult;
+import dynamitedb.contracts.recovery.RecoveryTarget;
 import dynamitedb.contracts.recovery.SnapshotMetadata;
 import dynamitedb.contracts.transaction.ProtocolType;
 import dynamitedb.contracts.transaction.TransactionId;
@@ -51,6 +56,7 @@ import dynamitedb.qp.execution.DeleteExecutor;
 import dynamitedb.qp.execution.ExecutionEngine;
 import dynamitedb.qp.execution.PlanTranslator;
 import dynamitedb.qp.execution.ReadExecutor;
+import dynamitedb.qp.execution.TableDdlExecutor;
 import dynamitedb.qp.execution.TransactionCommandExecutor;
 import dynamitedb.qp.execution.WriteCoordinator;
 import dynamitedb.qp.execution.WriteExecutor;
@@ -71,6 +77,7 @@ import dynamitedb.sm.index.IndexManager;
 import dynamitedb.sm.serialization.RecordSerializer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -83,6 +90,9 @@ public final class PersistentRuntime implements AutoCloseable {
 
   private final LogManager log;
   private final DbmsBootstrap bootstrap;
+  private final RecoveryManagerImpl recovery;
+  private final HistoryCatalog history;
+  private final CheckpointManager checkpoint;
 
   public PersistentRuntime(DbmsConfig config) {
     Objects.requireNonNull(config, "config");
@@ -143,12 +153,12 @@ public final class PersistentRuntime implements AutoCloseable {
 
     var crash =
         new CrashRecoveryManager(log, wal, manifests, storageRecovery, undo, storageRecovery);
-    var checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
-    var history = new HistoryCatalog(manifests, log, baseSnapshot);
+    checkpoint = new CheckpointManager(concurrency, storageRecovery, log);
+    history = new HistoryCatalog(manifests, log, baseSnapshot);
     var historical =
         new HistoricalRecoveryManager(
             storageRecovery, history, storageRecovery, log, wal, manifests, concurrency);
-    var recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
+    recovery = new RecoveryManagerImpl(wal, undo, crash, historical, checkpoint);
     var initializer = new RecoveryInitializer(manifests, recovery, concurrency);
 
     var cost = new CostEstimator(catalogAccess);
@@ -164,7 +174,7 @@ public final class PersistentRuntime implements AutoCloseable {
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
-                new JoinOrderOptimizer(),
+                new JoinOrderOptimizer(catalogAccess),
                 new BestPlanSelector(cost)),
             cost,
             new PlanVisualizer());
@@ -179,7 +189,11 @@ public final class PersistentRuntime implements AutoCloseable {
             storage, writes, translator, evaluator, coordinator, storage, delete, catalogAccess);
     var engine =
         new ExecutionEngine(
-            translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));
+            translator,
+            new ReadExecutor(),
+            writer,
+            new TransactionCommandExecutor(coordinator),
+            new TableDdlExecutor(storage, concurrency));
     var processor = new QueryProcessorImpl(optimizer, new SessionManager(), engine, coordinator);
 
     bootstrap =
@@ -199,6 +213,17 @@ public final class PersistentRuntime implements AutoCloseable {
                 guard.close();
               }
               new SampleDatabaseLoader(storage, concurrency, concurrency).loadIfAbsent(catalog);
+              if (fresh || history.hasOnlySnapshot(baseSnapshot)) {
+                RecoveryHighWater baseline = log.readHighWater();
+                SnapshotMetadata seededSnapshot =
+                    new SnapshotMetadata(
+                        UUID.randomUUID(),
+                        manifests.readActive().walLineage(),
+                        baseline.lsn(),
+                        baseline.maxCommitTime().orElseGet(Instant::now));
+                generations.captureSnapshot(seededSnapshot);
+                history.replaceWithSnapshot(seededSnapshot);
+              }
             });
   }
 
@@ -206,9 +231,29 @@ public final class PersistentRuntime implements AutoCloseable {
     return bootstrap;
   }
 
+  public void startPeriodicCheckpoints(Duration interval) {
+    checkpoint.startPeriodic(interval);
+  }
+
+  /** Runs a coordinated checkpoint against the live persistent runtime. */
+  public CheckpointResult checkpoint() {
+    return recovery.checkpoint();
+  }
+
+  /** Restores the live runtime to a retained committed transaction or commit time. */
+  public RecoveryResult recoverTo(RecoveryTarget target) {
+    return recovery.recoverTo(Objects.requireNonNull(target, "target"));
+  }
+
+  /** Inspects the persistent WAL through FRM. */
+  public LogView readLog(LogFilter filter) {
+    return recovery.readLog(Objects.requireNonNull(filter, "filter"));
+  }
+
   @Override
   public void close() {
     bootstrap.shutdown();
+    checkpoint.stopPeriodic();
     log.close();
   }
 

@@ -29,6 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -225,23 +227,27 @@ class Pp3RecoveryTest {
   }
 
   @Test
-  void runtimeReinitializationRequiresMaintenanceAndNeverMovesCountersBackward() {
+  void runtimeReinitializationRequiresMaintenanceAndNeverMovesCountersBackward() throws Exception {
     ready();
     TransactionId tx = ccm.begin();
     assertThrows(DbmsException.class, () -> ccm.initializeRecoveredState(highWater(0, 0)));
     assertEquals(TransactionStatus.ACTIVE, ccm.status(tx));
     ccm.commit(tx);
-    var guard = ccm.acquireMaintenance();
-    try {
-      assertTrue(registry.isAdmissionHeld());
-      ccm.initializeRecoveredState(highWater(0, 0));
-      assertThrows(DbmsException.class, ccm::begin);
-    } finally {
-      guard.close();
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      var guard = ccm.acquireMaintenance();
+      try {
+        assertTrue(registry.isAdmissionHeld());
+        ccm.initializeRecoveredState(highWater(0, 0));
+        var waitingBegin = executor.submit(ccm::begin);
+        assertFalse(waitingBegin.isDone());
+        guard.close();
+        TransactionId next = waitingBegin.get(5, TimeUnit.SECONDS);
+        assertFalse(registry.isAdmissionHeld());
+        assertTrue(next.value() > tx.value());
+        assertTrue(ccm.transactionTimestamp(next) > 1);
+      } finally {
+        guard.close();
+      }
     }
-    assertFalse(registry.isAdmissionHeld());
-    TransactionId next = ccm.begin();
-    assertTrue(next.value() > tx.value());
-    assertTrue(ccm.transactionTimestamp(next) > 1);
   }
 }

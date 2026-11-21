@@ -11,6 +11,8 @@ import dynamitedb.contracts.api.TupleReader;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.PlanExplanation;
 import dynamitedb.contracts.query.PreparedQuery;
 import dynamitedb.contracts.query.SessionId;
@@ -19,6 +21,7 @@ import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionCommandPlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexPredicate;
 import dynamitedb.contracts.storage.IntValue;
@@ -26,6 +29,7 @@ import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.TransactionStatus;
 import dynamitedb.qp.execution.DeleteExecutor;
@@ -59,6 +63,48 @@ class QueryProcessorImplTest {
   }
 
   @Test
+  void implicitQueryIsRepreparedAfterTransactionAdmission() {
+    SessionManager localSessions = new SessionManager();
+    var coordinator = new TransactionCoordinator(ports, ports, ports);
+    int[] preparations = {0};
+    QueryOptimizer optimizer =
+        new QueryOptimizer() {
+          @Override
+          public PreparedQuery prepare(String sql) {
+            preparations[0]++;
+            String table = ports.begun ? "new" : "old";
+            return new PreparedQuery(new TableScanPlan(table, "t"), SCHEMA);
+          }
+
+          @Override
+          public double estimateCost(dynamitedb.contracts.query.PlanNode plan) {
+            return 0;
+          }
+
+          @Override
+          public PlanExplanation explain(String sql) {
+            return new PlanExplanation("", "", 0);
+          }
+        };
+    var evaluator = new ExpressionEvaluator();
+    var translator = new PlanTranslator(evaluator, ports, ports, coordinator);
+    var writes = new WriteCoordinator(ports, ports);
+    var delete = new DeleteExecutor(ports, writes, translator, evaluator, coordinator);
+    var writer =
+        new WriteExecutor(ports, writes, translator, evaluator, coordinator, ports, delete, ports);
+    var engine =
+        new ExecutionEngine(
+            translator, new ReadExecutor(), writer, new TransactionCommandExecutor(coordinator));
+    var qp = new QueryProcessorImpl(optimizer, localSessions, engine, coordinator);
+
+    SessionId session = qp.openSession("client");
+    qp.execute(session, "SELECT");
+
+    assertEquals(2, preparations[0]);
+    assertEquals(List.of("new"), ports.scannedTables);
+  }
+
+  @Test
   void explicitTransactionsRemainAttachedToTheirOwnSessions() {
     SessionId first = processor.openSession("first");
     SessionId second = processor.openSession("second");
@@ -89,6 +135,26 @@ class QueryProcessorImplTest {
         assertThrows(DbmsException.class, () -> processor.execute(session, "BEGIN")).getCode());
     processor.execute(session, "SELECT");
     assertEquals(Optional.of(tx), sessions.get(session).activeTx());
+    assertEquals(TransactionStatus.ACTIVE, ports.status(tx));
+    processor.closeSession(session);
+  }
+
+  @Test
+  void tableDdlRequiresWiringAndExplicitTransactionsRejectItWithoutEndingTransaction() {
+    SessionId session = processor.openSession("client");
+    for (String sql : List.of("CREATE_TABLE", "DROP_TABLE")) {
+      assertEquals(
+          ErrorCode.UNSUPPORTED_OPERATION,
+          assertThrows(DbmsException.class, () -> processor.execute(session, sql)).getCode());
+    }
+    assertTrue(ports.events.isEmpty());
+
+    processor.execute(session, "BEGIN");
+    TransactionId tx = sessions.get(session).activeTx().orElseThrow();
+    assertEquals(
+        ErrorCode.INVALID_STATE,
+        assertThrows(DbmsException.class, () -> processor.execute(session, "DROP_TABLE"))
+            .getCode());
     assertEquals(TransactionStatus.ACTIVE, ports.status(tx));
     processor.closeSession(session);
   }
@@ -176,6 +242,14 @@ class QueryProcessorImplTest {
               case "INDEX" ->
                   new PreparedQuery(
                       new CreateIndexPlan("idx", "t", "id", IndexKind.HASH), new Schema(List.of()));
+              case "CREATE_TABLE" ->
+                  new PreparedQuery(
+                      new CreateTablePlan(
+                          new TableDefinition("t2", SCHEMA, Optional.empty(), List.of())),
+                      new Schema(List.of()));
+              case "DROP_TABLE" ->
+                  new PreparedQuery(
+                      new DropTablePlan("t", DropBehavior.RESTRICT), new Schema(List.of()));
               case "BEGIN", "COMMIT", "ABORT" ->
                   new PreparedQuery(
                       new TransactionCommandPlan(TransactionCommand.valueOf(sql)),
@@ -200,7 +274,9 @@ class QueryProcessorImplTest {
   private static final class Ports extends FakeComponents implements TupleReader {
     private boolean readFailure;
     private boolean abortFailure;
+    private boolean begun;
     private int readCalls;
+    private final List<String> scannedTables = new java.util.ArrayList<>();
 
     @Override
     public Schema getSchema(String table) {
@@ -214,8 +290,16 @@ class QueryProcessorImplTest {
     }
 
     @Override
+    public TransactionId begin() {
+      TransactionId tx = super.begin();
+      begun = true;
+      return tx;
+    }
+
+    @Override
     public RowCursor openTableScan(String table, TransactionId tx) {
       readCalls++;
+      scannedTables.add(table);
       if (readFailure) throw new DbmsException(ErrorCode.STORAGE_FAILURE, "read failed");
       var rows =
           List.of(new StoredRow(new RecordId(7, 0, 0, 0), new Row(List.of(new IntValue(7)))))

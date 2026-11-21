@@ -12,5 +12,8 @@ public enum BinaryOp {
   SUB,
   MUL,
   DIV,
-  AND
+  AND,
+  OR,
+  IS,
+  IS_NOT
 }

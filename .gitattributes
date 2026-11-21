@@ -4,5 +4,6 @@
 /scripts/*.sh text eol=lf
 /.editorconfig text eol=lf
 /gradlew text eol=lf
+/dynamitedb text eol=lf
 *.bat text eol=crlf
 *.jar binary

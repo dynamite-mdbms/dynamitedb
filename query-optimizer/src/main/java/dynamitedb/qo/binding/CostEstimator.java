@@ -3,23 +3,29 @@ package dynamitedb.qo.binding;
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexPlan;
+import dynamitedb.contracts.query.CreateTablePlan;
 import dynamitedb.contracts.query.DeletePlan;
+import dynamitedb.contracts.query.DropTablePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.IndexScanPlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.query.TableScanPlan;
 import dynamitedb.contracts.query.TransactionCommandPlan;
+import dynamitedb.contracts.query.UnaryExpression;
+import dynamitedb.contracts.query.UnaryOp;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.IndexMetadata;
@@ -28,10 +34,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/** Mengestimasi biaya (blok I/O) dan kardinalitas plan dari statistik katalog (QO-08). */
 public class CostEstimator {
 
-  // Matches QP's BlockNestedLoopJoinOperator, which rescans the inner side per 100 outer rows.
   private static final int JOIN_BLOCK_ROWS = 100;
   private static final double RANGE_SELECTIVITY = 1.0 / 3;
 
@@ -44,13 +48,15 @@ public class CostEstimator {
   public double estimate(PlanNode plan) {
     return switch (plan) {
       case TableScanPlan scan -> stats(scan.table()).blockCount();
-      // shortcut: one I/O per index probe and per matching row; use index height and
-      // clustering once the catalog exposes them.
+
       case IndexScanPlan scan -> 1 + indexRows(scan);
       case FilterPlan filter -> estimate(filter.child());
       case ProjectPlan project -> estimate(project.child());
-      // QP sorts in memory, so sorting adds no I/O.
+      case AggregatePlan aggregate -> estimate(aggregate.child());
+
       case SortPlan sort -> estimate(sort.child());
+      // Upper bound: a blocking sort below still reads every input row before the cap applies.
+      case LimitPlan limit -> estimate(limit.child());
       case JoinPlan join ->
           estimate(join.left())
               + Math.ceil(rows(join.left()) / JOIN_BLOCK_ROWS) * estimate(join.right());
@@ -58,6 +64,9 @@ public class CostEstimator {
       case UpdatePlan update -> estimate(update.source()) + rows(update.source());
       case DeletePlan delete -> estimate(delete.source()) + rows(delete.source());
       case CreateIndexPlan create -> stats(create.table()).blockCount();
+      // DDL rewrites catalog metadata only; one write each, like a single-row INSERT.
+      case CreateTablePlan create -> 1;
+      case DropTablePlan drop -> 1;
       case TransactionCommandPlan command -> 0;
     };
   }
@@ -74,17 +83,20 @@ public class CostEstimator {
       case FilterPlan filter ->
           rows(filter.child()) * selectivity(filter.predicate(), filter.child());
       case ProjectPlan project -> rows(project.child());
+      case AggregatePlan aggregate -> aggregateRows(aggregate);
       case SortPlan sort -> rows(sort.child());
+      case LimitPlan limit -> Math.min(limit.count(), rows(limit.child()));
       case JoinPlan join -> rows(join.left()) * rows(join.right()) * joinSelectivity(join);
       case InsertPlan insert -> 1;
       case UpdatePlan update -> rows(update.source());
       case DeletePlan delete -> rows(delete.source());
       case CreateIndexPlan create -> 0;
+      case CreateTablePlan create -> 0;
+      case DropTablePlan drop -> 0;
       case TransactionCommandPlan command -> 0;
     };
   }
 
-  /** Rows fetched from storage before an IndexScan residual predicate is evaluated. */
   private double indexRows(IndexScanPlan scan) {
     return stats(scan.table()).rowCount() * selectivity(indexCondition(scan), scan);
   }
@@ -103,13 +115,35 @@ public class CostEstimator {
     };
   }
 
+  private double aggregateRows(AggregatePlan aggregate) {
+    double inputRows = rows(aggregate.child());
+    if (aggregate.groupBy().isEmpty()) return 1.0;
+    if (inputRows == 0) return 0.0;
+    double groups = 1.0;
+    for (ColumnRef column : aggregate.groupBy()) {
+      groups *= distinct(new ColumnExpression(column), aggregate.child());
+      if (groups >= inputRows) return inputRows;
+    }
+    return Math.min(inputRows, groups);
+  }
+
   private double selectivity(Expression predicate, PlanNode scope) {
+    if (predicate instanceof UnaryExpression unary && unary.operator() == UnaryOp.NOT) {
+      return 1.0 - selectivity(unary.operand(), scope);
+    }
     if (!(predicate instanceof BinaryExpression binary)) return 1.0;
     double equal = 1.0 / Math.max(distinct(binary.left(), scope), distinct(binary.right(), scope));
     return switch (binary.operator()) {
       case AND -> selectivity(binary.left(), scope) * selectivity(binary.right(), scope);
+      case OR ->
+          1.0
+              - (1.0 - selectivity(binary.left(), scope))
+                  * (1.0 - selectivity(binary.right(), scope));
       case EQ -> equal;
       case NEQ -> 1.0 - equal;
+
+      case IS -> equal;
+      case IS_NOT -> 1.0 - equal;
       case LT, LTE, GT, GTE -> RANGE_SELECTIVITY;
       case ADD, SUB, MUL, DIV -> 1.0;
     };
@@ -150,14 +184,15 @@ public class CostEstimator {
         new LiteralExpression(scan.predicate().value()));
   }
 
-  /** Maps every relation alias scanned under {@code plan} to its table. */
   public static Map<String, String> scans(PlanNode plan) {
     return switch (plan) {
       case TableScanPlan scan -> Map.of(scan.alias(), scan.table());
       case IndexScanPlan scan -> Map.of(scan.alias(), scan.table());
       case FilterPlan filter -> scans(filter.child());
       case ProjectPlan project -> scans(project.child());
+      case AggregatePlan aggregate -> scans(aggregate.child());
       case SortPlan sort -> scans(sort.child());
+      case LimitPlan limit -> scans(limit.child());
       case JoinPlan join -> {
         Map<String, String> all = new HashMap<>(scans(join.left()));
         all.putAll(scans(join.right()));

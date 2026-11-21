@@ -19,4 +19,6 @@ public interface HistoricalRecoveryStorage {
   void rebuildStageIndexes(RecoveryStage stage);
 
   SealedGeneration sealStage(RecoveryStage stage, RecoveryBoundary boundary);
+
+  void materializeSnapshot(SealedGeneration generation, SnapshotMetadata snapshot);
 }

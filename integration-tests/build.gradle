@@ -2,13 +2,43 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    acceptanceTest {
+        compileClasspath += sourceSets.test.output
+        runtimeClasspath += sourceSets.test.output
+    }
+}
+
+configurations {
+    acceptanceTestImplementation.extendsFrom testImplementation
+    acceptanceTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
 dependencies {
     testImplementation project(':contracts')
     testImplementation project(':app')
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+    acceptanceTestImplementation project(':query-optimizer')
+    acceptanceTestImplementation project(':recovery-manager')
+    acceptanceTestImplementation project(':storage-manager')
 }
 
 test {
+    useJUnitPlatform()
+}
+
+def appInstallDirectory = project(':app').layout.buildDirectory.dir('install/app')
+def appLauncherName = System.getProperty('os.name').toLowerCase().contains('win') ? 'app.bat' : 'app'
+
+tasks.register('packagedAcceptanceTest', Test) {
+    group = 'verification'
+    description = 'Runs acceptance tests against the packaged real server over TCP.'
+    dependsOn project(':app').tasks.named('installDist')
+    testClassesDirs = sourceSets.acceptanceTest.output.classesDirs
+    classpath = sourceSets.acceptanceTest.runtimeClasspath
+    systemProperty(
+            'dynamitedb.acceptance.launcher',
+            appInstallDirectory.map { it.file("bin/${appLauncherName}").asFile.absolutePath }.get())
     useJUnitPlatform()
 }

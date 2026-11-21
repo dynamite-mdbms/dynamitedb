@@ -50,7 +50,7 @@ public class MaintenanceController {
   }
 
   public synchronized void blockAdmission() {
-    registry.holdAdmission();
+    registry.holdMaintenanceAdmission();
     admissionBlocks++;
   }
 
@@ -58,7 +58,7 @@ public class MaintenanceController {
     if (admissionBlocks == 0) {
       throw new DbmsException(ErrorCode.INVALID_STATE, "Tidak ada admission block untuk dilepas");
     }
-    registry.releaseAdmission();
+    registry.releaseMaintenanceAdmission();
     admissionBlocks--;
   }
 

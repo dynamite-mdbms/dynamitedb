@@ -63,7 +63,7 @@ class Qo5PipelineTest {
     OptimizerPipeline pipeline =
         new OptimizerPipeline(
             List.of(new JoinRewriter(), new AccessPathOptimizer(catalog)),
-            new JoinOrderOptimizer(),
+            new JoinOrderOptimizer(catalog),
             new BestPlanSelector(cost));
 
     PlanNode optimized = pipeline.optimize(plan);
@@ -72,5 +72,33 @@ class Qo5PipelineTest {
     assertEquals(JoinKind.THETA, join.kind());
     assertInstanceOf(IndexScanPlan.class, join.left());
     assertInstanceOf(IndexScanPlan.class, join.right());
+  }
+
+  @Test
+  void pipelineCanSelectGeneticJoinOrdering() {
+    CatalogAccess catalog =
+        catalog(
+            Map.of(
+                "student", new TableStatistics(1_000, 100, 50, Map.of("id", 100L)),
+                "course", new TableStatistics(500, 50, 50, Map.of("id", 100L)),
+                "enroll", new TableStatistics(5_000, 500, 50, Map.of("id", 500L))),
+            List.of());
+    CostEstimator costs = new CostEstimator(catalog);
+    PlanNode plan =
+        new JoinPlan(
+            new JoinPlan(
+                scan("student", "s"), scan("course", "c"), JoinKind.CARTESIAN, Optional.empty()),
+            scan("enroll", "e"),
+            JoinKind.CARTESIAN,
+            Optional.empty());
+    GeneticJoinOrderOptimizer genetic =
+        new GeneticJoinOrderOptimizer(
+            costs, new GeneticJoinOrderOptimizer.Config(6, 2, 0.1, 2, 1, 3), 41L);
+    PlanNode geneticResult = genetic.optimize(plan).bestPlan();
+    OptimizerPipeline pipeline =
+        new OptimizerPipeline(
+            List.of(), new JoinOrderOptimizer(catalog), new BestPlanSelector(costs), genetic);
+
+    assertEquals(geneticResult, pipeline.optimize(plan));
   }
 }

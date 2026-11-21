@@ -45,7 +45,7 @@ class TimestampEndToEndTest {
   private static final long HOLDER_RESOURCE = 6;
 
   @Test
-  void newerWriterIsAbortedWhenOlderTransactionHoldsTheSameResource() {
+  void newerWriterWaitsWhenOlderTransactionHoldsTheSameResource() {
     List<String> events = Collections.synchronizedList(new ArrayList<>());
     TransactionRegistry registry = new TransactionRegistry();
     var timestamp =
@@ -78,14 +78,14 @@ class TimestampEndToEndTest {
                     operation(1, SHARED_RESOURCE, AccessMode.WRITE),
                     operation(1, HOLDER_RESOURCE, AccessMode.READ),
                     operation(2, SHARED_RESOURCE, AccessMode.WRITE))),
-            1,
+            0,
             true);
 
     assertTrue(report.passed(), "results: " + report.results());
     assertEquals(TransactionStatus.COMMITTED, ccm.status(new TransactionId(1)));
-    assertEquals(TransactionStatus.ABORTED, ccm.status(new TransactionId(2)));
+    assertEquals(TransactionStatus.COMMITTED, ccm.status(new TransactionId(2)));
     assertEquals(0, registry.activeCount());
-    assertEquals(1, events.stream().filter(event -> event.equals("rollback T2")).count());
+    assertEquals(0, events.stream().filter(event -> event.equals("rollback T2")).count());
   }
 
   private static ScheduledOperation operation(long tx, long tableId, AccessMode mode) {
@@ -114,7 +114,7 @@ class TimestampEndToEndTest {
       if (sharedWrite && request.tx().equals(newer)) {
         await(olderWriteGranted);
         AccessDecision decision = delegate.requestAccess(request);
-        if (decision.state() == AccessState.ABORTED) {
+        if (decision.state() == AccessState.WAITING) {
           newerWriteResolved.countDown();
         }
         return decision;

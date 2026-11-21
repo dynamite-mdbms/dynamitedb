@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -18,5 +20,5 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Lint, build, and test
-        run: ./gradlew --console=plain lint build
+      - name: Lint, build, unit, and packaged acceptance tests
+        run: ./gradlew --console=plain lint build :integration-tests:packagedAcceptanceTest

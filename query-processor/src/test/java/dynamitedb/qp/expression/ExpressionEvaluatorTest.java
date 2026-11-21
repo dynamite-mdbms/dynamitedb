@@ -7,13 +7,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
+import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
+import dynamitedb.contracts.query.InSubqueryExpression;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.OperatorRow;
+import dynamitedb.contracts.query.ScalarSubqueryExpression;
+import dynamitedb.contracts.query.SelectStatement;
+import dynamitedb.contracts.query.TableScanPlan;
+import dynamitedb.contracts.query.TableSource;
+import dynamitedb.contracts.query.UnaryExpression;
+import dynamitedb.contracts.query.UnaryOp;
 import dynamitedb.contracts.storage.BooleanValue;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -24,6 +34,7 @@ import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,7 +56,37 @@ class ExpressionEvaluatorTest {
                   new Column("d", "id", DataType.INTEGER, 0, false))),
           Map.of());
 
+  // baris yang sama tapi salary NULL
+  private static final OperatorRow NULL_SALARY_ROW =
+      new OperatorRow(
+          new Row(
+              List.of(new IntValue(7), NullValue.INSTANCE, new TextValue("Ali"), new IntValue(3))),
+          ROW.schema(),
+          Map.of());
+
   private final ExpressionEvaluator evaluator = new ExpressionEvaluator();
+
+  // IS [NOT] NULL membaca nilai kolom asli, termasuk hasil ekspresi yang jadi NULL
+  @Test
+  void isNullReadsColumnValuesFromRealRows() {
+    Expression salary = col("e", "salary");
+    Expression isNull = bin(salary, BinaryOp.IS, nul());
+    Expression isNotNull = bin(salary, BinaryOp.IS_NOT, nul());
+
+    assertTrue(evaluator.evaluatePredicate(isNull, NULL_SALARY_ROW));
+    assertFalse(evaluator.evaluatePredicate(isNull, ROW));
+    assertFalse(evaluator.evaluatePredicate(isNotNull, NULL_SALARY_ROW));
+    assertTrue(evaluator.evaluatePredicate(isNotNull, ROW));
+    assertTrue(
+        evaluator.evaluatePredicate(
+            bin(bin(salary, BinaryOp.ADD, num(1)), BinaryOp.IS, nul()), NULL_SALARY_ROW));
+    // perbandingan biasa dengan NULL tidak pernah lolos
+    assertFalse(evaluator.evaluatePredicate(bin(salary, BinaryOp.EQ, nul()), NULL_SALARY_ROW));
+    assertFalse(evaluator.evaluatePredicate(bin(salary, BinaryOp.NEQ, nul()), ROW));
+    assertTrue(
+        evaluator.evaluatePredicate(
+            bin(isNull, BinaryOp.AND, bin(col("e", "id"), BinaryOp.GT, num(5))), NULL_SALARY_ROW));
+  }
 
   // INT ketemu INT hasilnya tetap INT, 7 / 2 jadi 3 bukan 3.5
   @Test
@@ -137,6 +178,16 @@ class ExpressionEvaluatorTest {
     assertEquals(NullValue.INSTANCE, eval(bin(num(1), BinaryOp.EQ, nul())));
   }
 
+  // IS [NOT] NULL tidak ikut propagasi NULL, hasilnya selalu boolean
+  @Test
+  void isNullIsAlwaysBoolean() {
+    assertEquals(new BooleanValue(true), eval(bin(nul(), BinaryOp.IS, nul())));
+    assertEquals(new BooleanValue(false), eval(bin(num(1), BinaryOp.IS, nul())));
+    assertEquals(new BooleanValue(false), eval(bin(nul(), BinaryOp.IS_NOT, nul())));
+    assertEquals(new BooleanValue(true), eval(bin(num(1), BinaryOp.IS_NOT, nul())));
+    assertTrue(evaluator.evaluatePredicate(bin(nul(), BinaryOp.IS, nul()), ROW));
+  }
+
   // FALSE menang lawan NULL, TRUE AND NULL tetap NULL
   @Test
   void andFollowsThreeValuedLogic() {
@@ -146,12 +197,178 @@ class ExpressionEvaluatorTest {
     assertEquals(new BooleanValue(true), eval(bin(bool(true), BinaryOp.AND, bool(true))));
   }
 
+  @Test
+  void evaluatesNotOrAndAggregateReferences() {
+    SelectStatement query =
+        new SelectStatement(
+            List.of(new ColumnRef(Optional.of("d"), "id")),
+            new TableSource("dept", "d"),
+            Optional.empty(),
+            List.of());
+
+    assertEquals(new BooleanValue(false), eval(new UnaryExpression(UnaryOp.NOT, bool(true))));
+    assertEquals(new BooleanValue(true), eval(bin(bool(true), BinaryOp.OR, bool(false))));
+    assertEquals(NullValue.INSTANCE, eval(bin(nul(), BinaryOp.OR, bool(false))));
+    assertEquals(NullValue.INSTANCE, eval(new UnaryExpression(UnaryOp.NOT, nul())));
+    assertEquals(new BooleanValue(true), eval(bin(nul(), BinaryOp.OR, bool(true))));
+    assertEquals(new BooleanValue(false), eval(bin(bool(false), BinaryOp.OR, bool(false))));
+    assertCode(ErrorCode.SQL_BIND, new UnaryExpression(UnaryOp.NOT, num(1)));
+    AggregateExpression count = new AggregateExpression(AggregateFunction.COUNT, Optional.empty());
+    OperatorRow aggregateRow =
+        new OperatorRow(
+            new Row(List.of(new IntValue(2))),
+            new Schema(List.of(new Column("", count.outputName(), DataType.INTEGER, 0, false))),
+            Map.of());
+    assertEquals(new IntValue(2), evaluator.evaluate(count, aggregateRow));
+  }
+
+  @Test
+  void scalarSubqueryMapsZeroOneAndManyRowsAndRunsOnce() {
+    SelectStatement query = query();
+    ScalarSubqueryExpression scalar =
+        new ScalarSubqueryExpression(query, Optional.of(new TableScanPlan("dept", "d")));
+    List<Object> calls = new ArrayList<>();
+    ExpressionEvaluator subqueries =
+        new ExpressionEvaluator(
+            plan -> {
+              calls.add(plan);
+              return List.of(new IntValue(7));
+            });
+
+    assertEquals(new IntValue(7), subqueries.evaluate(scalar, ROW));
+    assertEquals(new IntValue(7), subqueries.evaluate(scalar, NULL_SALARY_ROW));
+    assertEquals(1, calls.size());
+
+    ExpressionEvaluator empty = new ExpressionEvaluator(plan -> List.of());
+    assertEquals(NullValue.INSTANCE, empty.evaluate(scalar, ROW));
+
+    ExpressionEvaluator multiple =
+        new ExpressionEvaluator(plan -> List.of(new IntValue(1), new IntValue(2)));
+    DbmsException error = assertThrows(DbmsException.class, () -> multiple.evaluate(scalar, ROW));
+    assertEquals(ErrorCode.INVALID_STATE, error.getCode());
+  }
+
+  @Test
+  void existsSubqueryReturnsBooleanAndRunsOnce() {
+    ExistsSubqueryExpression exists =
+        new ExistsSubqueryExpression(query(), Optional.of(new TableScanPlan("dept", "d")), false);
+    ExistsSubqueryExpression notExists =
+        new ExistsSubqueryExpression(query(), Optional.of(new TableScanPlan("dept", "d")), true);
+    List<Object> calls = new ArrayList<>();
+    ExpressionEvaluator subqueries =
+        new ExpressionEvaluator(
+            plan -> {
+              calls.add(plan);
+              return List.of(new IntValue(1));
+            });
+
+    assertEquals(new BooleanValue(true), subqueries.evaluate(exists, ROW));
+    assertEquals(new BooleanValue(false), subqueries.evaluate(notExists, ROW));
+    assertEquals(
+        new BooleanValue(true),
+        new ExpressionEvaluator(plan -> List.of()).evaluate(notExists, ROW));
+    assertEquals(2, calls.size());
+  }
+
   // WHERE cuma lolos kalau TRUE, FALSE dan NULL dibuang
   @Test
   void predicatePassesOnlyWhenTrue() {
     assertTrue(evaluator.evaluatePredicate(bool(true), ROW));
     assertFalse(evaluator.evaluatePredicate(bool(false), ROW));
     assertFalse(evaluator.evaluatePredicate(bin(num(1), BinaryOp.EQ, nul()), ROW));
+    DbmsException error =
+        assertThrows(DbmsException.class, () -> evaluator.evaluatePredicate(num(1), ROW));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
+  }
+
+  // subquery dijalanin sekali, nilai 7 = 7.0 dianggap sama, NOT IN membalik hasil
+  @Test
+  void inSubqueryRunsOnceAndChecksMembership() {
+    List<Object> calls = new ArrayList<>();
+    ExpressionEvaluator subqueries =
+        new ExpressionEvaluator(
+            plan -> {
+              calls.add(plan);
+              return List.of(new IntValue(1), new FloatValue(7.0));
+            });
+    Expression in = in(col("e", "id"), false);
+
+    assertEquals(new BooleanValue(true), subqueries.evaluate(in, ROW));
+    assertEquals(new BooleanValue(true), subqueries.evaluate(in, ROW));
+    assertEquals(new BooleanValue(false), subqueries.evaluate(in(num(2), false), ROW));
+    assertEquals(new BooleanValue(false), subqueries.evaluate(in(col("e", "id"), true), ROW));
+    assertEquals(new BooleanValue(true), subqueries.evaluate(in(num(2), true), ROW));
+    // ekspresi yang sama cuma sekali; empat ekspresi berbeda jadi empat kali
+    assertEquals(4, calls.size());
+  }
+
+  // logika tiga nilai: NULL di operand atau di hasil subquery bikin hasil NULL kecuali kosong
+  @Test
+  void inSubqueryFollowsSqlNullSemantics() {
+    ExpressionEvaluator withNull =
+        new ExpressionEvaluator(plan -> List.of(new IntValue(1), NullValue.INSTANCE));
+    ExpressionEvaluator empty = new ExpressionEvaluator(plan -> List.of());
+
+    assertEquals(new BooleanValue(true), withNull.evaluate(in(num(1), false), ROW));
+    assertEquals(NullValue.INSTANCE, withNull.evaluate(in(num(2), false), ROW));
+    assertEquals(NullValue.INSTANCE, withNull.evaluate(in(num(2), true), ROW));
+    assertEquals(NullValue.INSTANCE, withNull.evaluate(in(nul(), false), ROW));
+    assertEquals(new BooleanValue(false), empty.evaluate(in(nul(), false), ROW));
+    assertEquals(new BooleanValue(true), empty.evaluate(in(nul(), true), ROW));
+  }
+
+  // duplikat di hasil subquery ga ngaruh, CHAR berpadding tetap cocok, 7 IN (7.0) TRUE
+  @Test
+  void inSubqueryIgnoresDuplicatesPaddingAndNumericType() {
+    ExpressionEvaluator values =
+        new ExpressionEvaluator(
+            plan -> List.of(new IntValue(3), new IntValue(3), new FloatValue(7.0)));
+    ExpressionEvaluator texts = new ExpressionEvaluator(plan -> List.of(new TextValue("A  ")));
+
+    assertEquals(new BooleanValue(true), values.evaluate(in(num(3), false), ROW));
+    assertEquals(new BooleanValue(false), values.evaluate(in(num(3), true), ROW));
+    assertEquals(new BooleanValue(true), values.evaluate(in(col("e", "id"), false), ROW));
+    assertEquals(new BooleanValue(true), values.evaluate(in(lit(new FloatValue(3.0)), false), ROW));
+    assertEquals(new BooleanValue(true), texts.evaluate(in(text("A"), false), ROW));
+    assertEquals(new BooleanValue(false), texts.evaluate(in(text("B"), false), ROW));
+  }
+
+  // hasil NULL dari IN / NOT IN bikin baris ga lolos filter, sama kayak FALSE
+  @Test
+  void unknownInResultFailsThePredicate() {
+    ExpressionEvaluator withNull =
+        new ExpressionEvaluator(plan -> List.of(new IntValue(1), NullValue.INSTANCE));
+
+    assertFalse(withNull.evaluatePredicate(in(num(2), false), ROW));
+    assertFalse(withNull.evaluatePredicate(in(num(2), true), ROW));
+    assertFalse(withNull.evaluatePredicate(in(nul(), true), ROW));
+    assertTrue(withNull.evaluatePredicate(in(num(1), false), ROW));
+    // NULL di dalam AND: FALSE menang, TRUE AND NULL tetap NULL
+    assertEquals(
+        new BooleanValue(false),
+        withNull.evaluate(bin(in(num(2), false), BinaryOp.AND, bool(false)), ROW));
+    assertEquals(
+        NullValue.INSTANCE,
+        withNull.evaluate(bin(bool(true), BinaryOp.AND, in(num(2), true)), ROW));
+  }
+
+  // evaluator biasa ga punya akses ke storage, jadi subquery harus ditolak jelas
+  @Test
+  void inSubqueryWithoutRunnerIsRejected() {
+    assertCode(ErrorCode.INVALID_PLAN, in(num(1), false));
+  }
+
+  private static Expression in(Expression operand, boolean negated) {
+    return new InSubqueryExpression(
+        operand, query(), Optional.of(new TableScanPlan("dept", "d")), negated);
+  }
+
+  private static SelectStatement query() {
+    return new SelectStatement(
+        List.of(new ColumnRef(Optional.of("d"), "id")),
+        new TableSource("dept", "d"),
+        Optional.empty(),
+        List.of());
   }
 
   // helper biar ga nulis evaluator.evaluate(..., ROW) terus

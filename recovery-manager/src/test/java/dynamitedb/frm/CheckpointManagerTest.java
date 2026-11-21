@@ -28,6 +28,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -514,5 +515,40 @@ class CheckpointManagerTest {
             .limit(3)
             .map(record -> record.event)
             .toList());
+  }
+
+  @Test
+  void stopPeriodicWaitsForTheActiveCheckpoint() throws Exception {
+    var environment = MockRecoveryEnvironment.create();
+    var atPages = new CountDownLatch(1);
+    var releasePages = new CountDownLatch(1);
+    var manager =
+        withPageHook(
+            environment,
+            () -> {
+              atPages.countDown();
+              try {
+                if (!releasePages.await(5, TimeUnit.SECONDS)) {
+                  throw new AssertionError("periodic checkpoint did not resume");
+                }
+              } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(interrupted);
+              }
+            });
+    var executor = Executors.newSingleThreadExecutor();
+    try {
+      manager.startPeriodic(Duration.ofMillis(20));
+      assertTrue(atPages.await(2, TimeUnit.SECONDS));
+      var stopping = executor.submit(manager::stopPeriodic);
+      assertThrows(TimeoutException.class, () -> stopping.get(100, TimeUnit.MILLISECONDS));
+      releasePages.countDown();
+      stopping.get(5, TimeUnit.SECONDS);
+      assertEquals(CheckpointEvent.END, environment.context().checkpointRecords().getLast().event);
+    } finally {
+      releasePages.countDown();
+      manager.stopPeriodic();
+      executor.shutdownNow();
+    }
   }
 }

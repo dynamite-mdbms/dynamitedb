@@ -1,7 +1,9 @@
 package dynamitedb.sm.generation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.GenerationManifestStore;
 import dynamitedb.contracts.api.RowCursor;
@@ -29,7 +31,9 @@ import dynamitedb.sm.heap.HeapFile;
 import dynamitedb.sm.heap.RecordStore;
 import dynamitedb.sm.index.IndexManager;
 import dynamitedb.sm.serialization.RecordSerializer;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -116,6 +120,53 @@ class GenerationStoreTest {
     insert(1);
     generations.switchToPublishedGeneration(published.get());
     assertEquals(List.of(1), ids());
+  }
+
+  @Test
+  void materializedSnapshotFromSealedGenerationCanBeUsedForAnotherStage() {
+    RecordId first = insert(1);
+    SnapshotMetadata base = generations.captureSnapshot(boundary(lsn.get()));
+    RecoveryStage firstStage = generations.createStage(base, UUID.randomUUID());
+
+    RecordId recovered =
+        new RecordId(first.tableId(), first.pageNumber(), first.slotNumber() + 1, 0);
+    var recoveredImage = serializer.encode(new Row(List.of(new IntValue(3))), SCHEMA);
+    generations.replayInStage(
+        firstStage, new RecoveryMutation(recovered, recoveredImage), new LogSequenceNumber(100));
+    generations.rebuildStageIndexes(firstStage);
+    SealedGeneration sealed = generations.sealStage(firstStage, boundary(100));
+    SnapshotMetadata registered =
+        new SnapshotMetadata(
+            sealed.id(), UUID.randomUUID(), new LogSequenceNumber(120), Instant.now());
+
+    assertFalse(Files.isDirectory(directory.resolve("snapshots").resolve(sealed.id().toString())));
+    assertThrows(
+        DbmsException.class,
+        () -> generations.createStage(registered, UUID.randomUUID()),
+        "A catalog-only snapshot must not be stageable before materialization");
+
+    generations.materializeSnapshot(sealed, registered);
+    generations.materializeSnapshot(sealed, registered);
+    assertTrue(Files.isDirectory(directory.resolve("snapshots").resolve(sealed.id().toString())));
+    assertThrows(
+        DbmsException.class,
+        () ->
+            generations.materializeSnapshot(
+                sealed,
+                new SnapshotMetadata(
+                    sealed.id(), UUID.randomUUID(), new LogSequenceNumber(120), Instant.now())),
+        "A materialized snapshot ID cannot be reused with different metadata");
+    RecoveryStage secondStage = generations.createStage(registered, UUID.randomUUID());
+    RecordId later = new RecordId(first.tableId(), first.pageNumber(), first.slotNumber() + 2, 0);
+    var laterImage = serializer.encode(new Row(List.of(new IntValue(4))), SCHEMA);
+    generations.replayInStage(
+        secondStage, new RecoveryMutation(later, laterImage), new LogSequenceNumber(121));
+    generations.rebuildStageIndexes(secondStage);
+    SealedGeneration secondSealed = generations.sealStage(secondStage, boundary(121));
+
+    published.set(manifest(secondSealed.id(), 121));
+    generations.switchToPublishedGeneration(published.get());
+    assertEquals(List.of(1, 3, 4), ids());
   }
 
   private RecordId insert(int id) {

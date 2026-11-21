@@ -6,8 +6,10 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.contracts.testing.TestReport;
@@ -37,8 +39,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
-/** Menguji QO lewat port QueryOptimizer tanpa Storage Manager asli (QO-16). */
 public class QueryOptimizerDriver {
 
   private static final String EXPECT_PREFIX = "-- expect:";
@@ -138,7 +140,6 @@ public class QueryOptimizerDriver {
     }
   }
 
-  /** Scenarios bundled from {@code examples/qo1-driver.sql}, the single source of the demo. */
   static List<String> builtInScenarios() throws IOException {
     try (var in = QueryOptimizerDriver.class.getResourceAsStream(SCENARIO_RESOURCE)) {
       if (in == null) throw new IOException("Missing driver resource " + SCENARIO_RESOURCE);
@@ -185,7 +186,6 @@ public class QueryOptimizerDriver {
     return List.copyOf(scenarios);
   }
 
-  /** Leading {@code -- expect:} and {@code -- expect-after:} headers followed by one SQL. */
   private record Scenario(String expectation, List<String> afterContains, String sql) {
 
     static Scenario parse(String text) {
@@ -207,7 +207,6 @@ public class QueryOptimizerDriver {
     }
   }
 
-  /** Full QO pipeline wired to the deterministic fake catalog below. */
   public static QueryOptimizer standaloneOptimizer() {
     CatalogAccess catalog = fakeCatalog();
     CostEstimator cost = new CostEstimator(catalog);
@@ -223,16 +222,12 @@ public class QueryOptimizerDriver {
                 new ProjectionPushdown(catalog),
                 new JoinRewriter(),
                 new AccessPathOptimizer(catalog)),
-            new JoinOrderOptimizer(),
+            new JoinOrderOptimizer(catalog),
             new BestPlanSelector(cost)),
         cost,
         new PlanVisualizer());
   }
 
-  /**
-   * Fake SM catalog: three tables with asymmetric statistics, a HASH and a B+Tree index, so the
-   * driver can show join rewrite/reorder, an IndexScan being chosen, and a TableScan fallback.
-   */
   static CatalogAccess fakeCatalog() {
     Map<String, FakeTable> tables =
         Map.of(
@@ -271,6 +266,15 @@ public class QueryOptimizerDriver {
                 new TableStatistics(
                     50, 5, 64, Map.of("course_id", 50L, "title", 50L, "credits", 4L)),
                 List.of()));
+    Map<String, PrimaryKey> primaryKeys =
+        Map.of(
+            "student", new PrimaryKey(List.of("student_id")),
+            "course", new PrimaryKey(List.of("course_id")),
+            "enrollment", new PrimaryKey(List.of("student_id", "course_id")));
+    List<ForeignKey> foreignKeys =
+        List.of(
+            new ForeignKey("enrollment", List.of("student_id"), "student", List.of("student_id")),
+            new ForeignKey("enrollment", List.of("course_id"), "course", List.of("course_id")));
     return new CatalogAccess() {
       @Override
       public List<String> listTables() {
@@ -295,6 +299,23 @@ public class QueryOptimizerDriver {
       @Override
       public List<IndexMetadata> listIndexes(String table) {
         return table(table).indexes();
+      }
+
+      @Override
+      public Optional<PrimaryKey> getPrimaryKey(String table) {
+        return Optional.ofNullable(primaryKeys.get(table.toLowerCase(Locale.ROOT)));
+      }
+
+      @Override
+      public List<ForeignKey> listForeignKeys(String table) {
+        return foreignKeys.stream().filter(key -> key.table().equalsIgnoreCase(table)).toList();
+      }
+
+      @Override
+      public List<ForeignKey> listReferencingForeignKeys(String table) {
+        return foreignKeys.stream()
+            .filter(key -> key.referencedTable().equalsIgnoreCase(table))
+            .toList();
       }
 
       private FakeTable table(String table) {

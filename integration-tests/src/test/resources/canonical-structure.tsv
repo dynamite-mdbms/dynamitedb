@@ -19,6 +19,9 @@ method	dynamitedb.contracts.api.CatalogAccess	getTableId	long	java.lang.String
 method	dynamitedb.contracts.api.CatalogAccess	getSchema	dynamitedb.contracts.storage.Schema	java.lang.String
 method	dynamitedb.contracts.api.CatalogAccess	getStatistics	dynamitedb.contracts.storage.TableStatistics	java.lang.String
 method	dynamitedb.contracts.api.CatalogAccess	listIndexes	java.util.List<dynamitedb.contracts.storage.IndexMetadata>	java.lang.String
+method	dynamitedb.contracts.api.CatalogAccess	getPrimaryKey	java.util.Optional<dynamitedb.contracts.storage.PrimaryKey>	java.lang.String
+method	dynamitedb.contracts.api.CatalogAccess	listForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
+method	dynamitedb.contracts.api.CatalogAccess	listReferencingForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
 type	dynamitedb.contracts.api.TupleReader	interface
 method	dynamitedb.contracts.api.TupleReader	openTableScan	dynamitedb.contracts.api.RowCursor	java.lang.String|dynamitedb.contracts.transaction.TransactionId
 method	dynamitedb.contracts.api.TupleReader	openIndexScan	dynamitedb.contracts.api.RowCursor	java.lang.String|dynamitedb.contracts.storage.IndexPredicate|dynamitedb.contracts.transaction.TransactionId
@@ -34,6 +37,9 @@ method	dynamitedb.contracts.api.WriteStore	applyWrite	void	dynamitedb.contracts.
 method	dynamitedb.contracts.api.WriteStore	cancelPrepared	void	dynamitedb.contracts.storage.PreparedWrite
 type	dynamitedb.contracts.api.IndexAdmin	interface
 method	dynamitedb.contracts.api.IndexAdmin	createIndex	void	java.lang.String|java.lang.String|java.lang.String|dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.api.TableAdmin	interface
+method	dynamitedb.contracts.api.TableAdmin	createTable	void	dynamitedb.contracts.storage.TableDefinition
+method	dynamitedb.contracts.api.TableAdmin	dropTable	void	java.lang.String|dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.api.AccessController	interface
 method	dynamitedb.contracts.api.AccessController	requestAccess	dynamitedb.contracts.transaction.AccessDecision	dynamitedb.contracts.transaction.AccessRequest
 method	dynamitedb.contracts.api.AccessController	awaitAccess	dynamitedb.contracts.transaction.AccessDecision	dynamitedb.contracts.transaction.WaitToken
@@ -80,6 +86,7 @@ method	dynamitedb.contracts.api.HistoricalRecoveryStorage	createStage	dynamitedb
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.contracts.api.HistoricalRecoveryStorage	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 type	dynamitedb.contracts.api.StorageGenerationAdmin	interface
 method	dynamitedb.contracts.api.StorageGenerationAdmin	readActiveManifest	dynamitedb.contracts.recovery.GenerationManifest
 method	dynamitedb.contracts.api.StorageGenerationAdmin	switchToPublishedGeneration	void	dynamitedb.contracts.recovery.GenerationManifest
@@ -151,6 +158,20 @@ component	dynamitedb.contracts.storage.IndexMetadata	0	name	java.lang.String
 component	dynamitedb.contracts.storage.IndexMetadata	1	table	java.lang.String
 component	dynamitedb.contracts.storage.IndexMetadata	2	column	java.lang.String
 component	dynamitedb.contracts.storage.IndexMetadata	3	kind	dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.storage.PrimaryKey	record
+component	dynamitedb.contracts.storage.PrimaryKey	0	columns	java.util.List<java.lang.String>
+type	dynamitedb.contracts.storage.ForeignKey	record
+component	dynamitedb.contracts.storage.ForeignKey	0	table	java.lang.String
+component	dynamitedb.contracts.storage.ForeignKey	1	columns	java.util.List<java.lang.String>
+component	dynamitedb.contracts.storage.ForeignKey	2	referencedTable	java.lang.String
+component	dynamitedb.contracts.storage.ForeignKey	3	referencedColumns	java.util.List<java.lang.String>
+type	dynamitedb.contracts.storage.TableDefinition	record
+component	dynamitedb.contracts.storage.TableDefinition	0	name	java.lang.String
+component	dynamitedb.contracts.storage.TableDefinition	1	schema	dynamitedb.contracts.storage.Schema
+component	dynamitedb.contracts.storage.TableDefinition	2	primaryKey	java.util.Optional<dynamitedb.contracts.storage.PrimaryKey>
+component	dynamitedb.contracts.storage.TableDefinition	3	foreignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>
+type	dynamitedb.contracts.storage.DropBehavior	enum
+enum	dynamitedb.contracts.storage.DropBehavior	RESTRICT|CASCADE
 type	dynamitedb.contracts.storage.IndexPredicate	record
 component	dynamitedb.contracts.storage.IndexPredicate	0	operator	dynamitedb.contracts.storage.ComparisonOp
 component	dynamitedb.contracts.storage.IndexPredicate	1	value	dynamitedb.contracts.storage.Value
@@ -170,18 +191,23 @@ component	dynamitedb.contracts.recovery.RecoveryMutation	0	rid	dynamitedb.contra
 component	dynamitedb.contracts.recovery.RecoveryMutation	1	targetImage	dynamitedb.contracts.storage.RecordImage
 type	dynamitedb.contracts.query.Statement	interface
 type	dynamitedb.contracts.query.SelectStatement	record
-component	dynamitedb.contracts.query.SelectStatement	0	projection	java.util.List<dynamitedb.contracts.query.ColumnRef>
+component	dynamitedb.contracts.query.SelectStatement	0	items	java.util.List<dynamitedb.contracts.query.SelectItem>
 component	dynamitedb.contracts.query.SelectStatement	1	from	dynamitedb.contracts.query.FromSource
 component	dynamitedb.contracts.query.SelectStatement	2	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
-component	dynamitedb.contracts.query.SelectStatement	3	orderBy	java.util.List<dynamitedb.contracts.query.SortKey>
+component	dynamitedb.contracts.query.SelectStatement	3	groupBy	java.util.List<dynamitedb.contracts.query.ColumnRef>
+component	dynamitedb.contracts.query.SelectStatement	4	having	java.util.Optional<dynamitedb.contracts.query.Expression>
+component	dynamitedb.contracts.query.SelectStatement	5	orderBy	java.util.List<dynamitedb.contracts.query.SortKey>
+component	dynamitedb.contracts.query.SelectStatement	6	limit	java.util.Optional<java.lang.Long>
 type	dynamitedb.contracts.query.InsertStatement	record
 component	dynamitedb.contracts.query.InsertStatement	0	table	java.lang.String
 component	dynamitedb.contracts.query.InsertStatement	1	values	java.util.List<dynamitedb.contracts.query.Expression>
 type	dynamitedb.contracts.query.UpdateStatement	record
 component	dynamitedb.contracts.query.UpdateStatement	0	table	java.lang.String
-component	dynamitedb.contracts.query.UpdateStatement	1	target	dynamitedb.contracts.query.ColumnRef
-component	dynamitedb.contracts.query.UpdateStatement	2	expression	dynamitedb.contracts.query.Expression
-component	dynamitedb.contracts.query.UpdateStatement	3	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
+component	dynamitedb.contracts.query.UpdateStatement	1	assignments	java.util.List<dynamitedb.contracts.query.UpdateAssignment>
+component	dynamitedb.contracts.query.UpdateStatement	2	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
+type	dynamitedb.contracts.query.UpdateAssignment	record
+component	dynamitedb.contracts.query.UpdateAssignment	0	target	dynamitedb.contracts.query.ColumnRef
+component	dynamitedb.contracts.query.UpdateAssignment	1	expression	dynamitedb.contracts.query.Expression
 type	dynamitedb.contracts.query.DeleteStatement	record
 component	dynamitedb.contracts.query.DeleteStatement	0	table	java.lang.String
 component	dynamitedb.contracts.query.DeleteStatement	1	predicate	java.util.Optional<dynamitedb.contracts.query.Expression>
@@ -190,6 +216,14 @@ component	dynamitedb.contracts.query.CreateIndexStatement	0	index	java.lang.Stri
 component	dynamitedb.contracts.query.CreateIndexStatement	1	table	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexStatement	2	column	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexStatement	3	kind	dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.query.CreateTableStatement	record
+component	dynamitedb.contracts.query.CreateTableStatement	0	table	java.lang.String
+component	dynamitedb.contracts.query.CreateTableStatement	1	columns	java.util.List<dynamitedb.contracts.storage.Column>
+component	dynamitedb.contracts.query.CreateTableStatement	2	primaryKeys	java.util.List<dynamitedb.contracts.storage.PrimaryKey>
+component	dynamitedb.contracts.query.CreateTableStatement	3	foreignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>
+type	dynamitedb.contracts.query.DropTableStatement	record
+component	dynamitedb.contracts.query.DropTableStatement	0	table	java.lang.String
+component	dynamitedb.contracts.query.DropTableStatement	1	behavior	dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.query.TransactionStatement	record
 component	dynamitedb.contracts.query.TransactionStatement	0	command	dynamitedb.contracts.query.TransactionCommand
 type	dynamitedb.contracts.query.TransactionCommand	enum
@@ -207,6 +241,12 @@ component	dynamitedb.contracts.query.JoinSource	1	right	dynamitedb.contracts.que
 component	dynamitedb.contracts.query.JoinSource	2	kind	dynamitedb.contracts.query.JoinKind
 component	dynamitedb.contracts.query.JoinSource	3	condition	java.util.Optional<dynamitedb.contracts.query.Expression>
 type	dynamitedb.contracts.query.Expression	interface
+type	dynamitedb.contracts.query.AggregateExpression	record
+component	dynamitedb.contracts.query.AggregateExpression	0	function	dynamitedb.contracts.query.AggregateFunction
+component	dynamitedb.contracts.query.AggregateExpression	1	argument	java.util.Optional<dynamitedb.contracts.query.ColumnRef>
+method	dynamitedb.contracts.query.AggregateExpression	outputName	java.lang.String
+type	dynamitedb.contracts.query.AggregateFunction	enum
+enum	dynamitedb.contracts.query.AggregateFunction	COUNT|SUM|AVG|MIN|MAX
 type	dynamitedb.contracts.query.LiteralExpression	record
 component	dynamitedb.contracts.query.LiteralExpression	0	value	dynamitedb.contracts.storage.Value
 type	dynamitedb.contracts.query.ColumnExpression	record
@@ -215,9 +255,33 @@ type	dynamitedb.contracts.query.BinaryExpression	record
 component	dynamitedb.contracts.query.BinaryExpression	0	left	dynamitedb.contracts.query.Expression
 component	dynamitedb.contracts.query.BinaryExpression	1	operator	dynamitedb.contracts.query.BinaryOp
 component	dynamitedb.contracts.query.BinaryExpression	2	right	dynamitedb.contracts.query.Expression
+type	dynamitedb.contracts.query.InSubqueryExpression	record
+component	dynamitedb.contracts.query.InSubqueryExpression	0	operand	dynamitedb.contracts.query.Expression
+component	dynamitedb.contracts.query.InSubqueryExpression	1	query	dynamitedb.contracts.query.SelectStatement
+component	dynamitedb.contracts.query.InSubqueryExpression	2	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
+component	dynamitedb.contracts.query.InSubqueryExpression	3	negated	boolean
+type	dynamitedb.contracts.query.ExistsSubqueryExpression	record
+component	dynamitedb.contracts.query.ExistsSubqueryExpression	0	query	dynamitedb.contracts.query.SelectStatement
+component	dynamitedb.contracts.query.ExistsSubqueryExpression	1	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
+component	dynamitedb.contracts.query.ExistsSubqueryExpression	2	negated	boolean
+type	dynamitedb.contracts.query.ScalarSubqueryExpression	record
+component	dynamitedb.contracts.query.ScalarSubqueryExpression	0	query	dynamitedb.contracts.query.SelectStatement
+component	dynamitedb.contracts.query.ScalarSubqueryExpression	1	plan	java.util.Optional<dynamitedb.contracts.query.PlanNode>
+type	dynamitedb.contracts.query.UnaryExpression	record
+component	dynamitedb.contracts.query.UnaryExpression	0	operator	dynamitedb.contracts.query.UnaryOp
+component	dynamitedb.contracts.query.UnaryExpression	1	operand	dynamitedb.contracts.query.Expression
+type	dynamitedb.contracts.query.UnaryOp	enum
+enum	dynamitedb.contracts.query.UnaryOp	NOT
 type	dynamitedb.contracts.query.BinaryOp	enum
-enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND
+enum	dynamitedb.contracts.query.BinaryOp	EQ|NEQ|LT|LTE|GT|GTE|ADD|SUB|MUL|DIV|AND|OR|IS|IS_NOT
+type	dynamitedb.contracts.query.SelectItem	record
+component	dynamitedb.contracts.query.SelectItem	0	expression	dynamitedb.contracts.query.Expression
+component	dynamitedb.contracts.query.SelectItem	1	alias	java.util.Optional<java.lang.String>
 type	dynamitedb.contracts.query.PlanNode	interface
+type	dynamitedb.contracts.query.AggregatePlan	record
+component	dynamitedb.contracts.query.AggregatePlan	0	child	dynamitedb.contracts.query.PlanNode
+component	dynamitedb.contracts.query.AggregatePlan	1	groupBy	java.util.List<dynamitedb.contracts.query.ColumnRef>
+component	dynamitedb.contracts.query.AggregatePlan	2	aggregates	java.util.List<dynamitedb.contracts.query.AggregateExpression>
 type	dynamitedb.contracts.query.TableScanPlan	record
 component	dynamitedb.contracts.query.TableScanPlan	0	table	java.lang.String
 component	dynamitedb.contracts.query.TableScanPlan	1	alias	java.lang.String
@@ -230,9 +294,7 @@ component	dynamitedb.contracts.query.IndexScanPlan	4	residual	java.util.Optional
 type	dynamitedb.contracts.query.FilterPlan	record
 component	dynamitedb.contracts.query.FilterPlan	0	child	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.FilterPlan	1	predicate	dynamitedb.contracts.query.Expression
-type	dynamitedb.contracts.query.ProjectPlan	record
-component	dynamitedb.contracts.query.ProjectPlan	0	child	dynamitedb.contracts.query.PlanNode
-component	dynamitedb.contracts.query.ProjectPlan	1	columns	java.util.List<dynamitedb.contracts.query.ColumnRef>
+type	dynamitedb.contracts.query.ProjectPlan	class
 type	dynamitedb.contracts.query.JoinKind	enum
 enum	dynamitedb.contracts.query.JoinKind	CARTESIAN|THETA|NATURAL
 type	dynamitedb.contracts.query.JoinPlan	record
@@ -248,14 +310,16 @@ enum	dynamitedb.contracts.query.SortDirection	ASC|DESC
 type	dynamitedb.contracts.query.SortPlan	record
 component	dynamitedb.contracts.query.SortPlan	0	child	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.SortPlan	1	keys	java.util.List<dynamitedb.contracts.query.SortKey>
+type	dynamitedb.contracts.query.LimitPlan	record
+component	dynamitedb.contracts.query.LimitPlan	0	child	dynamitedb.contracts.query.PlanNode
+component	dynamitedb.contracts.query.LimitPlan	1	count	long
 type	dynamitedb.contracts.query.InsertPlan	record
 component	dynamitedb.contracts.query.InsertPlan	0	table	java.lang.String
 component	dynamitedb.contracts.query.InsertPlan	1	row	dynamitedb.contracts.storage.Row
 type	dynamitedb.contracts.query.UpdatePlan	record
 component	dynamitedb.contracts.query.UpdatePlan	0	source	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.UpdatePlan	1	table	java.lang.String
-component	dynamitedb.contracts.query.UpdatePlan	2	target	dynamitedb.contracts.query.ColumnRef
-component	dynamitedb.contracts.query.UpdatePlan	3	value	dynamitedb.contracts.query.Expression
+component	dynamitedb.contracts.query.UpdatePlan	2	assignments	java.util.List<dynamitedb.contracts.query.UpdateAssignment>
 type	dynamitedb.contracts.query.DeletePlan	record
 component	dynamitedb.contracts.query.DeletePlan	0	source	dynamitedb.contracts.query.PlanNode
 component	dynamitedb.contracts.query.DeletePlan	1	table	java.lang.String
@@ -264,6 +328,11 @@ component	dynamitedb.contracts.query.CreateIndexPlan	0	index	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	1	table	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	2	column	java.lang.String
 component	dynamitedb.contracts.query.CreateIndexPlan	3	kind	dynamitedb.contracts.storage.IndexKind
+type	dynamitedb.contracts.query.CreateTablePlan	record
+component	dynamitedb.contracts.query.CreateTablePlan	0	definition	dynamitedb.contracts.storage.TableDefinition
+type	dynamitedb.contracts.query.DropTablePlan	record
+component	dynamitedb.contracts.query.DropTablePlan	0	table	java.lang.String
+component	dynamitedb.contracts.query.DropTablePlan	1	behavior	dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.contracts.query.TransactionCommandPlan	record
 component	dynamitedb.contracts.query.TransactionCommandPlan	0	command	dynamitedb.contracts.query.TransactionCommand
 type	dynamitedb.contracts.query.PreparedQuery	record
@@ -389,6 +458,10 @@ type	dynamitedb.qp.operator.ProjectOperator	class
 method	dynamitedb.qp.operator.ProjectOperator	open	void
 method	dynamitedb.qp.operator.ProjectOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
 method	dynamitedb.qp.operator.ProjectOperator	close	void
+method	dynamitedb.qp.operator.ProjectOperator	schema	dynamitedb.contracts.storage.Schema	java.util.List<dynamitedb.contracts.query.SelectItem>|dynamitedb.contracts.storage.Schema
+method	dynamitedb.qp.operator.AggregateOperator	open	void
+method	dynamitedb.qp.operator.AggregateOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
+method	dynamitedb.qp.operator.AggregateOperator	close	void
 type	dynamitedb.qp.execution.DeleteExecutor	class
 method	dynamitedb.qp.execution.DeleteExecutor	execute	long	dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.transaction.TransactionId
 type	dynamitedb.qp.operator.BlockNestedLoopJoinOperator	class
@@ -399,6 +472,10 @@ type	dynamitedb.qp.operator.SortOperator	class
 method	dynamitedb.qp.operator.SortOperator	open	void
 method	dynamitedb.qp.operator.SortOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
 method	dynamitedb.qp.operator.SortOperator	close	void
+type	dynamitedb.qp.operator.LimitOperator	class
+method	dynamitedb.qp.operator.LimitOperator	open	void
+method	dynamitedb.qp.operator.LimitOperator	next	java.util.Optional<dynamitedb.contracts.query.OperatorRow>
+method	dynamitedb.qp.operator.LimitOperator	close	void
 type	dynamitedb.qp.execution.WriteExecutor	class
 method	dynamitedb.qp.execution.WriteExecutor	insert	long	dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.transaction.TransactionId
 method	dynamitedb.qp.execution.WriteExecutor	update	long	dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.transaction.TransactionId
@@ -449,6 +526,7 @@ method	dynamitedb.qo.binding.CostEstimator	estimate	double	dynamitedb.contracts.
 method	dynamitedb.qo.binding.CostEstimator	estimateRows	long	dynamitedb.contracts.query.PlanNode
 type	dynamitedb.qo.pipeline.OptimizerPipeline	class
 method	dynamitedb.qo.pipeline.OptimizerPipeline	optimize	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.PlanNode
+method	dynamitedb.qo.join.GeneticJoinOrderOptimizer	optimize	dynamitedb.qo.join.GeneticJoinOrderOptimizer$OptimizationResult	dynamitedb.contracts.query.PlanNode
 type	dynamitedb.qo.pipeline.PlanRewrite	interface
 method	dynamitedb.qo.pipeline.PlanRewrite	rewrite	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.PlanNode
 type	dynamitedb.qo.pushdown.SelectionPushdown	class
@@ -473,12 +551,17 @@ method	dynamitedb.sm.facade.StorageManagerImpl	prepareDelete	dynamitedb.contract
 method	dynamitedb.sm.facade.StorageManagerImpl	applyWrite	void	dynamitedb.contracts.storage.PreparedWrite|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.sm.facade.StorageManagerImpl	cancelPrepared	void	dynamitedb.contracts.storage.PreparedWrite
 method	dynamitedb.sm.facade.StorageManagerImpl	createIndex	void	java.lang.String|java.lang.String|java.lang.String|dynamitedb.contracts.storage.IndexKind
+method	dynamitedb.sm.facade.StorageManagerImpl	createTable	void	dynamitedb.contracts.storage.TableDefinition
+method	dynamitedb.sm.facade.StorageManagerImpl	dropTable	void	java.lang.String|dynamitedb.contracts.storage.DropBehavior
 type	dynamitedb.sm.catalog.StorageCatalogAdapter	class
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	listTables	java.util.List<java.lang.String>
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	getTableId	long	java.lang.String
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	getSchema	dynamitedb.contracts.storage.Schema	java.lang.String
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	getStatistics	dynamitedb.contracts.storage.TableStatistics	java.lang.String
 method	dynamitedb.sm.catalog.StorageCatalogAdapter	listIndexes	java.util.List<dynamitedb.contracts.storage.IndexMetadata>	java.lang.String
+method	dynamitedb.sm.catalog.StorageCatalogAdapter	getPrimaryKey	java.util.Optional<dynamitedb.contracts.storage.PrimaryKey>	java.lang.String
+method	dynamitedb.sm.catalog.StorageCatalogAdapter	listForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
+method	dynamitedb.sm.catalog.StorageCatalogAdapter	listReferencingForeignKeys	java.util.List<dynamitedb.contracts.storage.ForeignKey>	java.lang.String
 type	dynamitedb.sm.facade.StorageRecoveryAdapter	class
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	readRecord	dynamitedb.contracts.storage.RecordImage	dynamitedb.contracts.storage.RecordId
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	applyRecovery	void	dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
@@ -489,6 +572,7 @@ method	dynamitedb.sm.facade.StorageRecoveryAdapter	createStage	dynamitedb.contra
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.sm.facade.StorageRecoveryAdapter	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	readActiveManifest	dynamitedb.contracts.recovery.GenerationManifest
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	switchToPublishedGeneration	void	dynamitedb.contracts.recovery.GenerationManifest
 type	dynamitedb.sm.heap.RecordStore	class
@@ -557,6 +641,7 @@ method	dynamitedb.sm.generation.GenerationStore	createStage	dynamitedb.contracts
 method	dynamitedb.sm.generation.GenerationStore	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.sm.generation.GenerationStore	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.sm.generation.GenerationStore	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.sm.generation.GenerationStore	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 method	dynamitedb.sm.generation.GenerationStore	readActiveManifest	dynamitedb.contracts.recovery.GenerationManifest
 method	dynamitedb.sm.generation.GenerationStore	switchToPublishedGeneration	void	dynamitedb.contracts.recovery.GenerationManifest
 type	dynamitedb.sm.verification.StorageTestDriver	class
@@ -747,6 +832,7 @@ provider	dynamitedb.contracts.api.CatalogAccess	dynamitedb.sm.catalog.StorageCat
 provider	dynamitedb.contracts.api.TupleReader	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.WriteStore	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.IndexAdmin	dynamitedb.sm.facade.StorageManagerImpl
+provider	dynamitedb.contracts.api.TableAdmin	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.RecoveryPageStore	dynamitedb.sm.facade.StorageRecoveryAdapter
 provider	dynamitedb.contracts.api.HistoricalRecoveryStorage	dynamitedb.sm.facade.StorageRecoveryAdapter
 provider	dynamitedb.contracts.api.StorageGenerationAdmin	dynamitedb.sm.facade.StorageRecoveryAdapter
@@ -772,6 +858,8 @@ provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.InsertS
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.UpdateStatement
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.DeleteStatement
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.CreateIndexStatement
+provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.CreateTableStatement
+provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.DropTableStatement
 provider	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.TransactionStatement
 provider	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource
 provider	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.JoinSource
@@ -784,10 +872,13 @@ provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.FilterPl
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.ProjectPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.JoinPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.SortPlan
+provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.LimitPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.InsertPlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.UpdatePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.DeletePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.CreateIndexPlan
+provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.CreateTablePlan
+provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.DropTablePlan
 provider	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TransactionCommandPlan
 provider	dynamitedb.contracts.api.QueryProcessor	dynamitedb.qp.QueryProcessorImpl
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.ScanOperator
@@ -796,6 +887,7 @@ provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.FilterOperator
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.ProjectOperator
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.BlockNestedLoopJoinOperator
 provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.SortOperator
+provider	dynamitedb.qp.operator.Operator	dynamitedb.qp.operator.LimitOperator
 provider	dynamitedb.contracts.api.QueryOptimizer	dynamitedb.qo.facade.QueryOptimizerImpl
 provider	dynamitedb.qo.pipeline.PlanRewrite	dynamitedb.qo.pushdown.SelectionPushdown
 provider	dynamitedb.qo.pipeline.PlanRewrite	dynamitedb.qo.pushdown.ProjectionPushdown
@@ -804,6 +896,7 @@ provider	dynamitedb.qo.pipeline.PlanRewrite	dynamitedb.qo.join.AccessPathOptimiz
 provider	dynamitedb.contracts.api.TupleReader	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.WriteStore	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.IndexAdmin	dynamitedb.sm.facade.StorageManagerImpl
+provider	dynamitedb.contracts.api.TableAdmin	dynamitedb.sm.facade.StorageManagerImpl
 provider	dynamitedb.contracts.api.CatalogAccess	dynamitedb.sm.catalog.StorageCatalogAdapter
 provider	dynamitedb.contracts.api.RecoveryPageStore	dynamitedb.sm.facade.StorageRecoveryAdapter
 provider	dynamitedb.contracts.api.HistoricalRecoveryStorage	dynamitedb.sm.facade.StorageRecoveryAdapter
@@ -834,11 +927,13 @@ provider	dynamitedb.contracts.api.WalDurability	dynamitedb.frm.WalService
 provider	dynamitedb.contracts.api.LogInspection	dynamitedb.frm.WalService
 provider	dynamitedb.contracts.api.GenerationManifestStore	dynamitedb.frm.AtomicGenerationManifestStore
 sealed	dynamitedb.contracts.storage.Value	dynamitedb.contracts.storage.IntValue|dynamitedb.contracts.storage.FloatValue|dynamitedb.contracts.storage.TextValue|dynamitedb.contracts.storage.BooleanValue|dynamitedb.contracts.storage.NullValue
-sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.TransactionStatement
+sealed	dynamitedb.contracts.query.Statement	dynamitedb.contracts.query.SelectStatement|dynamitedb.contracts.query.InsertStatement|dynamitedb.contracts.query.UpdateStatement|dynamitedb.contracts.query.DeleteStatement|dynamitedb.contracts.query.CreateIndexStatement|dynamitedb.contracts.query.CreateTableStatement|dynamitedb.contracts.query.DropTableStatement|dynamitedb.contracts.query.TransactionStatement
 sealed	dynamitedb.contracts.query.FromSource	dynamitedb.contracts.query.TableSource|dynamitedb.contracts.query.JoinSource
-sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression
-sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.TransactionCommandPlan
+sealed	dynamitedb.contracts.query.Expression	dynamitedb.contracts.query.AggregateExpression|dynamitedb.contracts.query.LiteralExpression|dynamitedb.contracts.query.ColumnExpression|dynamitedb.contracts.query.BinaryExpression|dynamitedb.contracts.query.InSubqueryExpression|dynamitedb.contracts.query.ExistsSubqueryExpression|dynamitedb.contracts.query.ScalarSubqueryExpression|dynamitedb.contracts.query.UnaryExpression
+sealed	dynamitedb.contracts.query.PlanNode	dynamitedb.contracts.query.AggregatePlan|dynamitedb.contracts.query.TableScanPlan|dynamitedb.contracts.query.IndexScanPlan|dynamitedb.contracts.query.FilterPlan|dynamitedb.contracts.query.ProjectPlan|dynamitedb.contracts.query.JoinPlan|dynamitedb.contracts.query.SortPlan|dynamitedb.contracts.query.LimitPlan|dynamitedb.contracts.query.InsertPlan|dynamitedb.contracts.query.UpdatePlan|dynamitedb.contracts.query.DeletePlan|dynamitedb.contracts.query.CreateIndexPlan|dynamitedb.contracts.query.CreateTablePlan|dynamitedb.contracts.query.DropTablePlan|dynamitedb.contracts.query.TransactionCommandPlan
 helper	dynamitedb.app.Main
+helper	dynamitedb.app.LocalShell
+helper	dynamitedb.app.LocalShell$Options
 helper	dynamitedb.app.driver.DriverCli
 helper	dynamitedb.app.mock.MockRuntime
 helper	dynamitedb.frm.mock.MockRecoveryContext
@@ -847,7 +942,21 @@ helper	dynamitedb.frm.mock.MockRecoveryEnvironment
 helper	dynamitedb.frm.LogFile$Scan
 helper	dynamitedb.frm.LogManager$Prepared
 helper	dynamitedb.frm.LogManager$TxState
+helper	dynamitedb.qp.execution.KeyConstraints
+helper	dynamitedb.qp.execution.KeyConstraints$Change
+helper	dynamitedb.qp.execution.KeyConstraints$Projection
+helper	dynamitedb.qp.execution.KeyConstraints$RowMatch
+helper	dynamitedb.qp.execution.KeyConstraints$Statement
+helper	dynamitedb.qp.execution.TableDdlExecutor
 helper	dynamitedb.qp.operator.OperatorRows
+helper	dynamitedb.qp.operator.AggregateOperator
+helper	dynamitedb.qp.operator.AggregateOperator$Accumulator
+helper	dynamitedb.qp.operator.AggregateOperator$Group
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$Candidate
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$Config
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$FlatJoin
+helper	dynamitedb.qo.join.GeneticJoinOrderOptimizer$OptimizationResult
 helper	dynamitedb.app.client.RemoteQueryClient
 helper	dynamitedb.app.cli.ResultRenderer
 helper	dynamitedb.app.cli.SqlStatementReader
@@ -874,3 +983,5 @@ helper	dynamitedb.qo.verification.QueryOptimizerDriver$FakeTable
 helper	dynamitedb.qo.verification.QueryOptimizerDriver$Scenario
 helper	dynamitedb.qp.driver.QueryProcessorTestDriver$Scenario
 helper	dynamitedb.ccm.protocol.LockManager$TicketEntry
+helper	dynamitedb.ccm.lifecycle.TransactionRegistry$FinalRange
+helper	dynamitedb.ccm.timestamp.TimestampOrderingProtocol$Pending

@@ -139,7 +139,9 @@ class QP3IntegrationTest {
   }
 
   @Test
-  @Disabled("Menunggu FRM nyata: StubRuntime memakai UndoManager mock yang tidak membalikkan data")
+  @Disabled(
+      "StubRuntime intentionally uses a mock UndoManager; real rollback is covered by"
+          + " PersistentRuntimeTest")
   @DisplayName("BEGIN; DELETE; ABORT; data kembali (membutuhkan rollback FRM yang nyata)")
   void abortRestoresDeletedRows() {
     int total = storedRows("student").size();

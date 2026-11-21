@@ -47,6 +47,17 @@ class QueryOptimizerImplTest {
   }
 
   @Test
+  void explainShowsIsNullPredicates() {
+    QueryOptimizerImpl optimizer = optimizer();
+
+    var isNull = optimizer.explain("SELECT name FROM student WHERE name IS NULL");
+    assertTrue(isNull.before().contains("(student.name IS NULL)"), isNull.before());
+    assertTrue(isNull.after().contains("(student.name IS NULL)"), isNull.after());
+    var isNotNull = optimizer.explain("SELECT name FROM student WHERE name IS NOT NULL");
+    assertTrue(isNotNull.after().contains("(student.name IS_NOT NULL)"), isNotNull.after());
+  }
+
+  @Test
   void returnsEmptyOutputSchemaForNonSelectStatements() {
     assertEquals(new Schema(List.of()), optimizer().prepare("BEGIN").outputSchema());
   }
@@ -78,7 +89,8 @@ class QueryOptimizerImplTest {
         new SqlParser(new StatementParser(), new ExpressionParser()),
         new Binder(catalog),
         new PlanBuilder(),
-        new OptimizerPipeline(List.of(), new JoinOrderOptimizer(), new BestPlanSelector(cost)),
+        new OptimizerPipeline(
+            List.of(), new JoinOrderOptimizer(catalog), new BestPlanSelector(cost)),
         cost,
         new PlanVisualizer());
   }

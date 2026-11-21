@@ -82,11 +82,19 @@ class MaintenanceControllerTest {
     var maintenance = new MaintenanceController(registry);
     maintenance.initializeRecoveredState(() -> {});
     var tx = registry.create();
-    try (var executor = Executors.newSingleThreadExecutor()) {
+    try (var executor = Executors.newFixedThreadPool(2)) {
       var pending = executor.submit(maintenance::acquire);
       assertTrue(drained.await(5, TimeUnit.SECONDS));
-      assertThrows(DbmsException.class, registry::create);
+      var beginStarted = new CountDownLatch(1);
+      var waitingBegin =
+          executor.submit(
+              () -> {
+                beginStarted.countDown();
+                return registry.create();
+              });
+      assertTrue(beginStarted.await(5, TimeUnit.SECONDS));
       assertFalse(pending.isDone());
+      assertFalse(waitingBegin.isDone());
 
       tx.transition(TransactionStatus.FAILED);
       tx.transition(TransactionStatus.ABORTED);
@@ -96,6 +104,7 @@ class MaintenanceControllerTest {
       MaintenanceGuard guard = pending.get(5, TimeUnit.SECONDS);
       assertTrue(registry.isAdmissionHeld());
       guard.close();
+      assertEquals(2, waitingBegin.get(5, TimeUnit.SECONDS).id().value());
       guard.close();
       assertFalse(registry.isAdmissionHeld());
     }

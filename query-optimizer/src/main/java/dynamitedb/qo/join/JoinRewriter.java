@@ -1,10 +1,12 @@
 package dynamitedb.qo.join;
 
+import dynamitedb.contracts.query.AggregatePlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.SortPlan;
@@ -12,19 +14,22 @@ import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.qo.pipeline.PlanRewrite;
 import java.util.Optional;
 
-/** Menggabungkan seleksi dengan cartesian product atau join di bawahnya (QO-11). */
 public class JoinRewriter implements PlanRewrite {
 
   @Override
   public PlanNode rewrite(PlanNode plan) {
     return switch (plan) {
       case FilterPlan filter -> rewriteFilter(filter);
-      case ProjectPlan project -> new ProjectPlan(rewrite(project.child()), project.columns());
+      case ProjectPlan project -> ProjectPlan.fromItems(rewrite(project.child()), project.items());
+      case AggregatePlan aggregate ->
+          new AggregatePlan(
+              rewrite(aggregate.child()), aggregate.groupBy(), aggregate.aggregates());
       case SortPlan sort -> new SortPlan(rewrite(sort.child()), sort.keys());
+      case LimitPlan limit -> new LimitPlan(rewrite(limit.child()), limit.count());
       case JoinPlan join ->
           new JoinPlan(rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition());
       case UpdatePlan update ->
-          new UpdatePlan(rewrite(update.source()), update.table(), update.target(), update.value());
+          new UpdatePlan(rewrite(update.source()), update.table(), update.assignments());
       case DeletePlan delete -> new DeletePlan(rewrite(delete.source()), delete.table());
       default -> plan;
     };

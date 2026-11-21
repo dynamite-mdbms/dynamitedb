@@ -80,6 +80,7 @@ method	dynamitedb.contracts.api.HistoricalRecoveryStorage	createStage	dynamitedb
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.contracts.api.HistoricalRecoveryStorage	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.contracts.api.HistoricalRecoveryStorage	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 type	dynamitedb.contracts.api.StorageGenerationAdmin	interface
 method	dynamitedb.contracts.api.StorageGenerationAdmin	readActiveManifest	dynamitedb.contracts.recovery.GenerationManifest
 method	dynamitedb.contracts.api.StorageGenerationAdmin	switchToPublishedGeneration	void	dynamitedb.contracts.recovery.GenerationManifest
@@ -489,6 +490,7 @@ method	dynamitedb.sm.facade.StorageRecoveryAdapter	createStage	dynamitedb.contra
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.sm.facade.StorageRecoveryAdapter	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	readActiveManifest	dynamitedb.contracts.recovery.GenerationManifest
 method	dynamitedb.sm.facade.StorageRecoveryAdapter	switchToPublishedGeneration	void	dynamitedb.contracts.recovery.GenerationManifest
 type	dynamitedb.sm.heap.RecordStore	class
@@ -557,6 +559,7 @@ method	dynamitedb.sm.generation.GenerationStore	createStage	dynamitedb.contracts
 method	dynamitedb.sm.generation.GenerationStore	replayInStage	void	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryMutation|dynamitedb.contracts.recovery.LogSequenceNumber
 method	dynamitedb.sm.generation.GenerationStore	rebuildStageIndexes	void	dynamitedb.contracts.recovery.RecoveryStage
 method	dynamitedb.sm.generation.GenerationStore	sealStage	dynamitedb.contracts.recovery.SealedGeneration	dynamitedb.contracts.recovery.RecoveryStage|dynamitedb.contracts.recovery.RecoveryBoundary
+method	dynamitedb.sm.generation.GenerationStore	materializeSnapshot	void	dynamitedb.contracts.recovery.SealedGeneration|dynamitedb.contracts.recovery.SnapshotMetadata
 method	dynamitedb.sm.generation.GenerationStore	readActiveManifest	dynamitedb.contracts.recovery.GenerationManifest
 method	dynamitedb.sm.generation.GenerationStore	switchToPublishedGeneration	void	dynamitedb.contracts.recovery.GenerationManifest
 type	dynamitedb.sm.verification.StorageTestDriver	class

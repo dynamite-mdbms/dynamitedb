@@ -2,9 +2,11 @@ package dynamitedb.sm.facade;
 
 import dynamitedb.contracts.api.IndexAdmin;
 import dynamitedb.contracts.api.RowCursor;
+import dynamitedb.contracts.api.TableAdmin;
 import dynamitedb.contracts.api.TupleReader;
 import dynamitedb.contracts.api.WriteStore;
 import dynamitedb.contracts.recovery.LogSequenceNumber;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
@@ -12,6 +14,7 @@ import dynamitedb.contracts.storage.PreparedWrite;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.sm.catalog.CatalogManager;
 import dynamitedb.sm.heap.RecordStore;
@@ -20,7 +23,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** SM facade untuk QP: read, two-phase write, create index; delegasi ke RecordStore. */
-public final class StorageManagerImpl implements TupleReader, WriteStore, IndexAdmin {
+public final class StorageManagerImpl implements TupleReader, WriteStore, IndexAdmin, TableAdmin {
   private final RecordStore records;
   private final CatalogManager catalog;
   private final IndexManager indexes;
@@ -82,5 +85,16 @@ public final class StorageManagerImpl implements TupleReader, WriteStore, IndexA
             Objects.requireNonNull(table, "table"),
             Objects.requireNonNull(column, "column"),
             Objects.requireNonNull(kind, "kind")));
+  }
+
+  @Override
+  public void createTable(TableDefinition definition) {
+    records.createTable(Objects.requireNonNull(definition, "definition"));
+  }
+
+  @Override
+  public void dropTable(String table, DropBehavior behavior) {
+    records.dropTable(
+        Objects.requireNonNull(table, "table"), Objects.requireNonNull(behavior, "behavior"));
   }
 }

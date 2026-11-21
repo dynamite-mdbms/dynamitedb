@@ -82,13 +82,22 @@ public final class CheckpointManager implements CheckpointService {
     }
   }
 
-  /** Stops future ticks without interrupting a checkpoint already running. */
   public void stopPeriodic() {
+    ScheduledExecutorService stopped;
     synchronized (periodicLock) {
-      if (periodic != null) {
-        periodic.shutdown();
-        periodic = null;
-      }
+      stopped = periodic;
+      if (stopped == null) return;
+      stopped.shutdown();
+    }
+    try {
+      while (!stopped.awaitTermination(1, TimeUnit.MINUTES)) {}
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(
+          "Interrupted while stopping periodic checkpoints", interrupted);
+    }
+    synchronized (periodicLock) {
+      if (periodic == stopped) periodic = null;
     }
   }
 }

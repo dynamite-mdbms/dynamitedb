@@ -10,17 +10,25 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.CreateIndexStatement;
+import dynamitedb.contracts.query.CreateTableStatement;
 import dynamitedb.contracts.query.DeleteStatement;
+import dynamitedb.contracts.query.DropTableStatement;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.InsertStatement;
 import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.Statement;
 import dynamitedb.contracts.query.TransactionCommand;
 import dynamitedb.contracts.query.TransactionStatement;
+import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdateStatement;
+import dynamitedb.contracts.storage.Column;
+import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
+import dynamitedb.contracts.storage.ForeignKey;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IntValue;
+import dynamitedb.contracts.storage.PrimaryKey;
 import dynamitedb.contracts.storage.TextValue;
 import java.util.Arrays;
 import java.util.List;
@@ -61,6 +69,21 @@ class StatementParserTest {
   }
 
   @Test
+  void parsesNegativeNumbersInInsertAndUpdate() {
+    Expression negativeFloat = new LiteralExpression(new FloatValue(-2.5));
+    assertEquals(
+        new InsertStatement("student", List.of(lit(-1), negativeFloat)),
+        parse("INSERT INTO student VALUES (-1, -2.5);"));
+    assertEquals(
+        new UpdateStatement(
+            "student",
+            new ColumnRef(Optional.empty(), "gpa"),
+            negativeFloat,
+            Optional.of(new BinaryExpression(col("student_id"), BinaryOp.EQ, lit(-1)))),
+        parse("UPDATE student SET gpa = -2.5 WHERE student_id = -1;"));
+  }
+
+  @Test
   void parsesUpdateWithAndWithoutWhere() {
     Expression raise =
         new BinaryExpression(
@@ -78,6 +101,29 @@ class StatementParserTest {
                 new BinaryExpression(
                     col("department"), BinaryOp.EQ, new LiteralExpression(new TextValue("RnD"))))),
         parse("update employee set employee.salary = salary * 1.05 where department = 'RnD';"));
+  }
+
+  @Test
+  void parsesMultipleUpdateAssignments() {
+    assertEquals(
+        new UpdateStatement(
+            "employee",
+            List.of(
+                new UpdateAssignment(new ColumnRef(Optional.empty(), "salary"), lit(10)),
+                new UpdateAssignment(
+                    new ColumnRef(Optional.empty(), "department"),
+                    new LiteralExpression(new TextValue("RnD")))),
+            Optional.of(new BinaryExpression(col("id"), BinaryOp.EQ, lit(1)))),
+        parse("UPDATE employee SET salary = 10, department = 'RnD' WHERE id = 1"));
+
+    UpdateStatement nested =
+        (UpdateStatement)
+            parse(
+                "UPDATE employee SET salary = (SELECT salary FROM employee WHERE id = 2), "
+                    + "department = 'RnD' WHERE id = 1");
+    assertEquals(2, nested.assignments().size());
+    assertEquals(
+        Optional.of(new BinaryExpression(col("id"), BinaryOp.EQ, lit(1))), nested.predicate());
   }
 
   @Test
@@ -112,6 +158,55 @@ class StatementParserTest {
         parse("CREATE INDEX idx_gpa ON student(gpa) USING B_PLUS_TREE;"));
   }
 
+  @Test
+  void parsesCreateTableWithTypesAndKeys() {
+    assertEquals(
+        new CreateTableStatement(
+            "enrollment",
+            List.of(
+                new Column("enrollment", "id", DataType.INTEGER, 0, true),
+                new Column("enrollment", "score", DataType.FLOAT, 0, true),
+                new Column("enrollment", "grade", DataType.CHAR, 2, true),
+                new Column("enrollment", "note", DataType.VARCHAR, 50, true)),
+            List.of(new PrimaryKey(List.of("id"))),
+            List.of(new ForeignKey("enrollment", List.of("id"), "student", List.of("student_id")))),
+        parse(
+            "create table enrollment (id integer, score Float, grade CHAR(2), note varchar(50),"
+                + " primary key (id), foreign key (id) references student(student_id));"));
+    assertEquals(
+        new CreateTableStatement(
+            "t",
+            List.of(
+                new Column("t", "a", DataType.INTEGER, 0, true),
+                new Column("t", "b", DataType.INTEGER, 0, true)),
+            List.of(new PrimaryKey(List.of("a")), new PrimaryKey(List.of("b"))),
+            List.of()),
+        parse("CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER PRIMARY KEY)"));
+    assertEquals(
+        new CreateTableStatement(
+            "t",
+            List.of(
+                new Column("t", "a", DataType.INTEGER, 0, true),
+                new Column("t", "b", DataType.INTEGER, 0, true)),
+            List.of(new PrimaryKey(List.of("a", "b"))),
+            List.of(new ForeignKey("t", List.of("b", "a"), "s", List.of("x", "y")))),
+        parse(
+            "CREATE TABLE t (a INTEGER, b INTEGER, PRIMARY KEY (a, b),"
+                + " FOREIGN KEY (b, a) REFERENCES s(x, y))"));
+  }
+
+  @Test
+  void parsesDropTableWithRestrictAsDefault() {
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.RESTRICT), parse("DROP TABLE student;"));
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.RESTRICT),
+        parse("drop table student restrict"));
+    assertEquals(
+        new DropTableStatement("student", DropBehavior.CASCADE),
+        parse("DROP TABLE student CASCADE;"));
+  }
+
   // Pesan lengkap dicek agar terbukti aturan mana yang menolak input dan di offset mana
   // (fail-fast).
   @ParameterizedTest
@@ -142,7 +237,29 @@ class StatementParserTest {
           ;                                           | Expected an SQL statement at offset 0 near ';'
           CREATE INDEX idx student(id);               | Expected ON at offset 17 near 'student'
           CREATE INDEX idx ON student(id) USING BTREE | Expected HASH or B_PLUS_TREE after USING at offset 38 near 'BTREE'
-          CREATE TABLE student                        | Expected INDEX at offset 7 near 'TABLE'
+          CREATE VIEW v                               | Expected INDEX or TABLE at offset 7 near 'VIEW'
+          CREATE TABLE student                        | Expected ( at end of input
+          CREATE TABLE (id INTEGER)                   | Expected a table name at offset 13 near '('
+          CREATE TABLE t ()                           | Expected a column name at offset 16 near ')'
+          CREATE TABLE t (id)                         | Expected a column type INTEGER, FLOAT, CHAR(n), or VARCHAR(n) at offset 18 near ')'
+          CREATE TABLE t (id TEXT)                    | Expected a column type INTEGER, FLOAT, CHAR(n), or VARCHAR(n) at offset 19 near 'TEXT'
+          CREATE TABLE t (name VARCHAR)               | Expected ( at offset 28 near ')'
+          CREATE TABLE t (name CHAR(n))               | Expected an integer length for CHAR at offset 26 near 'n'
+          CREATE TABLE t (name CHAR(2.5))             | Expected an integer length for CHAR at offset 26 near '2.5'
+          CREATE TABLE t (name CHAR(9999999999))      | Expected an integer length for CHAR at offset 26 near '9999999999'
+          CREATE TABLE t (id INTEGER(4))              | Expected ) at offset 26 near '('
+          CREATE TABLE t (id INTEGER,)                | Expected a column name at offset 27 near ')'
+          CREATE TABLE t (id INTEGER                  | Expected ) at end of input
+          CREATE TABLE t (id INTEGER PRIMARY)         | Expected KEY at offset 34 near ')'
+          CREATE TABLE t (id INTEGER, PRIMARY KEY id) | Expected ( at offset 40 near 'id'
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a,))   | Expected a column name at offset 42 near ')'
+          CREATE TABLE t (a INTEGER, PRIMARY KEY (a b))  | Expected ) at offset 42 near 'b'
+          CREATE TABLE t (a INTEGER, b INTEGER, FOREIGN KEY (a, b) REFERENCES s(x)) | FOREIGN KEY and REFERENCES need the same number of columns at offset 69 near '('
+          CREATE TABLE t (a INTEGER, FOREIGN KEY (a) s(id)) | Expected REFERENCES at offset 43 near 's'
+          CREATE TABLE t (a INTEGER) x                | Unexpected token after CREATE statement at offset 27 near 'x'
+          DROP student                                | Expected TABLE at offset 5 near 'student'
+          DROP TABLE;                                 | Expected a table name at end of input
+          DROP TABLE student RESTRICT CASCADE         | Unexpected token after DROP statement at offset 28 near 'CASCADE'
           SELECT * FROM student                       | Expected a supported statement keyword at offset 0 near 'SELECT'
           """)
   void rejectsInvalidStatementAtFirstError(String sql, String message) {

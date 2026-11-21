@@ -2,7 +2,6 @@ package dynamitedb.ccm.lifecycle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +14,7 @@ import dynamitedb.contracts.transaction.TransactionStatus;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -81,7 +81,50 @@ class TransactionRegistryTest {
 
     assertEquals(1, registry.activeCount());
     assertEquals(List.of(second.id()), registry.activeTransactions());
-    assertSame(first, registry.get(first.id()));
+    assertEquals(Optional.empty(), registry.find(first.id()));
+    assertEquals(TransactionStatus.COMMITTED, registry.status(first.id()));
+  }
+
+  @Test
+  void sustainedAutocommitRetiresTransactionsAndCoalescesFinalStatuses() throws Exception {
+    var registry = new TransactionRegistry();
+    TransactionId first = null;
+    for (int i = 0; i < 1_000; i++) {
+      Transaction tx = registry.create();
+      if (first == null) first = tx.id();
+      tx.transition(TransactionStatus.PARTIALLY_COMMITTED);
+      tx.transition(TransactionStatus.COMMITTED);
+      registry.markFinished(tx);
+      assertTrue(registry.find(tx.id()).isEmpty());
+    }
+
+    assertEquals(0, registry.activeCount());
+    assertEquals(TransactionStatus.COMMITTED, registry.status(first));
+    assertEquals(TransactionStatus.COMMITTED, registry.status(new TransactionId(1_000)));
+    var field = TransactionRegistry.class.getDeclaredField("finalized");
+    field.setAccessible(true);
+    assertEquals(1, ((NavigableMap<?, ?>) field.get(registry)).size());
+  }
+
+  @Test
+  void outOfOrderFinalizationPreservesEachStatus() {
+    var registry = new TransactionRegistry();
+    Transaction first = registry.create();
+    Transaction second = registry.create();
+    Transaction third = registry.create();
+    third.transition(TransactionStatus.PARTIALLY_COMMITTED);
+    third.transition(TransactionStatus.COMMITTED);
+    registry.markFinished(third);
+    second.transition(TransactionStatus.FAILED);
+    second.transition(TransactionStatus.ABORTED);
+    registry.markFinished(second);
+    first.transition(TransactionStatus.PARTIALLY_COMMITTED);
+    first.transition(TransactionStatus.COMMITTED);
+    registry.markFinished(first);
+
+    assertEquals(TransactionStatus.COMMITTED, registry.status(first.id()));
+    assertEquals(TransactionStatus.ABORTED, registry.status(second.id()));
+    assertEquals(TransactionStatus.COMMITTED, registry.status(third.id()));
   }
 
   @Test

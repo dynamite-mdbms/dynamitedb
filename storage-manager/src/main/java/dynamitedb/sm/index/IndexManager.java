@@ -6,11 +6,13 @@ import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.IndexKind;
 import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IndexPredicate;
+import dynamitedb.contracts.storage.NullValue;
 import dynamitedb.contracts.storage.PreparedWrite;
 import dynamitedb.contracts.storage.RecordId;
 import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TextValue;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.sm.heap.HeapFile;
 import dynamitedb.sm.serialization.RecordSerializer;
@@ -63,15 +65,20 @@ public final class IndexManager {
     if (target == null) {
       throw new DbmsException(ErrorCode.SQL_BIND, "Index tidak dikenal: " + index);
     }
+    // perbandingan SQL dengan NULL bernilai UNKNOWN, jadi sama seperti scan: tidak ada baris
+    if (predicate.value() instanceof NullValue) {
+      return List.of();
+    }
     switch (predicate.operator()) {
       case EQ:
-        return target.lookup(predicate.value());
+        return target.lookup(indexKey(predicate.value()));
       case LT:
       case LTE:
       case GT:
       case GTE:
         if (target instanceof OrderedIndex ordered) {
-          return ordered.range(predicate);
+          return ordered.range(
+              new IndexPredicate(predicate.operator(), indexKey(predicate.value())));
         }
         throw new DbmsException(
             ErrorCode.UNSUPPORTED_OPERATION,
@@ -156,7 +163,7 @@ public final class IndexManager {
         continue; // hanya baris hidup yang masuk index
       }
       Row row = serializer.decode(image, schema);
-      target.insert(row.values().get(columnPos), rid);
+      target.insert(indexKey(row.values().get(columnPos)), rid);
     }
   }
 
@@ -167,7 +174,12 @@ public final class IndexManager {
     }
     int columnPos = columnPosition(schema, meta.column());
     Row row = serializer.decode(image, schema);
-    return row.values().get(columnPos);
+    return indexKey(row.values().get(columnPos));
+  }
+
+  // teks disamakan dengan perbandingan scan QP yang mengabaikan whitespace di belakang
+  private static Value indexKey(Value value) {
+    return value instanceof TextValue text ? new TextValue(text.value().stripTrailing()) : value;
   }
 
   private static int columnPosition(Schema schema, String column) {

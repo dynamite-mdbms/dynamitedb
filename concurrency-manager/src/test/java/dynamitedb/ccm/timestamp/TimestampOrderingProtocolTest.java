@@ -1,6 +1,7 @@
 package dynamitedb.ccm.timestamp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dynamitedb.ccm.lifecycle.TransactionRegistry;
@@ -14,6 +15,8 @@ import dynamitedb.contracts.transaction.ResourceId;
 import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.WaitToken;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class TimestampOrderingProtocolTest {
@@ -80,11 +83,17 @@ class TimestampOrderingProtocolTest {
   @Test
   void uncommittedWriteIntentBlocksAllOtherAccess() {
     TransactionId older = begin();
-    TransactionId newer = begin();
+    TransactionId newerRead = begin();
+    TransactionId newerWrite = begin();
     assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
-    assertAborted(protocol.request(request(newer, 5, AccessMode.READ)));
-    assertAborted(protocol.request(request(newer, 5, AccessMode.WRITE)));
+    WaitToken read =
+        protocol.request(request(newerRead, 5, AccessMode.READ)).ticket().orElseThrow();
+    WaitToken write =
+        protocol.request(request(newerWrite, 5, AccessMode.WRITE)).ticket().orElseThrow();
     assertGranted(protocol.request(request(older, 5, AccessMode.READ)));
+    protocol.onFinish(older);
+    assertGranted(protocol.awaitAccess(read));
+    assertGranted(protocol.awaitAccess(write));
   }
 
   @Test
@@ -92,9 +101,34 @@ class TimestampOrderingProtocolTest {
     TransactionId older = begin();
     TransactionId newer = begin();
     assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
-    assertAborted(protocol.request(request(newer, 5, AccessMode.WRITE)));
+    WaitToken ticket = protocol.request(request(newer, 5, AccessMode.WRITE)).ticket().orElseThrow();
     protocol.onFinish(older);
-    assertGranted(protocol.request(request(newer, 5, AccessMode.WRITE)));
+    assertGranted(protocol.awaitAccess(ticket));
+  }
+
+  @Test
+  void youngerWaiterStaysBlockedUntilOlderWriterFinishes() throws Exception {
+    TransactionId older = begin();
+    TransactionId younger = begin();
+    assertGranted(protocol.request(request(older, 5, AccessMode.WRITE)));
+    WaitToken ticket =
+        protocol.request(request(younger, 5, AccessMode.READ)).ticket().orElseThrow();
+
+    try (var executor = Executors.newSingleThreadExecutor()) {
+      var waiting = executor.submit(() -> protocol.awaitAccess(ticket));
+      assertFalse(waiting.isDone());
+      protocol.onFinish(older);
+      assertGranted(waiting.get(5, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
+  void olderTransactionIsAbortedInsteadOfWaitingForYoungerWriter() {
+    TransactionId older = begin();
+    TransactionId younger = begin();
+    assertGranted(protocol.request(request(younger, 5, AccessMode.WRITE)));
+    assertAborted(protocol.request(request(older, 5, AccessMode.READ)));
+    assertAborted(protocol.request(request(older, 5, AccessMode.WRITE)));
   }
 
   @Test

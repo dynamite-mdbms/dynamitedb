@@ -29,7 +29,8 @@ class StorageStartupTest {
     StubRuntime first = new StubRuntime(config);
     first.bootstrap().start(config);
     try {
-      // Belum di-wire ke startup: FRM checkpoint/redo masih mock, jadi data tidak durable.
+      // StubRuntime intentionally keeps recovery mocked; production persistence is covered by
+      // PersistentRuntimeTest.
       new SampleDatabaseLoader(first.storage(), first.concurrency(), first.concurrency())
           .loadIfAbsent(first.catalog());
       for (String table : List.of("student", "course", "enrollment")) {
@@ -40,7 +41,7 @@ class StorageStartupTest {
       first.bootstrap().shutdown();
     }
     int students = count(first, "student");
-    // FRM checkpoint masih mock; real checkpoint memanggil port SM ini.
+    // Flush manually because this fixture does not use the persistent FRM runtime.
     first.storageRecovery().flushDirtyThrough(new LogSequenceNumber(Long.MAX_VALUE));
 
     StubRuntime second = new StubRuntime(config);

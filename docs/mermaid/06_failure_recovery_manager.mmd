@@ -56,6 +56,7 @@ class HistoricalRecoveryStorage {
   +replayInStage(stage: RecoveryStage, change: RecoveryMutation, lsn: LogSequenceNumber) void
   +rebuildStageIndexes(stage: RecoveryStage) void
   +sealStage(stage: RecoveryStage, boundary: RecoveryBoundary) SealedGeneration
+  +materializeSnapshot(generation: SealedGeneration, snapshot: SnapshotMetadata) void
 }
 class StorageGenerationAdmin {
   <<interface>>

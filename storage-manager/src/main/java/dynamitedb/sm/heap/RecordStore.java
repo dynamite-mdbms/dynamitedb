@@ -7,6 +7,7 @@ import dynamitedb.contracts.recovery.LogSequenceNumber;
 import dynamitedb.contracts.recovery.RecoveryMutation;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
+import dynamitedb.contracts.storage.DropBehavior;
 import dynamitedb.contracts.storage.FloatValue;
 import dynamitedb.contracts.storage.ImmutableBytes;
 import dynamitedb.contracts.storage.IndexMetadata;
@@ -18,6 +19,7 @@ import dynamitedb.contracts.storage.RecordImage;
 import dynamitedb.contracts.storage.Row;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.StoredRow;
+import dynamitedb.contracts.storage.TableDefinition;
 import dynamitedb.contracts.storage.Value;
 import dynamitedb.contracts.storage.WriteReservationId;
 import dynamitedb.contracts.transaction.TransactionId;
@@ -36,6 +38,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** Physical record ops (SM-04..07): two-phase write, recovery, scan, index. */
 public final class RecordStore {
@@ -174,12 +177,15 @@ public final class RecordStore {
     Objects.requireNonNull(mutation, "mutation");
     Objects.requireNonNull(lsn, "lsn");
     RecordId rid = mutation.rid();
-    String table =
-        tableName(rid.tableId())
-            .orElseThrow(
-                () ->
-                    new DbmsException(
-                        ErrorCode.RECOVERY_FAILURE, "Recovery table tidak dikenal: " + rid));
+    Optional<String> known = tableName(rid.tableId());
+    if (known.isEmpty()) {
+      if (catalog.isDroppedTableId(rid.tableId())) {
+        return; // table sudah di-DROP setelah record ini di-log; page-nya tidak dipakai lagi
+      }
+      throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Recovery table tidak dikenal: " + rid);
+    }
+    String table = known.get();
+    heap.ensurePage(rid.pageNumber());
     heap.adopt(rid.tableId(), rid.pageNumber());
     RecordImage before;
     Page page = buffer.pin(rid.pageNumber());
@@ -208,6 +214,8 @@ public final class RecordStore {
 
   /** Load index definitions dari catalog, rebuild dari heap, refresh statistics. */
   public synchronized void rebuildIndexes() {
+    heap.retainTables(
+        catalog.listTables().stream().map(catalog::getTableId).collect(Collectors.toSet()));
     loadIndexDefinitions();
     indexes.rebuildAll();
     indexesLoaded = true;
@@ -293,6 +301,26 @@ public final class RecordStore {
       indexes.dropIndex(meta.name());
       throw e;
     }
+  }
+
+  /** CREATE TABLE: simpan definisi + PK index di catalog, lalu daftarkan ke IndexManager. */
+  public synchronized void createTable(TableDefinition definition) {
+    ensureIndexesLoaded();
+    catalog.createTable(definition);
+    loadIndexDefinitions();
+  }
+
+  /** DROP TABLE: catalog dulu (durable), lalu index di memori dan page di heap.dir. */
+  public synchronized void dropTable(String table, DropBehavior behavior) {
+    ensureIndexesLoaded();
+    long tableId = catalog.getTableId(table);
+    if (pending.values().stream().anyMatch(prepared -> prepared.table().equals(table))) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "Table masih punya write yang di-prepare");
+    }
+    for (IndexMetadata index : catalog.dropTable(table, behavior)) {
+      indexes.dropIndex(index.name());
+    }
+    heap.dropTable(tableId);
   }
 
   /** Table name untuk catalog table ID. */

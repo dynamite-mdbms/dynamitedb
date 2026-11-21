@@ -11,6 +11,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -18,6 +19,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
@@ -25,6 +27,7 @@ import java.util.logging.Logger;
 /** Shared QP server: separate session and ordered execution queue for every socket. */
 public final class TcpServer implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(TcpServer.class.getName());
+  private static final int MAX_IN_FLIGHT_REQUESTS = 16;
   private final QueryProcessor processor;
   private final InetSocketAddress address;
   private final Set<Connection> connections = ConcurrentHashMap.newKeySet();
@@ -96,6 +99,7 @@ public final class TcpServer implements AutoCloseable {
     private final Socket socket;
     private final ExecutorService requests =
         Executors.newSingleThreadExecutor(Thread.ofVirtual().name("qp-request-", 0).factory());
+    private final Semaphore requestSlots = new Semaphore(MAX_IN_FLIGHT_REQUESTS);
     private SessionId session;
 
     private Connection(Socket socket) {
@@ -137,7 +141,24 @@ public final class TcpServer implements AutoCloseable {
             throw new IOException("Unknown request command");
           }
           String sql = WireProtocol.readString(input, WireProtocol.MAX_SQL_BYTES);
-          requests.submit(() -> execute(sql, output));
+          if (!requestSlots.tryAcquire()) {
+            requests.submit(
+                () -> {
+                  sendError(output, ErrorCode.INVALID_STATE, "Too many pending requests");
+                  cancel();
+                });
+            requests.shutdown();
+            input.transferTo(OutputStream.nullOutputStream());
+            break;
+          }
+          requests.submit(
+              () -> {
+                try {
+                  execute(sql, output);
+                } finally {
+                  requestSlots.release();
+                }
+              });
           // Keep reading to notice EOF and interrupt an outstanding WAITING request.
         }
       } catch (EOFException ignored) {
