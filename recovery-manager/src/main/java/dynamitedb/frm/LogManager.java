@@ -108,11 +108,21 @@ public final class LogManager implements AutoCloseable {
   }
 
   public static LogManager openExisting(Path root, UUID lineage, RecoveryHighWater seed) {
+    return openExisting(root, lineage, seed, seed);
+  }
+
+  private static LogManager openExisting(
+      Path root, UUID lineage, RecoveryHighWater seed, RecoveryHighWater published) {
     var file = LogFile.openExisting(root, lineage, seed.lsn().value());
     try {
       var manager = new LogManager(root, lineage, file, new LogRecordCodec(), seed);
+      long publishedLsn = published.lsn().value();
       for (var frames = file.readRecoverableFrames(); frames.hasNext(); ) {
         manager.accept(manager.codec.decode(frames.next()), true);
+        if (manager.lastLsn == publishedLsn) manager.reconcilePublishedHighWater(published);
+      }
+      if (manager.lastLsn < publishedLsn) {
+        throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Manifest exceeds complete WAL prefix");
       }
       file.repairIncompleteTail();
       manager.durableLsn = manager.lastLsn;
@@ -130,13 +140,29 @@ public final class LogManager implements AutoCloseable {
     if (highWater.lsn().value() < floor) {
       throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Manifest precedes active WAL floor");
     }
-    RecoveryHighWater seed =
+    if (highWater.lsn().value() == floor) {
+      return openExisting(root, manifest.walLineage(), highWater);
+    }
+    // WAL v1 stores the floor LSN but not the creation-time transaction or clock bounds.
+    var seed =
         new RecoveryHighWater(
-            new LogSequenceNumber(floor),
-            floor > 0 ? highWater.maxTx() : new TransactionId(0),
-            floor > 0 ? highWater.maxTimestamp() : 0,
-            floor > 0 ? highWater.maxCommitTime() : Optional.empty());
-    return openExisting(root, manifest.walLineage(), seed);
+            new LogSequenceNumber(floor), new TransactionId(0), 0, Optional.empty());
+    return openExisting(root, manifest.walLineage(), seed, highWater);
+  }
+
+  private void reconcilePublishedHighWater(RecoveryHighWater published) {
+    if (maxTx > published.maxTx().value()
+        || maxTimestamp > published.maxTimestamp()
+        || (maxCommitTime != null
+            && published.maxCommitTime().filter(t -> !t.isBefore(maxCommitTime)).isEmpty())) {
+      throw new DbmsException(
+          ErrorCode.RECOVERY_FAILURE, "Manifest high-water is below WAL prefix");
+    }
+    // Recovery publishes before new transactions are admitted; BEGINs can reorder within an epoch.
+    seed = published;
+    maxTx = published.maxTx().value();
+    maxTimestamp = published.maxTimestamp();
+    maxCommitTime = published.maxCommitTime().orElse(null);
   }
 
   public synchronized UUID activeLineage() {
