@@ -112,8 +112,10 @@ the data directory before it accepts clients:
 The real server defaults to strict 2PL and runs a checkpoint every 60 seconds after
 startup recovery completes. Use `--protocol strict-timestamp` to select timestamp
 ordering, or `--checkpoint-interval-seconds N` to set a positive checkpoint interval
-in seconds. These options are also available in the installed application script
-from `./gradlew :app:installDist`. Manual checkpoint and historical recovery remain
+in seconds. Add `--genetic-optimizer` (also accepted by `./dynamitedb` and `shell`)
+to let the QO-18 genetic algorithm propose join orders; the cheapest plan still
+wins, and the option is off by default. These options are also available in the
+installed application script from `./gradlew :app:installDist`. Manual checkpoint and historical recovery remain
 available through the `PersistentRuntime` Java API.
 
 Connect from a second terminal:
