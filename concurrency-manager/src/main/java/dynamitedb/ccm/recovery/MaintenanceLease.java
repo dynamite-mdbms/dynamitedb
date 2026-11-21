@@ -12,6 +12,11 @@ public class MaintenanceLease implements MaintenanceGuard {
   }
 
   @Override
+  public synchronized void requireRestart() {
+    if (!closed) controller.requireRestart();
+  }
+
+  @Override
   public synchronized void close() {
     if (!closed) {
       controller.releaseLease();

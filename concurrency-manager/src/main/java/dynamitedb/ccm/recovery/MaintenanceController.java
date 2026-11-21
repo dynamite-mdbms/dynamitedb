@@ -12,6 +12,7 @@ public class MaintenanceController {
   private boolean leased;
   private Thread leaseOwner;
   private boolean recoveryPending = true;
+  private boolean restartRequired;
   private int admissionBlocks;
 
   public MaintenanceController(TransactionRegistry registry) {
@@ -29,6 +30,7 @@ public class MaintenanceController {
         while (leased) {
           wait();
         }
+        checkRestartRequired();
         if (Thread.currentThread().isInterrupted()) {
           throw new InterruptedException();
         }
@@ -63,6 +65,7 @@ public class MaintenanceController {
   }
 
   public synchronized void initializeRecoveredState(Runnable initializer) {
+    checkRestartRequired();
     Objects.requireNonNull(initializer, "initializer");
     if ((leased && leaseOwner != Thread.currentThread()) || (!recoveryPending && !leased)) {
       throw new DbmsException(
@@ -77,12 +80,26 @@ public class MaintenanceController {
   }
 
   public synchronized void beginRecovery() {
+    checkRestartRequired();
     if (!leased || leaseOwner != Thread.currentThread()) {
       throw new DbmsException(ErrorCode.INVALID_STATE, "Recovery memerlukan maintenance eksklusif");
     }
     if (!recoveryPending) {
       registry.holdAdmission();
       recoveryPending = true;
+    }
+  }
+
+  synchronized void requireRestart() {
+    if (!restartRequired) {
+      beginRecovery();
+      restartRequired = true;
+    }
+  }
+
+  private void checkRestartRequired() {
+    if (restartRequired) {
+      throw new DbmsException(ErrorCode.INVALID_STATE, "Published generation requires restart");
     }
   }
 

@@ -3,7 +3,6 @@ package dynamitedb.app.cli;
 import java.io.IOException;
 import java.io.PushbackReader;
 import java.io.Reader;
-import java.util.Locale;
 
 /** Reads multiline statements without splitting semicolons inside quotes or comments. */
 public final class SqlStatementReader {
@@ -24,7 +23,7 @@ public final class SqlStatementReader {
   public String next() throws IOException {
     StringBuilder sql = new StringBuilder();
     State state = State.NORMAL;
-    boolean hasSql = false;
+    int contentStart = -1;
     int value;
     while ((value = input.read()) != -1) {
       char current = (char) value;
@@ -54,21 +53,32 @@ public final class SqlStatementReader {
       } else if (current == '/' && consume('*')) {
         sql.append('*');
         state = State.BLOCK_COMMENT;
+      } else if (current == ':' && contentStart < 0) {
+        // Shell command arguments are paths or text, not SQL tokens.
+        int start = sql.length() - 1;
+        while ((value = input.read()) != -1 && value != '\n') sql.append((char) value);
+        return sql.substring(start).strip();
       } else if (current == '\'' || current == '"') {
-        hasSql = true;
+        if (contentStart < 0) contentStart = sql.length() - 1;
         state = current == '\'' ? State.SINGLE_QUOTE : State.DOUBLE_QUOTE;
       } else if (current == ';') {
-        if (hasSql) return sql.toString().strip();
+        if (contentStart >= 0) {
+          String command = sql.substring(contentStart, sql.length() - 1).strip();
+          return isExit(command) ? command : sql.toString().strip();
+        }
         sql.setLength(0);
-      } else if (current == '\n' && isCommand(sql.toString())) {
-        return sql.toString().strip();
-      } else if (!Character.isWhitespace(current)) {
-        hasSql = true;
+      } else if (current == '\n' && contentStart >= 0) {
+        String command = sql.substring(contentStart).strip();
+        if (isExit(command)) return command;
+      } else if (contentStart < 0 && !Character.isWhitespace(current)) {
+        contentStart = sql.length() - 1;
       }
     }
-    String remaining = sql.toString().strip();
-    if (state == State.NORMAL && isCommand(remaining)) return remaining;
-    if (!hasSql && state != State.BLOCK_COMMENT) return null;
+    if (contentStart >= 0 && state == State.NORMAL) {
+      String command = sql.substring(contentStart).strip();
+      if (isExit(command)) return command;
+    }
+    if (contentStart < 0 && state != State.BLOCK_COMMENT) return null;
     throw new IOException("Input ended before the statement was completed with ';'");
   }
 
@@ -79,8 +89,7 @@ public final class SqlStatementReader {
     return false;
   }
 
-  private static boolean isCommand(String value) {
-    String command = value.strip().toLowerCase(Locale.ROOT);
-    return command.equals("exit") || command.equals("quit") || command.startsWith(":");
+  private static boolean isExit(String value) {
+    return value.equalsIgnoreCase("exit") || value.equalsIgnoreCase("quit");
   }
 }

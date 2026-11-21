@@ -127,7 +127,7 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
       return result;
     }
 
-    try (MaintenanceGuard ignored = maintenance.acquireMaintenance()) {
+    try (MaintenanceGuard guard = maintenance.acquireMaintenance()) {
       HistoryCatalog.RecoveryPlan plan = catalog.plan(target);
       RecoveryBoundary targetBoundary = plan.boundary();
       RecoveryHighWater highWater = log.readHighWater();
@@ -159,11 +159,31 @@ public final class HistoricalRecoveryManager implements HistoricalRecoveryServic
       wal.prepareLineage(newLineage, sealed, highWater);
       catalog.registerSnapshot(snapshot);
       GenerationManifest published = catalog.buildManifest(sealed, newLineage, highWater);
-      manifests.publishAtomically(published);
-      generations.switchToPublishedGeneration(published);
-      wal.activate(published);
-      maintenance.initializeRecoveredState(highWater);
+      GenerationManifest source = manifests.readActive();
+      boolean publicationReturned = false;
+      try {
+        manifests.publishAtomically(published);
+        publicationReturned = true;
+        generations.switchToPublishedGeneration(published);
+        wal.activate(published);
+        maintenance.initializeRecoveredState(highWater);
+      } catch (RuntimeException | Error failure) {
+        if (publicationReturned || !sourceStillPublished(source, failure)) {
+          guard.requireRestart();
+        }
+        throw failure;
+      }
       return new RecoveryResult(RecoveryStatus.SUCCESS, highWater, "Historical recovery completed");
+    }
+  }
+
+  private boolean sourceStillPublished(GenerationManifest source, Throwable failure) {
+    try {
+      return source.equals(manifests.readActive());
+    } catch (RuntimeException readFailure) {
+      // Publication can throw after the rename. If visibility is unknown, fail closed.
+      failure.addSuppressed(readFailure);
+      return false;
     }
   }
 
