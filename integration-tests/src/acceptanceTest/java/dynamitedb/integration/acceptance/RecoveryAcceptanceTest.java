@@ -2,10 +2,14 @@ package dynamitedb.integration.acceptance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.error.DbmsException;
+import dynamitedb.contracts.error.ErrorCode;
+import dynamitedb.contracts.query.QueryResult;
+import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.transaction.ProtocolType;
 import dynamitedb.frm.CheckpointEvent;
 import java.io.IOException;
@@ -13,11 +17,106 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class RecoveryAcceptanceTest extends PackagedServerAcceptanceSupport {
+  @ParameterizedTest
+  @EnumSource(ProtocolType.class)
+  void interleavedTransactionsRespectIsolationAndRecoverAfterAbruptRestart(ProtocolType protocol)
+      throws Exception {
+    Path data = directory.resolve("interleaved-crash-data");
+    try (PackagedServerProcess server = startServer(data, protocol)) {
+      try (AcceptanceClient setup = connect(server)) {
+        setup.execute("CREATE TABLE frm08_committed (id INTEGER PRIMARY KEY, value INTEGER);");
+        setup.execute("CREATE TABLE frm08_aborted (id INTEGER PRIMARY KEY, value INTEGER);");
+        setup.execute("CREATE TABLE frm08_active (id INTEGER PRIMARY KEY, value INTEGER);");
+        setup.execute("INSERT INTO frm08_active VALUES (3, 30);");
+        setup.execute("INSERT INTO frm08_active VALUES (4, 40);");
+      }
+
+      AcceptanceClient active = connect(server);
+      try {
+        try (AcceptanceClient committed = connect(server);
+            AcceptanceClient aborted = connect(server);
+            AcceptanceClient observer = connect(server);
+            ExecutorService executor = Executors.newSingleThreadExecutor()) {
+          committed.execute("BEGIN;");
+          committed.execute("INSERT INTO frm08_committed VALUES (1, 10);");
+
+          aborted.execute("BEGIN;");
+          aborted.execute("INSERT INTO frm08_aborted VALUES (2, 20);");
+
+          active.execute("BEGIN;");
+          active.execute("UPDATE frm08_active SET value = 31 WHERE id = 3;");
+
+          committed.execute("UPDATE frm08_committed SET value = 20 WHERE id = 1;");
+          aborted.execute("UPDATE frm08_aborted SET value = 21 WHERE id = 2;");
+          active.execute("UPDATE frm08_active SET value = 32 WHERE id = 3;");
+          committed.execute("UPDATE frm08_committed SET value = 30 WHERE id = 1;");
+          active.execute("DELETE FROM frm08_active WHERE id = 4;");
+
+          CountDownLatch readStarted = new CountDownLatch(1);
+          Future<QueryResult> uncommittedRead =
+              executor.submit(
+                  () -> {
+                    readStarted.countDown();
+                    return observer.execute("SELECT value FROM frm08_committed WHERE id = 1;");
+                  });
+          assertTrue(readStarted.await(5, TimeUnit.SECONDS));
+          boolean readWaitedForCommit = false;
+          try {
+            QueryResult earlyRead = uncommittedRead.get(300, TimeUnit.MILLISECONDS);
+            assertTrue(
+                earlyRead.rows().isEmpty(),
+                "a concurrent transaction must not read an uncommitted INSERT");
+          } catch (TimeoutException expectedWait) {
+            readWaitedForCommit = true;
+          } catch (ExecutionException abortedRead) {
+            DbmsException error = assertInstanceOf(DbmsException.class, abortedRead.getCause());
+            assertEquals(ErrorCode.ACCESS_ABORTED, error.getCode());
+          }
+
+          aborted.execute("ABORT;");
+          committed.execute("COMMIT;");
+          if (readWaitedForCommit) {
+            QueryResult releasedRead = await(uncommittedRead, PROCESS_TIMEOUT);
+            assertEquals(
+                30, ((IntValue) releasedRead.rows().getFirst().values().getFirst()).value());
+          } else {
+            try (AcceptanceClient postCommit = connect(server)) {
+              assertEquals(
+                  30, onlyInt(postCommit, "SELECT value FROM frm08_committed WHERE id = 1;"));
+            }
+          }
+        }
+
+        server.killForcibly();
+        active.disconnectAbruptly();
+      } finally {
+        active.close();
+      }
+    }
+
+    try (PackagedServerProcess recovered = startServer(data, protocol);
+        AcceptanceClient client = connect(recovered)) {
+      assertInterleavedRecoveryState(client);
+    }
+
+    try (PackagedServerProcess recoveredAgain = startServer(data, protocol);
+        AcceptanceClient client = connect(recoveredAgain)) {
+      assertInterleavedRecoveryState(client);
+    }
+  }
+
   @ParameterizedTest
   @EnumSource(ProtocolType.class)
   void abruptRestartRecoversCommittedAbortedAndActiveMixedDmlIdempotently(ProtocolType protocol)
@@ -162,6 +261,13 @@ class RecoveryAcceptanceTest extends PackagedServerAcceptanceSupport {
         "committed-insert", onlyText(client, "SELECT name FROM student WHERE student_id = 93001;"));
     assertNoRows(client, "SELECT student_id FROM student WHERE student_id = 93002;");
     assertNoRows(client, "SELECT student_id FROM student WHERE student_id = 93003;");
+  }
+
+  private static void assertInterleavedRecoveryState(AcceptanceClient client) throws Exception {
+    assertEquals(30, onlyInt(client, "SELECT value FROM frm08_committed WHERE id = 1;"));
+    assertNoRows(client, "SELECT id FROM frm08_aborted WHERE id = 2;");
+    assertEquals(30, onlyInt(client, "SELECT value FROM frm08_active WHERE id = 3;"));
+    assertEquals(40, onlyInt(client, "SELECT value FROM frm08_active WHERE id = 4;"));
   }
 
   private static long checkpointCount(Path data, CheckpointEvent event) throws Exception {
