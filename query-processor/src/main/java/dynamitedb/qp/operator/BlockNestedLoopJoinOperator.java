@@ -4,6 +4,7 @@ import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.error.ErrorCode;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.JoinKind;
+import dynamitedb.contracts.query.JoinPlan;
 import dynamitedb.contracts.query.OperatorRow;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.NullValue;
@@ -20,7 +21,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 public class BlockNestedLoopJoinOperator implements Operator {
-  private static final int BLOCK_SIZE = 100; // 100 dulu buat skr
+  private static final int BLOCK_SIZE = JoinPlan.BNLJ_BLOCK_ROWS;
   private final Operator left;
   private final Operator right;
   private final JoinKind kind;

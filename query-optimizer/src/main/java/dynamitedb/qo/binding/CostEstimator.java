@@ -39,7 +39,6 @@ import java.util.Optional;
 
 public class CostEstimator {
 
-  private static final int JOIN_BLOCK_ROWS = 100;
   private static final double RANGE_SELECTIVITY = 1.0 / 3;
 
   private final CatalogAccess catalog;
@@ -48,6 +47,11 @@ public class CostEstimator {
     this.catalog = catalog;
   }
 
+  /**
+   * Block transfers. SM's blockCount already folds record size in (b_r = n_r / f_r), so
+   * averageRowBytes is not needed on its own; the BNLJ outer side is counted in rows because QP
+   * buffers {@link JoinPlan#BNLJ_BLOCK_ROWS} rows per pass over the inner side.
+   */
   public double estimate(PlanNode plan) {
     return switch (plan) {
       case TableScanPlan scan -> stats(scan.table()).blockCount();
@@ -58,6 +62,7 @@ public class CostEstimator {
       case ProjectPlan project ->
           estimate(project.child())
               + project.items().stream().mapToDouble(item -> subqueryCost(item.expression())).sum();
+      // QP sorts and aggregates in memory, so neither adds block transfers.
       case AggregatePlan aggregate -> estimate(aggregate.child());
 
       case SortPlan sort -> estimate(sort.child());
@@ -65,7 +70,7 @@ public class CostEstimator {
       case LimitPlan limit -> estimate(limit.child());
       case JoinPlan join ->
           estimate(join.left())
-              + Math.ceil(rows(join.left()) / JOIN_BLOCK_ROWS) * estimate(join.right())
+              + Math.ceil(rows(join.left()) / JoinPlan.BNLJ_BLOCK_ROWS) * estimate(join.right())
               + join.condition().map(this::subqueryCost).orElse(0.0);
       case InsertPlan insert -> 1;
       case UpdatePlan update ->
