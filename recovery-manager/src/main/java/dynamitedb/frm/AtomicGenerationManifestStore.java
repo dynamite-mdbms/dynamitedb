@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -94,6 +95,7 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
             unsupported);
       }
       active = manifest;
+      syncDirectory(root);
     } catch (IOException failure) {
       throw new DbmsException(
           ErrorCode.RECOVERY_FAILURE, "Cannot publish generation manifest", failure);
@@ -105,6 +107,22 @@ public final class AtomicGenerationManifestStore implements GenerationManifestSt
           // A leftover temporary file is never treated as the active manifest.
         }
       }
+    }
+  }
+
+  static void syncDirectory(Path directory) throws IOException {
+    FileChannel channel;
+    try {
+      channel = FileChannel.open(directory, StandardOpenOption.READ);
+    } catch (AccessDeniedException unsupported) {
+      if (System.getProperty("os.name").startsWith("Windows") && Files.isDirectory(directory)) {
+        // Windows cannot sync directory entries, so a rename is not power-loss durable there.
+        return;
+      }
+      throw unsupported;
+    }
+    try (channel) {
+      channel.force(true);
     }
   }
 

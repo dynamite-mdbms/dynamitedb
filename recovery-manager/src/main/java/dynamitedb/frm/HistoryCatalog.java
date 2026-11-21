@@ -382,6 +382,8 @@ public final class HistoryCatalog {
             "Filesystem does not support atomic snapshot catalog replacement",
             unsupported);
       }
+      // The prepared lineage WAL shares this root; persist both names before publication.
+      AtomicGenerationManifestStore.syncDirectory(root);
     } catch (IOException failure) {
       throw new DbmsException(
           ErrorCode.RECOVERY_FAILURE, "Cannot persist retained snapshot catalog", failure);
