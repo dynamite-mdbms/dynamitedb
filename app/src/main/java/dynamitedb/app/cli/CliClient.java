@@ -78,14 +78,14 @@ public final class CliClient {
 
   static void readScript(
       String path, RemoteQueryClient client, ResultRenderer renderer, PrintWriter output) {
-    if (path.isEmpty()) {
-      output.println("Usage: :read PATH");
-      return;
-    }
     if (path.length() >= 2
         && ((path.startsWith("\"") && path.endsWith("\""))
             || (path.startsWith("'") && path.endsWith("'")))) {
       path = path.substring(1, path.length() - 1);
+    }
+    if (path.isEmpty()) {
+      output.println("Usage: :read PATH");
+      return;
     }
     int completed = 0;
     int statementNumber = 1;
