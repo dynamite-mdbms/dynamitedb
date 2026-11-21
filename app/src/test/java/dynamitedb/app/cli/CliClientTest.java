@@ -3,6 +3,8 @@ package dynamitedb.app.cli;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dynamitedb.app.mock.MockRuntime;
+import dynamitedb.app.server.TcpServer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -116,9 +118,34 @@ class CliClientTest {
 
     assertTrue(text.toString().contains("SELECT * FROM student;"));
     assertTrue(text.toString().contains("student, course, enrollment"));
-    assertTrue(text.toString().contains("CREATE TABLE, DROP TABLE, and CREATE VIEW"));
+    assertTrue(text.toString().contains("CREATE TABLE and DROP TABLE outside a transaction"));
+    assertTrue(text.toString().contains("CREATE VIEW is not supported"));
     assertTrue(text.toString().contains("quoted or unquoted paths with spaces"));
     assertTrue(!text.toString().contains("INSERT INTO"));
+  }
+
+  @Test
+  void oversizedLocalRequestDoesNotExitShell() throws Exception {
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    PrintStream previousOut = System.out;
+    java.io.InputStream previousIn = System.in;
+    try (TcpServer server = new TcpServer(new MockRuntime().processor(), 0)) {
+      server.start();
+      System.setOut(new PrintStream(bytes, true, StandardCharsets.UTF_8));
+      System.setIn(
+          new java.io.ByteArrayInputStream(
+              ("SELECT '" + "x".repeat(1_048_576) + "';\n:help\n:quit\n")
+                  .getBytes(StandardCharsets.UTF_8)));
+
+      new CliClient().runLocal("127.0.0.1", server.port(), Path.of("local-data"));
+    } finally {
+      System.setOut(previousOut);
+      System.setIn(previousIn);
+    }
+
+    String output = bytes.toString(StandardCharsets.UTF_8);
+    assertTrue(output.contains("ERROR: SQL exceeds the 1 MiB request limit"));
+    assertTrue(output.contains("Commands: :help"));
   }
 
   @Test

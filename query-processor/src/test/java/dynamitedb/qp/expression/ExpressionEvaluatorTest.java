@@ -198,7 +198,7 @@ class ExpressionEvaluatorTest {
   }
 
   @Test
-  void evaluatesNotOrAndAggregateReferencesButRejectsSubqueriesOutsideIn() {
+  void evaluatesNotOrAndAggregateReferences() {
     SelectStatement query =
         new SelectStatement(
             List.of(new ColumnRef(Optional.of("d"), "id")),
@@ -209,12 +209,10 @@ class ExpressionEvaluatorTest {
     assertEquals(new BooleanValue(false), eval(new UnaryExpression(UnaryOp.NOT, bool(true))));
     assertEquals(new BooleanValue(true), eval(bin(bool(true), BinaryOp.OR, bool(false))));
     assertEquals(NullValue.INSTANCE, eval(bin(nul(), BinaryOp.OR, bool(false))));
-    assertCode(
-        ErrorCode.UNSUPPORTED_OPERATION,
-        new ExistsSubqueryExpression(query, Optional.of(new TableScanPlan("dept", "d")), false));
-    assertCode(
-        ErrorCode.UNSUPPORTED_OPERATION,
-        new ScalarSubqueryExpression(query, Optional.of(new TableScanPlan("dept", "d"))));
+    assertEquals(NullValue.INSTANCE, eval(new UnaryExpression(UnaryOp.NOT, nul())));
+    assertEquals(new BooleanValue(true), eval(bin(nul(), BinaryOp.OR, bool(true))));
+    assertEquals(new BooleanValue(false), eval(bin(bool(false), BinaryOp.OR, bool(false))));
+    assertCode(ErrorCode.SQL_BIND, new UnaryExpression(UnaryOp.NOT, num(1)));
     AggregateExpression count = new AggregateExpression(AggregateFunction.COUNT, Optional.empty());
     OperatorRow aggregateRow =
         new OperatorRow(
@@ -224,12 +222,63 @@ class ExpressionEvaluatorTest {
     assertEquals(new IntValue(2), evaluator.evaluate(count, aggregateRow));
   }
 
+  @Test
+  void scalarSubqueryMapsZeroOneAndManyRowsAndRunsOnce() {
+    SelectStatement query = query();
+    ScalarSubqueryExpression scalar =
+        new ScalarSubqueryExpression(query, Optional.of(new TableScanPlan("dept", "d")));
+    List<Object> calls = new ArrayList<>();
+    ExpressionEvaluator subqueries =
+        new ExpressionEvaluator(
+            plan -> {
+              calls.add(plan);
+              return List.of(new IntValue(7));
+            });
+
+    assertEquals(new IntValue(7), subqueries.evaluate(scalar, ROW));
+    assertEquals(new IntValue(7), subqueries.evaluate(scalar, NULL_SALARY_ROW));
+    assertEquals(1, calls.size());
+
+    ExpressionEvaluator empty = new ExpressionEvaluator(plan -> List.of());
+    assertEquals(NullValue.INSTANCE, empty.evaluate(scalar, ROW));
+
+    ExpressionEvaluator multiple =
+        new ExpressionEvaluator(plan -> List.of(new IntValue(1), new IntValue(2)));
+    DbmsException error = assertThrows(DbmsException.class, () -> multiple.evaluate(scalar, ROW));
+    assertEquals(ErrorCode.INVALID_STATE, error.getCode());
+  }
+
+  @Test
+  void existsSubqueryReturnsBooleanAndRunsOnce() {
+    ExistsSubqueryExpression exists =
+        new ExistsSubqueryExpression(query(), Optional.of(new TableScanPlan("dept", "d")), false);
+    ExistsSubqueryExpression notExists =
+        new ExistsSubqueryExpression(query(), Optional.of(new TableScanPlan("dept", "d")), true);
+    List<Object> calls = new ArrayList<>();
+    ExpressionEvaluator subqueries =
+        new ExpressionEvaluator(
+            plan -> {
+              calls.add(plan);
+              return List.of(new IntValue(1));
+            });
+
+    assertEquals(new BooleanValue(true), subqueries.evaluate(exists, ROW));
+    assertEquals(new BooleanValue(false), subqueries.evaluate(notExists, ROW));
+    assertEquals(
+        new BooleanValue(true),
+        new ExpressionEvaluator(plan -> List.of()).evaluate(notExists, ROW));
+    assertEquals(2, calls.size());
+  }
+
   // WHERE cuma lolos kalau TRUE, FALSE dan NULL dibuang
   @Test
   void predicatePassesOnlyWhenTrue() {
     assertTrue(evaluator.evaluatePredicate(bool(true), ROW));
     assertFalse(evaluator.evaluatePredicate(bool(false), ROW));
     assertFalse(evaluator.evaluatePredicate(bin(num(1), BinaryOp.EQ, nul()), ROW));
+    DbmsException error =
+        assertThrows(DbmsException.class, () -> evaluator.evaluatePredicate(num(1), ROW));
+    assertEquals(ErrorCode.SQL_BIND, error.getCode());
   }
 
   // subquery dijalanin sekali, nilai 7 = 7.0 dianggap sama, NOT IN membalik hasil
@@ -310,14 +359,16 @@ class ExpressionEvaluatorTest {
   }
 
   private static Expression in(Expression operand, boolean negated) {
-    var query =
-        new SelectStatement(
-            List.of(new ColumnRef(Optional.of("d"), "id")),
-            new TableSource("dept", "d"),
-            Optional.empty(),
-            List.of());
     return new InSubqueryExpression(
-        operand, query, Optional.of(new TableScanPlan("dept", "d")), negated);
+        operand, query(), Optional.of(new TableScanPlan("dept", "d")), negated);
+  }
+
+  private static SelectStatement query() {
+    return new SelectStatement(
+        List.of(new ColumnRef(Optional.of("d"), "id")),
+        new TableSource("dept", "d"),
+        Optional.empty(),
+        List.of());
   }
 
   // helper biar ga nulis evaluator.evaluate(..., ROW) terus

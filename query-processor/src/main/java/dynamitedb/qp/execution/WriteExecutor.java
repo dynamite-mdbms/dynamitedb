@@ -10,6 +10,7 @@ import dynamitedb.contracts.query.CreateIndexPlan;
 import dynamitedb.contracts.query.DeletePlan;
 import dynamitedb.contracts.query.InsertPlan;
 import dynamitedb.contracts.query.OperatorRow;
+import dynamitedb.contracts.query.UpdateAssignment;
 import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
@@ -26,6 +27,7 @@ import dynamitedb.qp.expression.ExpressionEvaluator;
 import dynamitedb.qp.operator.Operator;
 import dynamitedb.qp.transaction.TransactionCoordinator;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +45,7 @@ public class WriteExecutor {
   private final IndexAdmin indexAdmin;
   private final DeleteExecutor delete;
   private final CatalogAccess catalog;
+  private final KeyConstraints keys;
 
   public WriteExecutor(
       WriteStore store,
@@ -61,32 +64,34 @@ public class WriteExecutor {
     this.indexAdmin = Objects.requireNonNull(indexAdmin, "indexAdmin");
     this.delete = Objects.requireNonNull(delete, "delete");
     this.catalog = Objects.requireNonNull(catalog, "catalog");
+    this.keys = new KeyConstraints(catalog, translator, coordinator);
   }
 
   public long insert(InsertPlan plan, TransactionId tx) {
-    coordinator.authorizeTable(tx, plan.table(), AccessMode.WRITE);
+    var constraints = keys.insert(plan.table(), tx);
     Row row = fitRow(plan.row(), catalog.getSchema(plan.table()));
+    constraints.validateInsert(row);
     writes.execute(store.prepareInsert(tx, plan.table(), row));
     return 1;
   }
 
   public long update(UpdatePlan plan, TransactionId tx) {
-    if (plan.assignments().size() != 1) {
-      throw new DbmsException(
-          ErrorCode.UNSUPPORTED_OPERATION,
-          "Multi-assignment UPDATE is not supported by the query processor yet");
-    }
-    // izin WRITE diminta sebelum scan supaya tidak ada upgrade lock READ -> WRITE
-    coordinator.authorizeTable(tx, plan.table(), AccessMode.WRITE);
-    Map<RecordId, Row> targets = collectTargets(plan, tx);
-    for (Map.Entry<RecordId, Row> target : targets.entrySet()) {
-      writes.execute(store.prepareUpdate(tx, target.getKey(), target.getValue()));
+    List<UpdateAssignment> assignments = plan.assignments();
+    var constraints =
+        keys.update(plan.table(), assignments.stream().map(a -> a.target().column()).toList(), tx);
+    ExpressionEvaluator assignmentEvaluator =
+        translator.evaluatorFor(
+            assignments.stream().map(UpdateAssignment::expression).toList(), tx);
+    Map<RecordId, KeyConstraints.Change> targets = collectTargets(plan, assignmentEvaluator, tx);
+    constraints.validateChanges(targets);
+    for (var target : targets.entrySet()) {
+      writes.execute(store.prepareUpdate(tx, target.getKey(), target.getValue().after()));
     }
     return targets.size();
   }
 
   public long delete(DeletePlan plan, TransactionId tx) {
-    return delete.execute(plan, tx);
+    return delete.execute(plan, tx, keys);
   }
 
   // tx dari transaksi implisit QueryProcessorImpl; CREATE INDEX di dalam BEGIN sudah ditolak QP1
@@ -96,14 +101,18 @@ public class WriteExecutor {
   }
 
   // semua baris target dikumpulkan dulu sebelum ada yang ditulis (Halloween problem)
-  private Map<RecordId, Row> collectTargets(UpdatePlan plan, TransactionId tx) {
-    Map<RecordId, Row> targets = new LinkedHashMap<>();
+  private Map<RecordId, KeyConstraints.Change> collectTargets(
+      UpdatePlan plan, ExpressionEvaluator assignmentEvaluator, TransactionId tx) {
+    Map<RecordId, KeyConstraints.Change> targets = new LinkedHashMap<>();
     Operator source = translator.translate(plan.source(), tx);
     source.open();
     try {
       for (Optional<OperatorRow> next = source.next(); next.isPresent(); next = source.next()) {
         OperatorRow row = next.get();
-        targets.putIfAbsent(targetRid(plan, row), updatedRow(plan, row));
+        targets.computeIfAbsent(
+            targetRid(plan, row),
+            rid ->
+                new KeyConstraints.Change(row.row(), updatedRow(plan, row, assignmentEvaluator)));
       }
     } finally {
       source.close();
@@ -111,12 +120,22 @@ public class WriteExecutor {
     return targets;
   }
 
-  private Row updatedRow(UpdatePlan plan, OperatorRow row) {
-    int index = targetIndex(plan.target(), row.schema().columns());
-    Column column = row.schema().columns().get(index);
-    Value value = fitColumn(evaluator.evaluate(plan.value(), row), column);
+  private Row updatedRow(
+      UpdatePlan plan, OperatorRow row, ExpressionEvaluator assignmentEvaluator) {
     List<Value> values = new ArrayList<>(row.row().values());
-    values.set(index, value);
+    // Every right-hand side sees the original row; assignments are simultaneous.
+    HashSet<Integer> assigned = new HashSet<>();
+    for (UpdateAssignment assignment : plan.assignments()) {
+      int index = targetIndex(assignment.target(), row.schema().columns());
+      if (!assigned.add(index)) {
+        throw new DbmsException(
+            ErrorCode.SQL_BIND,
+            "UPDATE assigns column " + assignment.target().column() + " more than once");
+      }
+      Column column = row.schema().columns().get(index);
+      Value value = fitColumn(assignmentEvaluator.evaluate(assignment.expression(), row), column);
+      values.set(index, value);
+    }
     return new Row(values);
   }
 

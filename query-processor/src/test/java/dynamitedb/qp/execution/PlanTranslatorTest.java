@@ -52,6 +52,7 @@ import dynamitedb.qp.operator.AggregateOperator;
 import dynamitedb.qp.operator.BlockNestedLoopJoinOperator;
 import dynamitedb.qp.operator.FilterOperator;
 import dynamitedb.qp.operator.IndexScanOperator;
+import dynamitedb.qp.operator.LimitOperator;
 import dynamitedb.qp.operator.Operator;
 import dynamitedb.qp.operator.ProjectOperator;
 import dynamitedb.qp.operator.ScanOperator;
@@ -107,6 +108,7 @@ class PlanTranslatorTest {
     assertInstanceOf(
         SortOperator.class,
         translate(new SortPlan(SCAN, List.of(new SortKey(ID, SortDirection.ASC)))));
+    assertInstanceOf(LimitOperator.class, translate(new LimitPlan(SCAN, 1)));
   }
 
   // Project(Filter(Scan)) harus selesai dari Scan dulu, terakhir Project
@@ -163,15 +165,6 @@ class PlanTranslatorTest {
       DbmsException error = assertThrows(DbmsException.class, () -> translate(plan));
       assertEquals(ErrorCode.INVALID_PLAN, error.getCode());
     }
-  }
-
-  // LIMIT belum punya operator (#104), jadi harus ditolak, bukan dieksekusi tanpa batas
-  @Test
-  void rejectsLimitPlanUntilItsOperatorExists() {
-    DbmsException error =
-        assertThrows(DbmsException.class, () -> translate(new LimitPlan(SCAN, 1)));
-
-    assertEquals(ErrorCode.UNSUPPORTED_OPERATION, error.getCode());
   }
 
   // helper biar ga nulis TX terus

@@ -33,8 +33,8 @@ Shell commands go on their own line without a semicolon:
 **A directory is a database; a `.sql` file is a script.** `:read` runs the
 file's SQL in the currently open database, relative to the directory where you
 launched the app. It stops at the first error and leaves the shell open. It
-does not undo earlier commits. Use a disposable database when trying a dump:
-`CREATE TABLE` and `DROP TABLE` are not executable on this branch, and
+does not undo earlier commits. Use a disposable database when trying a dump.
+You can run `CREATE TABLE` and `DROP TABLE` outside an explicit transaction;
 `CREATE VIEW` is not supported. `:quit` closes the local server as well as the
 client. To work with a separately managed server, use the remote CLI below.
 
@@ -114,6 +114,18 @@ Connect from a second terminal:
 ```sh
 ./gradlew :app:run --args='cli --host 127.0.0.1 --port 7777'
 ```
+
+### Table DDL
+
+The persistent server supports `CREATE TABLE` with `INTEGER`, `FLOAT`, `CHAR(n)`, and
+`VARCHAR(n)` columns, plus primary and foreign key declarations. A foreign key must
+reference the complete primary key of its target table. Primary key columns are non-null
+and unique, and foreign key values must reference an existing primary key.
+
+`DROP TABLE` defaults to `RESTRICT` and fails while another table references it. `CASCADE`
+removes those foreign key constraints while keeping the referencing tables and their rows.
+`CREATE TABLE` and `DROP TABLE` are rejected inside an explicit transaction because table
+catalog changes are not part of transaction rollback.
 
 The explicit stub server remains available to inspect application composition
 without relying on operational behavior:

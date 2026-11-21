@@ -1,6 +1,7 @@
 package dynamitedb.app.cli;
 
 import dynamitedb.app.client.RemoteQueryClient;
+import dynamitedb.app.protocol.WireProtocol;
 import dynamitedb.contracts.error.DbmsException;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -57,6 +58,10 @@ public final class CliClient {
         } else if (normalized.startsWith(":")) {
           output.println("Unknown command. Use :help.");
         } else {
+          if (statement.getBytes(StandardCharsets.UTF_8).length > WireProtocol.MAX_SQL_BYTES) {
+            output.println("ERROR: SQL exceeds the 1 MiB request limit");
+            continue;
+          }
           try {
             renderer.print(client.execute(statement), output);
           } catch (DbmsException failure) {
@@ -71,7 +76,8 @@ public final class CliClient {
     output.println("Commands: :help, :read PATH, :quit (or exit/quit)");
     output.println("Example: SELECT * FROM student;");
     output.println("Table name hints: student, course, enrollment.");
-    output.println("CREATE TABLE, DROP TABLE, and CREATE VIEW are not executable in this version.");
+    output.println(
+        "Run CREATE TABLE and DROP TABLE outside a transaction. CREATE VIEW is not supported.");
     output.println("Use quoted or unquoted paths with spaces, for example: :read my SQL file.sql");
     output.flush();
   }

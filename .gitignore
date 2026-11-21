@@ -8,6 +8,7 @@ out/
 .DS_Store
 Thumbs.db
 /data/
+/app/data/
 *.log
 hs_err_pid*
 .env
