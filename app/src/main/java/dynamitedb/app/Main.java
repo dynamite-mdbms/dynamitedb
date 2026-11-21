@@ -31,6 +31,7 @@ public final class Main {
 
   private static void run(String[] args, PrintWriter output) throws Exception {
     if (args.length == 0 || args[0].equals("--help")) {
+      output.println("shell [--data-dir PATH] [--help]");
       output.println("server --stub [--host 127.0.0.1] [--port 7777] [--data-dir data]");
       output.println(
           "  stub runtime: module wiring is real; query, storage, recovery and concurrency"
@@ -43,6 +44,10 @@ public final class Main {
       output.println("server --mock [--host 127.0.0.1] [--port 7777] (legacy demo behavior)");
       output.println("cli [--host 127.0.0.1] [--port 7777]");
       output.println("driver [--suite | --file path] (standalone mock driver)");
+      return;
+    }
+    if (args[0].equals("shell")) {
+      LocalShell.run(java.util.Arrays.copyOfRange(args, 1, args.length), output);
       return;
     }
     Map<String, String> options = options(args);

@@ -2,6 +2,49 @@
 
 A Relational mini-DBMS for IF3140 Database Systems.
 
+## Open a local database
+
+With JDK 21 installed, run this from the repo root in Fish, Bash, or Zsh:
+
+```sh
+./dynamitedb
+```
+
+This builds the app if needed and opens the real database in `./data`. No alias,
+second terminal, or global Gradle installation is needed. On first use, the
+runtime creates the database and seeds `student`, `course`, and `enrollment`.
+The first build needs internet access. For a separate database, pass a new or
+empty directory outside the default database; pass the **same directory** next
+time to reopen it:
+
+```sh
+./dynamitedb --data-dir "$HOME/dynamitedb-practice"
+```
+
+At the database prompt, end SQL with `;`. Try `SELECT * FROM student;`.
+Shell commands go on their own line without a semicolon:
+
+```text
+:help
+:read reports/grades.sql
+:quit
+```
+
+**A directory is a database; a `.sql` file is a script.** `:read` runs the
+file's SQL in the currently open database, relative to the directory where you
+launched the app. It stops at the first error and leaves the shell open. It
+does not undo earlier commits. Use a disposable database when trying a dump.
+You can run `CREATE TABLE` and `DROP TABLE` outside an explicit transaction;
+`CREATE VIEW` is not supported. `:quit` closes the local server as well as the
+client. To work with a separately managed server, use the remote CLI below.
+
+On Windows PowerShell, use the same shell through the installed application:
+
+```powershell
+.\gradlew.bat :app:installDist
+.\app\build\install\app\bin\app.bat shell
+```
+
 ## Build
 
 Install JDK 21 and Git. The genuine Gradle 9.2.1 wrapper is included; no global
