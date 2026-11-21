@@ -4,7 +4,9 @@ import static dynamitedb.qp.operator.TestRows.drain;
 import static dynamitedb.qp.operator.TestRows.table;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dynamitedb.contracts.error.DbmsException;
 import dynamitedb.contracts.query.AggregateExpression;
 import dynamitedb.contracts.query.AggregateFunction;
 import dynamitedb.contracts.query.AggregatePlan;
@@ -113,5 +115,33 @@ class AggregateOperatorTest {
     var rows = drain(operator);
 
     assertEquals(new FloatValue(2_000_000_000.0), rows.get(0).row().values().get(0));
+  }
+
+  @Test
+  void integerSumMayLeaveTheIntegerRangeWhileAccumulating() {
+    var rows = drain(integerSum(Integer.MAX_VALUE, 7, -Integer.MAX_VALUE));
+
+    assertEquals(new IntValue(7), rows.get(0).row().values().get(0));
+  }
+
+  @Test
+  void integerSumOutsideTheIntegerRangeIsRejected() {
+    AggregateOperator operator = integerSum(Integer.MAX_VALUE, 1);
+
+    DbmsException error = assertThrows(DbmsException.class, () -> drain(operator));
+    assertEquals("Integer SUM overflow", error.getMessage());
+  }
+
+  private static AggregateOperator integerSum(int... values) {
+    Schema schema = new Schema(List.of(new Column("student", "sid", DataType.INTEGER, 0, false)));
+    ColumnRef sid = new ColumnRef(Optional.of("student"), "sid");
+    Object[][] rows = new Object[values.length][];
+    for (int index = 0; index < values.length; index++) rows[index] = new Object[] {values[index]};
+    return new AggregateOperator(
+        table(schema, rows),
+        new AggregatePlan(
+            new TableScanPlan("student", "student"),
+            List.of(),
+            List.of(new AggregateExpression(AggregateFunction.SUM, Optional.of(sid)))));
   }
 }

@@ -158,7 +158,7 @@ public final class AggregateOperator implements Operator {
     private final AggregateExpression expression;
     private long count;
     private double sum;
-    private int integerSum;
+    private long integerSum;
     private boolean floating;
     private Value extremum;
 
@@ -232,12 +232,18 @@ public final class AggregateOperator implements Operator {
       return switch (expression.function()) {
         case COUNT -> countResult();
         case SUM ->
-            count == 0
-                ? NullValue.INSTANCE
-                : floating ? new FloatValue(sum) : new IntValue(integerSum);
+            count == 0 ? NullValue.INSTANCE : floating ? new FloatValue(sum) : integerSumResult();
         case AVG -> count == 0 ? NullValue.INSTANCE : new FloatValue(sum / count);
         case MIN, MAX -> extremum == null ? NullValue.INSTANCE : extremum;
       };
+    }
+
+    private IntValue integerSumResult() {
+      try {
+        return new IntValue(Math.toIntExact(integerSum));
+      } catch (ArithmeticException exception) {
+        throw new DbmsException(ErrorCode.INVALID_STATE, "Integer SUM overflow");
+      }
     }
 
     private IntValue countResult() {
