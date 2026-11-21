@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -101,7 +102,7 @@ public final class GenerationStore {
       meta.setProperty("baseLsn", Long.toString(snapshot.baseLsn().value()));
       meta.setProperty("createdAt", snapshot.createdAt().toString());
       writeProperties(temp.resolve(META), meta);
-      Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+      sealDirectory(temp, target);
     } catch (IOException e) {
       throw new DbmsException(ErrorCode.STORAGE_FAILURE, "Gagal create snapshot", e);
     }
@@ -170,7 +171,7 @@ public final class GenerationStore {
       writeProperties(source.resolve(META), meta);
       Files.createDirectories(target.getParent());
       deleteTree(target);
-      Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+      sealDirectory(source, target);
     } catch (IOException e) {
       throw new DbmsException(ErrorCode.STORAGE_FAILURE, "Gagal seal stage " + id, e);
     }
@@ -222,7 +223,7 @@ public final class GenerationStore {
       metadata.setProperty("createdAt", snapshot.createdAt().toString());
       writeProperties(temporary.resolve(META), metadata);
       try {
-        Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+        sealDirectory(temporary, target);
       } catch (FileAlreadyExistsException raced) {
         verifySnapshotMetadata(target, snapshot);
       }
@@ -250,33 +251,69 @@ public final class GenerationStore {
       throw new DbmsException(
           ErrorCode.INVALID_STATE, "Manifest belum di-publish FRM: " + manifest.activeId());
     }
-    UUID target = manifest.activeId();
-    Optional<UUID> installed = installedGeneration();
-    if (installed.isPresent() && installed.get().equals(target)) {
+    Optional<Path> source = generationToInstall(root, manifest);
+    if (source.isEmpty()) {
       return;
     }
-    Path source = generationDir(target);
+    // Discard frame lama dulu supaya page lama tidak ter-flush ke file baru.
+    buffer.discardAll();
+    installGeneration(root, source.get(), manifest.activeId());
+    catalog.reload();
+    records.resetAfterGenerationSwitch();
+    records.rebuildIndexes();
+  }
+
+  /** Finishes an interrupted publication with exclusive root ownership, before opening storage. */
+  public static void installPublishedGenerationAtStartup(Path root, GenerationManifest manifest) {
+    Optional<Path> source = generationToInstall(root, manifest);
+    if (source.isPresent() || manifest.boundaryLsn().value() != 0) {
+      // A process crash can leave a visible but unsynced manifest or marker rename.
+      try {
+        syncDirectory(root);
+      } catch (IOException e) {
+        throw new DbmsException(ErrorCode.STORAGE_FAILURE, "Cannot sync generation root", e);
+      }
+    }
+    source.ifPresent(path -> installGeneration(root, path, manifest.activeId()));
+  }
+
+  private static Optional<Path> generationToInstall(Path root, GenerationManifest manifest) {
+    UUID target = manifest.activeId();
+    Optional<UUID> installed = installedGeneration(root);
+    if (installed.filter(target::equals).isPresent()) {
+      return Optional.empty(); // Live storage can already contain later commits on this lineage.
+    }
+    Path source = root.resolve("generations").resolve(target.toString());
     if (!Files.isDirectory(source)) {
-      if (installed.isEmpty()) {
-        return;
+      // Only the initial generation (boundary zero) is created directly in the live root.
+      if (installed.isEmpty() && manifest.boundaryLsn().value() == 0 && Files.notExists(source)) {
+        return Optional.empty();
       }
       throw new DbmsException(
           ErrorCode.RECOVERY_FAILURE, "Published generation tidak ditemukan: " + target);
     }
-    // Discard frame lama dulu supaya page lama tidak ter-flush ke file baru.
-    buffer.discardAll();
+    Properties meta = readProperties(source.resolve(META));
+    if (!target.toString().equals(meta.getProperty("id"))
+        || !Long.toString(manifest.boundaryLsn().value()).equals(meta.getProperty("boundaryLsn"))
+        || !Files.isRegularFile(source.resolve("catalog.db"))) {
+      throw new DbmsException(ErrorCode.RECOVERY_FAILURE, "Invalid sealed generation: " + target);
+    }
+    return Optional.of(source);
+  }
+
+  private static void installGeneration(Path root, Path source, UUID target) {
     try {
       copyStorageFiles(source, root);
+      syncDirectory(root);
+      // A crash before this atomic marker replacement will retry from the sealed files.
       writeDurably(root.resolve(MARKER), target.toString().getBytes(StandardCharsets.UTF_8));
+      syncDirectory(root);
     } catch (IOException e) {
       throw new DbmsException(
           ErrorCode.STORAGE_FAILURE,
           "Gagal install generation " + target + ", ulangi activation",
           e);
     }
-    catalog.reload();
-    records.resetAfterGenerationSwitch();
-    records.rebuildIndexes();
   }
 
   private RecordStore stage(RecoveryStage stage) {
@@ -288,7 +325,7 @@ public final class GenerationStore {
     return store;
   }
 
-  private Optional<UUID> installedGeneration() {
+  private static Optional<UUID> installedGeneration(Path root) {
     Path marker = root.resolve(MARKER);
     if (!Files.exists(marker)) {
       return Optional.empty();
@@ -353,6 +390,32 @@ public final class GenerationStore {
       channel.force(true);
     }
     Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+  }
+
+  private void sealDirectory(Path source, Path target) throws IOException {
+    syncDirectory(source);
+    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+    syncDirectory(target.getParent());
+    if (!source.getParent().equals(target.getParent())) {
+      syncDirectory(source.getParent());
+    }
+    syncDirectory(root);
+  }
+
+  private static void syncDirectory(Path directory) throws IOException {
+    FileChannel channel;
+    try {
+      channel = FileChannel.open(directory, StandardOpenOption.READ);
+    } catch (AccessDeniedException unsupported) {
+      if (System.getProperty("os.name").startsWith("Windows") && Files.isDirectory(directory)) {
+        // Windows cannot sync directory entries, so a rename is not power-loss durable there.
+        return;
+      }
+      throw unsupported;
+    }
+    try (channel) {
+      channel.force(true);
+    }
   }
 
   private static void writeProperties(Path target, Properties properties) throws IOException {
