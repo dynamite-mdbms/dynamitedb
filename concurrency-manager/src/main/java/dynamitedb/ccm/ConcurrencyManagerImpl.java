@@ -93,7 +93,7 @@ public class ConcurrencyManagerImpl
   @Override
   public AccessDecision requestAccess(AccessRequest request) {
     Objects.requireNonNull(request, "request");
-    AccessDecision decision = decide(request.tx(), () -> protocol.request(request));
+    AccessDecision decision = decide(request.tx(), () -> protocol.request(request), false);
     if (decision.state() == AccessState.WAITING && activeType == ProtocolType.STRICT_2PL) {
       ConcurrencyProtocol locking = protocols.get(ProtocolType.STRICT_2PL);
       if (locking instanceof Strict2PLProtocol strict2PL) {
@@ -113,7 +113,7 @@ public class ConcurrencyManagerImpl
   @Override
   public AccessDecision awaitAccess(WaitToken ticket) {
     Objects.requireNonNull(ticket, "ticket");
-    return decide(ticket.tx(), () -> protocol.awaitAccess(ticket));
+    return decide(ticket.tx(), () -> protocol.awaitAccess(ticket), true);
   }
 
   @Override
@@ -272,7 +272,8 @@ public class ConcurrencyManagerImpl
         });
   }
 
-  private AccessDecision decide(TransactionId tx, Supplier<AccessDecision> protocolCall) {
+  private AccessDecision decide(
+      TransactionId tx, Supplier<AccessDecision> protocolCall, boolean awaitingTicket) {
     Optional<Transaction> found = registry.find(tx);
     if (found.isEmpty()) {
       try {
@@ -285,8 +286,19 @@ public class ConcurrencyManagerImpl
     if (!transaction.isActive()) {
       return AccessDecision.aborted(inactiveReason(transaction));
     }
-    AccessDecision decision =
-        Objects.requireNonNull(protocolCall.get(), "Protokol mengembalikan keputusan kosong");
+    AccessDecision decision;
+    try {
+      decision =
+          Objects.requireNonNull(protocolCall.get(), "Protokol mengembalikan keputusan kosong");
+    } catch (DbmsException failure) {
+      // Abort can remove the ticket after the active check but before the protocol claims it.
+      if (awaitingTicket
+          && failure.getCode() == ErrorCode.INVALID_STATE
+          && transaction.status() == TransactionStatus.ABORTED) {
+        return AccessDecision.aborted(inactiveReason(transaction));
+      }
+      throw failure;
+    }
     if (decision.state() == AccessState.ABORTED) {
       abortFlow(transaction);
       return decision;
