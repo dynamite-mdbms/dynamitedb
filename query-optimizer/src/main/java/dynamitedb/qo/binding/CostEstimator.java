@@ -161,7 +161,8 @@ public class CostEstimator {
     };
   }
 
-  private double selectivity(Expression predicate, PlanNode scope) {
+  /** Fraction of {@code scope}'s rows that satisfy {@code predicate}. */
+  public double selectivity(Expression predicate, PlanNode scope) {
     if (predicate instanceof UnaryExpression unary && unary.operator() == UnaryOp.NOT) {
       return 1.0 - selectivity(unary.operand(), scope);
     }

@@ -2,6 +2,7 @@ package dynamitedb.qo.pushdown;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.ColumnExpression;
@@ -15,9 +16,14 @@ import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.query.TableScanPlan;
+import dynamitedb.contracts.storage.IndexMetadata;
 import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.NullValue;
+import dynamitedb.contracts.storage.Schema;
+import dynamitedb.contracts.storage.TableStatistics;
+import dynamitedb.qo.binding.CostEstimator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -75,6 +81,65 @@ class SelectionPushdownTest {
 
     assertEquals(
         new DeletePlan(new FilterPlan(new FilterPlan(S, a), b), "student"), pushdown.rewrite(plan));
+  }
+
+  @Test
+  void pushesSingleSideOnConditionsBelowTheJoin() {
+    Expression link = compare("s", "sid", BinaryOp.EQ, col("e", "sid"));
+    Expression sid = compare("s", "sid", BinaryOp.EQ, 7);
+    Expression grade = compare("e", "grade", BinaryOp.GT, 2);
+    PlanNode plan = new JoinPlan(S, E, JoinKind.THETA, Optional.of(and(and(link, sid), grade)));
+
+    assertEquals(
+        new JoinPlan(
+            new FilterPlan(S, sid), new FilterPlan(E, grade), JoinKind.THETA, Optional.of(link)),
+        pushdown.rewrite(plan));
+    // With nothing left to link the sides, the join is a plain cartesian product.
+    assertEquals(
+        cartesian(new FilterPlan(S, sid), E),
+        pushdown.rewrite(new JoinPlan(S, E, JoinKind.THETA, Optional.of(sid))));
+  }
+
+  @Test
+  void ordersASelectionCascadeMostSelectiveFirstWhenStatisticsAreKnown() {
+    Expression range = compare("s", "gpa", BinaryOp.GT, 3);
+    Expression equality = compare("s", "sid", BinaryOp.EQ, 5);
+    PlanNode plan = new FilterPlan(S, and(range, equality));
+
+    // Written order without statistics; with them, sid = 5 (1/1000) runs before gpa > 3 (1/3).
+    assertEquals(new FilterPlan(new FilterPlan(S, range), equality), pushdown.rewrite(plan));
+    assertEquals(
+        new FilterPlan(new FilterPlan(S, equality), range),
+        new SelectionPushdown(new CostEstimator(studentCatalog())).rewrite(plan));
+  }
+
+  private static CatalogAccess studentCatalog() {
+    return new CatalogAccess() {
+      @Override
+      public List<String> listTables() {
+        return List.of("student");
+      }
+
+      @Override
+      public long getTableId(String table) {
+        return 1;
+      }
+
+      @Override
+      public Schema getSchema(String table) {
+        return new Schema(List.of());
+      }
+
+      @Override
+      public TableStatistics getStatistics(String table) {
+        return new TableStatistics(1_000, 100, 32, Map.of("sid", 1_000L, "gpa", 40L));
+      }
+
+      @Override
+      public List<IndexMetadata> listIndexes(String table) {
+        return List.of();
+      }
+    };
   }
 
   @Test
