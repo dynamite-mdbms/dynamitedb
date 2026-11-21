@@ -257,6 +257,9 @@ class BinderTest {
             "INSERT INTO student VALUES ('1', 'Ann', 3.5)",
             "INSERT INTO student VALUES (1.5, 'Ann', 3.5)",
             "INSERT INTO student VALUES (1, 'Annabel', 3.5)",
+            // QP inserts plain values only, so expressions fail here instead of at planning.
+            "INSERT INTO student VALUES (1 + 1, 'Ann', 3.5)",
+            "INSERT INTO student VALUES (sid, 'Ann', 3.5)",
             "UPDATE student SET gpa = 'high'",
             "UPDATE student SET sid = sid * 1.5",
             "UPDATE student SET sid = gpa",

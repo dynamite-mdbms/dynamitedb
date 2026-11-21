@@ -222,9 +222,13 @@ public class Binder {
               + insert.values().size());
     }
     for (int i = 0; i < columns.size(); i++) {
-      if (insert.values().get(i) instanceof LiteralExpression literal) {
-        checkValue(columns.get(i), literal.value());
+      if (!(insert.values().get(i) instanceof LiteralExpression literal)) {
+        throw error(
+            "INSERT values must be literals; column "
+                + columns.get(i).name()
+                + " got an expression");
       }
+      checkValue(columns.get(i), literal.value());
     }
     return new InsertStatement(table, insert.values());
   }
