@@ -39,6 +39,7 @@ import dynamitedb.qo.binding.CostEstimator;
 import dynamitedb.qo.facade.QueryOptimizerImpl;
 import dynamitedb.qo.join.AccessPathOptimizer;
 import dynamitedb.qo.join.BestPlanSelector;
+import dynamitedb.qo.join.GeneticJoinOrderOptimizer;
 import dynamitedb.qo.join.JoinOrderOptimizer;
 import dynamitedb.qo.join.JoinRewriter;
 import dynamitedb.qo.parser.ExpressionParser;
@@ -94,8 +95,16 @@ public final class PersistentRuntime implements AutoCloseable {
   private final RecoveryManagerImpl recovery;
   private final CheckpointManager checkpoint;
 
-  @SuppressWarnings("try")
   public PersistentRuntime(DbmsConfig config) {
+    this(config, false);
+  }
+
+  /**
+   * @param geneticOptimizer adds the QO-18 genetic join order as a plan candidate; the cheapest
+   *     candidate still wins, so the heuristic plan stays when it is cheaper.
+   */
+  @SuppressWarnings("try")
+  public PersistentRuntime(DbmsConfig config, boolean geneticOptimizer) {
     Objects.requireNonNull(config, "config");
     Path data = config.dataDirectory().toAbsolutePath().normalize();
     rootLock = RuntimeRootLock.acquire(data);
@@ -129,7 +138,8 @@ public final class PersistentRuntime implements AutoCloseable {
       }
       SnapshotMetadata baseSnapshot =
           new SnapshotMetadata(initialId, initialLineage, ZERO_LSN, Instant.EPOCH);
-      var components = compose(config, data, fresh, manifests, opened, walPath, baseSnapshot);
+      var components =
+          compose(config, geneticOptimizer, data, fresh, manifests, opened, walPath, baseSnapshot);
       log = opened;
       bootstrap = components.bootstrap();
       recovery = components.recovery();
@@ -144,6 +154,7 @@ public final class PersistentRuntime implements AutoCloseable {
 
   private static Components compose(
       DbmsConfig config,
+      boolean geneticOptimizer,
       Path data,
       boolean fresh,
       AtomicGenerationManifestStore manifests,
@@ -206,7 +217,12 @@ public final class PersistentRuntime implements AutoCloseable {
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),
                 new JoinOrderOptimizer(catalogAccess),
-                new BestPlanSelector(cost)),
+                new BestPlanSelector(cost),
+                // fixed seed: the same query always gets the same plan
+                geneticOptimizer
+                    ? new GeneticJoinOrderOptimizer(
+                        cost, GeneticJoinOrderOptimizer.Config.defaults(), 1L)
+                    : null),
             cost,
             new PlanVisualizer());
 

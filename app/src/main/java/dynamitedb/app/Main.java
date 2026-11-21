@@ -31,14 +31,15 @@ public final class Main {
 
   private static void run(String[] args, PrintWriter output) throws Exception {
     if (args.length == 0 || args[0].equals("--help")) {
-      output.println("shell [--data-dir PATH] [--help]");
+      output.println("shell [--data-dir PATH] [--genetic-optimizer] [--help]");
       output.println("server --stub [--host 127.0.0.1] [--port 7777] [--data-dir data]");
       output.println(
           "  stub runtime: module wiring is real; query, storage, recovery and concurrency"
               + " operations remain stubs/defaults");
       output.println(
           "server --real [--host 127.0.0.1] [--port 7777] [--data-dir data]"
-              + " [--protocol strict-2pl|strict-timestamp] [--checkpoint-interval-seconds 60]");
+              + " [--protocol strict-2pl|strict-timestamp] [--checkpoint-interval-seconds 60]"
+              + " [--genetic-optimizer]");
       output.println(
           "  real runtime: persistent storage, WAL recovery, sample database and SQL server");
       output.println("server --mock [--host 127.0.0.1] [--port 7777] (legacy demo behavior)");
@@ -62,7 +63,8 @@ public final class Main {
             "--port",
             "--data-dir",
             "--protocol",
-            "--checkpoint-interval-seconds");
+            "--checkpoint-interval-seconds",
+            "--genetic-optimizer");
         boolean mock = options.containsKey("--mock");
         boolean stub = options.containsKey("--stub");
         boolean real = options.containsKey("--real");
@@ -71,6 +73,9 @@ public final class Main {
         if (!real && options.containsKey("--checkpoint-interval-seconds"))
           throw new IllegalArgumentException(
               "--checkpoint-interval-seconds requires server --real");
+        boolean genetic = options.containsKey("--genetic-optimizer");
+        if (!real && genetic)
+          throw new IllegalArgumentException("--genetic-optimizer requires server --real");
         if (mock && options.containsKey("--protocol"))
           throw new IllegalArgumentException("--protocol is not valid with server --mock");
         String host = options.getOrDefault("--host", "127.0.0.1");
@@ -89,12 +94,14 @@ public final class Main {
         PersistentRuntime runtime = null;
         String mode;
         if (real) {
-          runtime = new PersistentRuntime(config);
+          runtime = new PersistentRuntime(config, genetic);
           bootstrap = runtime.bootstrap();
           mode =
               "Persistent DynamiteDB runtime (checkpoint every "
                   + checkpointInterval.toSeconds()
-                  + " seconds)";
+                  + " seconds"
+                  + (genetic ? ", genetic join optimizer on" : "")
+                  + ")";
         } else if (stub) {
           StubRuntime stubRuntime = new StubRuntime(config);
           bootstrap = stubRuntime.bootstrap();
@@ -163,7 +170,8 @@ public final class Main {
       if (key.equals("--mock")
           || key.equals("--stub")
           || key.equals("--real")
-          || key.equals("--suite")) options.put(key, "true");
+          || key.equals("--suite")
+          || key.equals("--genetic-optimizer")) options.put(key, "true");
       else if (java.util.Set.of(
                   "--host",
                   "--port",

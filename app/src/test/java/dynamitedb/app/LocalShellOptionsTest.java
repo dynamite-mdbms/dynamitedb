@@ -22,6 +22,12 @@ class LocalShellOptionsTest {
   }
 
   @Test
+  void geneticOptimizerIsOffUnlessRequested() {
+    assertFalse(LocalShell.parse(new String[0]).geneticOptimizer());
+    assertTrue(LocalShell.parse(new String[] {"--genetic-optimizer"}).geneticOptimizer());
+  }
+
+  @Test
   void parsesDataDirectoryAndRejectsUnknownOrMissingOptions() {
     Path directory = temporaryDirectory.resolve("database");
     assertEquals(
