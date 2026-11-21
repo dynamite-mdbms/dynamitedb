@@ -3,6 +3,14 @@
 .idea/
 *.iml
 .vscode/
+# Eclipse / Buildship workspace metadata and module output
+.classpath
+.project
+.settings/
+/*/bin/main/
+/*/bin/test/
+/*/bin/default/
+/integration-tests/bin/acceptanceTest/
 out/
 *.class
 .DS_Store
