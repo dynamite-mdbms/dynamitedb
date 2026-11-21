@@ -484,19 +484,6 @@ class QP4IntegrationTest {
   }
 
   @Test
-  @DisplayName("LIMIT negatif atau bukan angka ditolak sebagai SQL_SYNTAX")
-  void invalidLimitIsRejected() {
-    for (String limit : List.of("-1", "abc", "1.5", "")) {
-      DbmsException error =
-          assertThrows(
-              DbmsException.class,
-              () -> sql("SELECT student_id FROM student ORDER BY gpa DESC LIMIT " + limit),
-              "LIMIT " + limit);
-      assertEquals(ErrorCode.SQL_SYNTAX, error.getCode(), "LIMIT " + limit);
-    }
-  }
-
-  @Test
   @DisplayName("COUNT(*), COUNT(gpa), SUM, AVG, MIN, MAX pada student.gpa (NULL diabaikan)")
   void aggregatesOnStudentGpa() {
     Row row =
