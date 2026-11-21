@@ -201,7 +201,7 @@ public final class PersistentRuntime implements AutoCloseable {
             new PlanBuilder(),
             new OptimizerPipeline(
                 List.<PlanRewrite>of(
-                    new SelectionPushdown(),
+                    new SelectionPushdown(cost),
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),

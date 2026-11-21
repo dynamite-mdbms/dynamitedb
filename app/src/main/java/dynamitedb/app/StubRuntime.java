@@ -152,7 +152,7 @@ public final class StubRuntime {
             new PlanBuilder(),
             new OptimizerPipeline(
                 List.<PlanRewrite>of(
-                    new SelectionPushdown(),
+                    new SelectionPushdown(cost),
                     new ProjectionPushdown(catalogAccess),
                     new JoinRewriter(),
                     new AccessPathOptimizer(catalogAccess)),

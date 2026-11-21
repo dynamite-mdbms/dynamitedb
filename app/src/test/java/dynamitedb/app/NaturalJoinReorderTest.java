@@ -29,13 +29,18 @@ import dynamitedb.contracts.transaction.TransactionId;
 import dynamitedb.contracts.transaction.TransactionStatus;
 import dynamitedb.contracts.transaction.WaitToken;
 import dynamitedb.qo.binding.Binder;
+import dynamitedb.qo.binding.CostEstimator;
 import dynamitedb.qo.join.AccessPathOptimizer;
+import dynamitedb.qo.join.BestPlanSelector;
+import dynamitedb.qo.join.GeneticJoinOrderOptimizer;
 import dynamitedb.qo.join.JoinOrderOptimizer;
 import dynamitedb.qo.join.JoinRewriter;
 import dynamitedb.qo.parser.ExpressionParser;
 import dynamitedb.qo.parser.Lexer;
 import dynamitedb.qo.parser.SqlParser;
 import dynamitedb.qo.parser.StatementParser;
+import dynamitedb.qo.pipeline.OptimizerPipeline;
+import dynamitedb.qo.pipeline.PlanRewrite;
 import dynamitedb.qo.plan.PlanBuilder;
 import dynamitedb.qo.pushdown.ProjectionPushdown;
 import dynamitedb.qo.pushdown.SelectionPushdown;
@@ -51,7 +56,7 @@ import java.util.Optional;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/** Every NATURAL JOIN order QO proposes returns the initial plan's rows when QP executes it. */
+/** Every join order QO proposes, and its final plan, return the initial plan's rows in QP. */
 class NaturalJoinReorderTest {
 
   private static final TransactionId TX = new TransactionId(1);
@@ -69,7 +74,18 @@ class NaturalJoinReorderTest {
         "SELECT * FROM enrollment NATURAL JOIN student NATURAL JOIN course",
         "SELECT enrollment.student_id FROM student NATURAL JOIN enrollment"
             + " WHERE enrollment.student_id * enrollment.course_id"
-            + " IN (SELECT course_id FROM course)"
+            + " IN (SELECT course_id FROM course)",
+        // ON conjuncts on one side move below the join; the last one leaves a cartesian join.
+        "SELECT student.name, enrollment.score FROM student JOIN enrollment"
+            + " ON student.student_id = enrollment.student_id AND enrollment.score > 60",
+        "SELECT student.name, enrollment.course_id FROM student JOIN enrollment"
+            + " ON student.student_id = 1",
+        "SELECT student.name, course.title FROM student, enrollment, course"
+            + " WHERE student.student_id = enrollment.student_id"
+            + " AND enrollment.course_id = course.course_id AND course.course_id = 10",
+        "SELECT student.name, COUNT(*) AS n FROM student JOIN enrollment"
+            + " ON student.student_id = enrollment.student_id"
+            + " GROUP BY student.name HAVING COUNT(*) > 1"
       })
   void everyCandidateMatchesInitialPlan(String sql) {
     Binder binder = new Binder(db);
@@ -78,10 +94,11 @@ class NaturalJoinReorderTest {
             new SqlParser(new StatementParser(), new ExpressionParser())
                 .parse(new Lexer().tokenize(sql)));
     PlanNode initial = new PlanBuilder().build(bound);
+    var cost = new CostEstimator(db);
     PlanNode rewritten = initial;
     for (var rewrite :
-        List.of(
-            new SelectionPushdown(),
+        List.<PlanRewrite>of(
+            new SelectionPushdown(cost),
             new ProjectionPushdown(db),
             new JoinRewriter(),
             new AccessPathOptimizer(db))) {
@@ -96,6 +113,19 @@ class NaturalJoinReorderTest {
     for (PlanNode candidate : candidates) {
       assertEquals(expected, execute(candidate), candidate.toString());
     }
+    PlanNode optimized =
+        new OptimizerPipeline(
+                List.of(
+                    new SelectionPushdown(cost),
+                    new ProjectionPushdown(db),
+                    new JoinRewriter(),
+                    new AccessPathOptimizer(db)),
+                new JoinOrderOptimizer(db),
+                new BestPlanSelector(cost),
+                new GeneticJoinOrderOptimizer(
+                    cost, GeneticJoinOrderOptimizer.Config.defaults(), 7L))
+            .optimize(initial);
+    assertEquals(expected, execute(optimized), optimized.toString());
     int width = binder.outputSchema(bound).columns().size();
     assertTrue(expected.stream().allMatch(row -> row.split("\\|", -1).length == width));
   }

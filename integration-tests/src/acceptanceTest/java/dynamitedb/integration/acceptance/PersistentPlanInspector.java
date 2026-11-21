@@ -37,7 +37,7 @@ final class PersistentPlanInspector {
         new PlanBuilder(),
         new OptimizerPipeline(
             List.<PlanRewrite>of(
-                new SelectionPushdown(),
+                new SelectionPushdown(cost),
                 new ProjectionPushdown(catalog),
                 new JoinRewriter(),
                 new AccessPathOptimizer(catalog)),

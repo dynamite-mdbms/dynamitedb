@@ -130,6 +130,25 @@ class SqlParserTest {
     assertEquals("total", select.orderBy().get(0).column().column());
   }
 
+  @Test
+  void endsJoinConditionAtGroupByAndHaving() {
+    SelectStatement select =
+        select(
+            "SELECT student.name, COUNT(*) AS n FROM student JOIN enrollment "
+                + "ON student.id = enrollment.id GROUP BY student.name HAVING COUNT(*) > 1");
+
+    JoinSource join = assertInstanceOf(JoinSource.class, select.from());
+    assertEquals(
+        new BinaryExpression(
+            new ColumnExpression(new ColumnRef(Optional.of("student"), "id")),
+            BinaryOp.EQ,
+            new ColumnExpression(new ColumnRef(Optional.of("enrollment"), "id"))),
+        join.condition().orElseThrow());
+    assertEquals(List.of(new ColumnRef(Optional.of("student"), "name")), select.groupBy());
+    assertTrue(select.having().isPresent());
+  }
+
+  @Test
   void parsesLimitAsTheLastClause() {
     assertEquals(Optional.empty(), select("SELECT student_id FROM student").limit());
     assertEquals(

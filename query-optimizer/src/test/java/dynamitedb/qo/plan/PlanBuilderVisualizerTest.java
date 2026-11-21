@@ -104,6 +104,7 @@ class PlanBuilderVisualizerTest {
         new PlanVisualizer().render(sort).contains("Aggregate [groupBy=sid, calls=COUNT(*)]"));
   }
 
+  @Test
   void placesLimitAboveProjectionAndSortAndRendersIt() {
     var name = new ColumnRef(Optional.of("student"), "name");
     var statement =

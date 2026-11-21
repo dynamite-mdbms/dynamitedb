@@ -11,6 +11,7 @@ import dynamitedb.contracts.query.BinaryOp;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
 import dynamitedb.contracts.query.PlanNode;
+import dynamitedb.contracts.query.ProjectPlan;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.qo.binding.CostEstimator;
 import java.util.List;
@@ -60,6 +61,43 @@ class GeneticJoinOrderOptimizerTest {
   }
 
   @Test
+  void attachesEachConditionToItsJoinAndFindsTheCheapestLeftDeepOrderUnderAProjection() {
+    var studentEnroll =
+        Qo5TestSupport.compare(
+            columnExpression("s", "sid"), BinaryOp.EQ, columnExpression("e", "sid"));
+    var enrollCourse =
+        Qo5TestSupport.compare(
+            columnExpression("e", "cid"), BinaryOp.EQ, columnExpression("c", "cid"));
+    PlanNode plan =
+        new ProjectPlan(
+            new JoinPlan(
+                new JoinPlan(
+                    scan("enroll", "e"),
+                    scan("student", "s"),
+                    JoinKind.THETA,
+                    Optional.of(studentEnroll)),
+                scan("course", "c"),
+                JoinKind.THETA,
+                Optional.of(enrollCourse)),
+            List.of(Qo5TestSupport.column("s", "sid")));
+    CostEstimator costs = new CostEstimator(catalog(STATISTICS, COLUMNS));
+    // The genetic search builds left-deep trees only; the enumerator also tries bushy ones.
+    double bestLeftDeep =
+        new JoinOrderOptimizer(catalog(STATISTICS, COLUMNS))
+            .enumerate(plan).stream()
+                .filter(candidate -> leftDeep(((ProjectPlan) candidate).child()))
+                .mapToDouble(costs::estimate)
+                .min()
+                .orElseThrow();
+
+    var result = optimizer(3L).optimize(plan);
+
+    assertEquals(bestLeftDeep, result.bestCost());
+    assertTrue(result.bestCost() < result.baselineCost());
+    assertTrue(noCartesianJoin(((ProjectPlan) result.bestPlan()).child()));
+  }
+
+  @Test
   void rejectsInvalidSearchConfiguration() {
     assertThrows(
         IllegalArgumentException.class,
@@ -91,6 +129,18 @@ class GeneticJoinOrderOptimizerTest {
   private static boolean validJoinTree(PlanNode plan) {
     if (!(plan instanceof JoinPlan join)) return true;
     return validJoinTree(join.left()) && validJoinTree(join.right());
+  }
+
+  private static boolean leftDeep(PlanNode plan) {
+    if (!(plan instanceof JoinPlan join)) return true;
+    return !(join.right() instanceof JoinPlan) && leftDeep(join.left());
+  }
+
+  private static boolean noCartesianJoin(PlanNode plan) {
+    if (!(plan instanceof JoinPlan join)) return true;
+    return join.kind() != JoinKind.CARTESIAN
+        && noCartesianJoin(join.left())
+        && noCartesianJoin(join.right());
   }
 
   private static int leafCount(PlanNode plan) {

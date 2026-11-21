@@ -7,6 +7,7 @@ import static dynamitedb.qo.join.Qo5TestSupport.literal;
 import static dynamitedb.qo.join.Qo5TestSupport.scan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dynamitedb.contracts.api.CatalogAccess;
 import dynamitedb.contracts.query.BinaryOp;
@@ -22,6 +23,7 @@ import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.TableStatistics;
 import dynamitedb.qo.binding.CostEstimator;
 import dynamitedb.qo.pipeline.OptimizerPipeline;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,7 +77,7 @@ class Qo5PipelineTest {
   }
 
   @Test
-  void pipelineCanSelectGeneticJoinOrdering() {
+  void pipelineKeepsTheCheaperOfTheGeneticAndHeuristicPlans() {
     CatalogAccess catalog =
         catalog(
             Map.of(
@@ -91,14 +93,49 @@ class Qo5PipelineTest {
             scan("enroll", "e"),
             JoinKind.CARTESIAN,
             Optional.empty());
-    GeneticJoinOrderOptimizer genetic =
-        new GeneticJoinOrderOptimizer(
-            costs, new GeneticJoinOrderOptimizer.Config(6, 2, 0.1, 2, 1, 3), 41L);
-    PlanNode geneticResult = genetic.optimize(plan).bestPlan();
+    double genetic = genetic(costs, 3, 41L).optimize(plan).bestCost();
+    double heuristic =
+        costs.estimate(
+            new BestPlanSelector(costs).choose(new JoinOrderOptimizer(catalog).enumerate(plan)));
     OptimizerPipeline pipeline =
         new OptimizerPipeline(
-            List.of(), new JoinOrderOptimizer(catalog), new BestPlanSelector(costs), genetic);
+            List.of(),
+            new JoinOrderOptimizer(catalog),
+            new BestPlanSelector(costs),
+            genetic(costs, 3, 41L));
 
-    assertEquals(geneticResult, pipeline.optimize(plan));
+    assertEquals(Math.min(genetic, heuristic), costs.estimate(pipeline.optimize(plan)));
+  }
+
+  @Test
+  void pipelinePicksTheGeneticPlanWhenTheHeuristicCannotSearch() {
+    // Seven leaves exceed the heuristic's six-leaf limit, so only the genetic search reorders.
+    Map<String, TableStatistics> statistics = new LinkedHashMap<>();
+    PlanNode plan = null;
+    for (int table = 7; table >= 1; table--) {
+      String name = "t" + table;
+      statistics.put(name, new TableStatistics(table * 1_000L, table * 100L, 50, Map.of()));
+      PlanNode leaf = scan(name);
+      plan = plan == null ? leaf : new JoinPlan(plan, leaf, JoinKind.CARTESIAN, Optional.empty());
+    }
+    CatalogAccess catalog = catalog(statistics, List.of());
+    CostEstimator costs = new CostEstimator(catalog);
+    PlanNode expected = genetic(costs, 8, 5L).optimize(plan).bestPlan();
+    OptimizerPipeline pipeline =
+        new OptimizerPipeline(
+            List.of(),
+            new JoinOrderOptimizer(catalog),
+            new BestPlanSelector(costs),
+            genetic(costs, 8, 5L));
+
+    PlanNode optimized = pipeline.optimize(plan);
+
+    assertEquals(expected, optimized);
+    assertTrue(costs.estimate(optimized) < costs.estimate(plan));
+  }
+
+  private static GeneticJoinOrderOptimizer genetic(CostEstimator costs, int tables, long seed) {
+    return new GeneticJoinOrderOptimizer(
+        costs, new GeneticJoinOrderOptimizer.Config(12, 10, 0.2, 3, 2, tables), seed);
   }
 }

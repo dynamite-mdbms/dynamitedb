@@ -258,6 +258,21 @@ class JoinOrderOptimizerTest {
     assertEquals(64, optimizer().enumerate(leftDeepChain(6)).size());
   }
 
+  @Test
+  void keepsEveryLeftDeepOrderOfFourTablesWithinTheCandidateCap() {
+    // 4 tables have 120 orders x groupings; the cap must not drop whole join orders.
+    List<PlanNode> candidates = optimizer().enumerate(leftDeepChain(4));
+
+    long leftDeep = candidates.stream().filter(JoinOrderOptimizerTest::isLeftDeep).count();
+    assertEquals(24, leftDeep);
+    assertEquals(64, candidates.size());
+  }
+
+  private static boolean isLeftDeep(PlanNode plan) {
+    if (!(plan instanceof JoinPlan join)) return true;
+    return !(join.right() instanceof JoinPlan) && isLeftDeep(join.left());
+  }
+
   private static final Map<String, List<String>> COLUMNS =
       Map.of(
           "student", List.of("student_id", "name"),

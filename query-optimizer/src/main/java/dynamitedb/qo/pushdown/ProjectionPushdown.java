@@ -37,6 +37,8 @@ public class ProjectionPushdown implements PlanRewrite {
   public PlanNode rewrite(PlanNode plan) {
     if (plan instanceof LimitPlan limit)
       return new LimitPlan(rewrite(limit.child()), limit.count());
+    // ORDER BY an expression alias sorts above the projection, on columns the projection makes.
+    if (plan instanceof SortPlan sort) return new SortPlan(rewrite(sort.child()), sort.keys());
     if (!(plan instanceof ProjectPlan project)) return plan;
     PlanNode child = project.child();
 

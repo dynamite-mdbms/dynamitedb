@@ -259,6 +259,17 @@ class InSubqueryTest {
   }
 
   @Test
+  void optimizesSubqueryPlansAndCountsTheirCostOnce() {
+    var explanation = optimizer.explain(SELECT + "sid IN (SELECT sid FROM student WHERE sid = 7)");
+
+    assertTrue(explanation.before().contains("Filter [predicate=(student.sid EQ 7)]"));
+    assertTrue(explanation.after().contains("IndexScan [index=idx_student_sid"));
+    // Outer scan (10 blocks) plus one materialized subquery (1 probe + 100/50 rows).
+    assertEquals(13.0, explanation.cost());
+    assertEquals(20.0, optimizer.explain(SELECT + "sid IN (SELECT sid FROM enroll)").cost());
+  }
+
+  @Test
   void explainRendersNestedSubqueriesAsIndentedSubtrees() {
     String after =
         optimizer

@@ -236,18 +236,43 @@ public class JoinOrderOptimizer {
     Set<PlanNode> unique = new LinkedHashSet<>(candidates);
     int[] indexes = new int[flat.leaves().size()];
     for (int i = 0; i < indexes.length; i++) indexes[i] = i;
+    List<List<PlanNode>> orders = new ArrayList<>();
     for (int[] order : permutations(indexes)) {
       List<PlanNode> ordered = new ArrayList<>();
       for (int index : order) ordered.add(flat.leaves().get(index));
+      orders.add(ordered);
+    }
+    // Every left-deep order first (BNLJ rescans the inner side, so a base table there is
+    // cheapest), then bushy groupings, so the candidate cap never hides a whole join order.
+    for (List<PlanNode> ordered : orders) {
+      if (offer(
+          attachConditions(leftDeep(ordered), flat.conditions()), candidates, unique, limit)) {
+        return candidates;
+      }
+    }
+    for (List<PlanNode> ordered : orders) {
       for (PlanNode grouping : groupings(ordered, 0, ordered.size(), limit)) {
-        PlanNode candidate = attachConditions(grouping, flat.conditions());
-        if (unique.add(candidate)) {
-          candidates.add(candidate);
-          if (candidates.size() >= limit) return candidates;
+        if (offer(attachConditions(grouping, flat.conditions()), candidates, unique, limit)) {
+          return candidates;
         }
       }
     }
     return candidates;
+  }
+
+  /** Adds a new candidate; true once the list is full. */
+  private static boolean offer(
+      PlanNode candidate, List<PlanNode> candidates, Set<PlanNode> unique, int limit) {
+    if (unique.add(candidate)) candidates.add(candidate);
+    return candidates.size() >= limit;
+  }
+
+  static PlanNode leftDeep(List<PlanNode> leaves) {
+    PlanNode plan = leaves.get(0);
+    for (int i = 1; i < leaves.size(); i++) {
+      plan = new JoinPlan(plan, leaves.get(i), JoinKind.CARTESIAN, Optional.empty());
+    }
+    return plan;
   }
 
   private static List<PlanNode> groupings(List<PlanNode> leaves, int start, int end, int limit) {
@@ -266,7 +291,8 @@ public class JoinOrderOptimizer {
     return result;
   }
 
-  private static PlanNode attachConditions(PlanNode plan, List<Expression> conditions) {
+  /** Puts each conjunct on the lowest join (or leaf) that reads every relation it names. */
+  static PlanNode attachConditions(PlanNode plan, List<Expression> conditions) {
     PlanNode result = plan;
     for (Expression condition : conditions) result = attachCondition(result, condition);
     return result;

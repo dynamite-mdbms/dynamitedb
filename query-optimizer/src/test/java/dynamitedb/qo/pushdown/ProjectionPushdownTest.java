@@ -9,20 +9,28 @@ import static dynamitedb.qo.pushdown.SelectionPushdownTest.compare;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dynamitedb.contracts.api.CatalogAccess;
+import dynamitedb.contracts.query.AggregateExpression;
+import dynamitedb.contracts.query.AggregateFunction;
+import dynamitedb.contracts.query.AggregatePlan;
+import dynamitedb.contracts.query.BinaryExpression;
 import dynamitedb.contracts.query.BinaryOp;
+import dynamitedb.contracts.query.ColumnExpression;
 import dynamitedb.contracts.query.ColumnRef;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
+import dynamitedb.contracts.query.LiteralExpression;
 import dynamitedb.contracts.query.PlanNode;
 import dynamitedb.contracts.query.ProjectPlan;
+import dynamitedb.contracts.query.SelectItem;
 import dynamitedb.contracts.query.SortDirection;
 import dynamitedb.contracts.query.SortKey;
 import dynamitedb.contracts.query.SortPlan;
 import dynamitedb.contracts.storage.Column;
 import dynamitedb.contracts.storage.DataType;
 import dynamitedb.contracts.storage.IndexMetadata;
+import dynamitedb.contracts.storage.IntValue;
 import dynamitedb.contracts.storage.Schema;
 import dynamitedb.contracts.storage.TableStatistics;
 import java.util.Arrays;
@@ -89,6 +97,66 @@ class ProjectionPushdownTest {
                 JoinKind.NATURAL,
                 Optional.empty()),
             refs("s.name"));
+    assertEquals(expected, pushdown.rewrite(plan));
+  }
+
+  @Test
+  void prunesBelowTheJoinWhenOrderByAnAliasSortsAboveTheProjection() {
+    Expression link = compare("s", "sid", BinaryOp.EQ, col("e", "sid"));
+    List<SelectItem> items =
+        List.of(
+            new SelectItem(
+                new BinaryExpression(
+                    col("s", "sid"), BinaryOp.ADD, new LiteralExpression(new IntValue(1))),
+                Optional.of("k")));
+    List<SortKey> keys =
+        List.of(new SortKey(new ColumnRef(Optional.empty(), "k"), SortDirection.ASC));
+    PlanNode plan =
+        new SortPlan(
+            ProjectPlan.fromItems(new JoinPlan(S, E, JoinKind.THETA, Optional.of(link)), items),
+            keys);
+
+    PlanNode expected =
+        new SortPlan(
+            ProjectPlan.fromItems(
+                new JoinPlan(
+                    new ProjectPlan(S, refs("s.sid")),
+                    new ProjectPlan(E, refs("e.sid")),
+                    JoinKind.THETA,
+                    Optional.of(link)),
+                items),
+            keys);
+    assertEquals(expected, pushdown.rewrite(plan));
+  }
+
+  @Test
+  void keepsGroupingAndAggregateColumnsBelowAnAggregateOverAJoin() {
+    Expression link = compare("s", "sid", BinaryOp.EQ, col("e", "sid"));
+    AggregateExpression count =
+        new AggregateExpression(AggregateFunction.COUNT, Optional.of(ref("e", "cid")));
+    List<SelectItem> items =
+        List.of(
+            new SelectItem(new ColumnExpression(ref("s", "name")), Optional.empty()),
+            new SelectItem(count, Optional.empty()));
+    PlanNode plan =
+        ProjectPlan.fromItems(
+            new AggregatePlan(
+                new JoinPlan(S, E, JoinKind.THETA, Optional.of(link)),
+                refs("s.name"),
+                List.of(count)),
+            items);
+
+    PlanNode expected =
+        ProjectPlan.fromItems(
+            new AggregatePlan(
+                new JoinPlan(
+                    new ProjectPlan(S, refs("s.sid", "s.name")),
+                    new ProjectPlan(E, refs("e.sid", "e.cid")),
+                    JoinKind.THETA,
+                    Optional.of(link)),
+                refs("s.name"),
+                List.of(count)),
+            items);
     assertEquals(expected, pushdown.rewrite(plan));
   }
 

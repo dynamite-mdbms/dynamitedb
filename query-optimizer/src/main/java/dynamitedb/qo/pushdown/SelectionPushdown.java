@@ -11,6 +11,7 @@ import dynamitedb.contracts.query.ExistsSubqueryExpression;
 import dynamitedb.contracts.query.Expression;
 import dynamitedb.contracts.query.FilterPlan;
 import dynamitedb.contracts.query.InSubqueryExpression;
+import dynamitedb.contracts.query.JoinKind;
 import dynamitedb.contracts.query.JoinPlan;
 import dynamitedb.contracts.query.LimitPlan;
 import dynamitedb.contracts.query.LiteralExpression;
@@ -23,19 +24,34 @@ import dynamitedb.contracts.query.UpdatePlan;
 import dynamitedb.qo.binding.CostEstimator;
 import dynamitedb.qo.pipeline.PlanRewrite;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class SelectionPushdown implements PlanRewrite {
+
+  private final CostEstimator cost;
+
+  /** Keeps selections in the order the query wrote them. */
+  public SelectionPushdown() {
+    this(null);
+  }
+
+  /** Also reorders each cascade of selections so the most selective one runs first (QO-09). */
+  public SelectionPushdown(CostEstimator cost) {
+    this.cost = cost;
+  }
 
   @Override
   public PlanNode rewrite(PlanNode plan) {
     return switch (plan) {
       case FilterPlan filter -> {
         PlanNode result = rewrite(filter.child());
-        List<Expression> conjuncts = conjuncts(filter.predicate());
+        List<Expression> conjuncts = ordered(conjuncts(filter.predicate()), result);
 
+        // Pushed last to first, so the first conjunct ends innermost and is evaluated first.
         for (int i = conjuncts.size() - 1; i >= 0; i--) result = push(result, conjuncts.get(i));
         yield result;
       }
@@ -46,12 +62,43 @@ public class SelectionPushdown implements PlanRewrite {
       case SortPlan sort -> new SortPlan(rewrite(sort.child()), sort.keys());
       case LimitPlan limit -> new LimitPlan(rewrite(limit.child()), limit.count());
       case JoinPlan join ->
-          new JoinPlan(rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition());
+          pushCondition(
+              new JoinPlan(
+                  rewrite(join.left()), rewrite(join.right()), join.kind(), join.condition()));
       case UpdatePlan update ->
           new UpdatePlan(rewrite(update.source()), update.table(), update.assignments());
       case DeletePlan delete -> new DeletePlan(rewrite(delete.source()), delete.table());
       default -> plan;
     };
+  }
+
+  /** ON conjuncts that read only one side become selections on that side, like WHERE ones. */
+  private PlanNode pushCondition(JoinPlan join) {
+    if (join.condition().isEmpty()) return join;
+    PlanNode left = join.left();
+    PlanNode right = join.right();
+    List<Expression> conjuncts = ordered(conjuncts(join.condition().get()), join);
+    List<Expression> kept = new ArrayList<>();
+    for (int i = conjuncts.size() - 1; i >= 0; i--) {
+      Expression conjunct = conjuncts.get(i);
+      Set<String> used = relations(conjunct);
+      if (CostEstimator.scans(left).keySet().containsAll(used)) left = push(left, conjunct);
+      else if (CostEstimator.scans(right).keySet().containsAll(used)) right = push(right, conjunct);
+      else kept.add(0, conjunct);
+    }
+    if (kept.isEmpty()) return new JoinPlan(left, right, JoinKind.CARTESIAN, Optional.empty());
+    return new JoinPlan(
+        left,
+        right,
+        join.kind(),
+        kept.stream().reduce((a, b) -> new BinaryExpression(a, BinaryOp.AND, b)));
+  }
+
+  private List<Expression> ordered(List<Expression> conjuncts, PlanNode scope) {
+    if (cost == null) return conjuncts;
+    return conjuncts.stream()
+        .sorted(Comparator.comparingDouble(c -> cost.selectivity(c, scope)))
+        .toList();
   }
 
   private static PlanNode push(PlanNode node, Expression predicate) {
