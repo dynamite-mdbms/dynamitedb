@@ -302,6 +302,10 @@ public class SqlParser {
               || is(token, "JOIN")
               || is(token, "NATURAL")
               || is(token, "WHERE")
+              || (is(token, "GROUP")
+                  && index + 1 < tokens.size()
+                  && is(tokens.get(index + 1), "BY"))
+              || is(token, "HAVING")
               || is(token, "ORDER")
               || is(token, "LIMIT")
               || is(token, ";"))) return index;
